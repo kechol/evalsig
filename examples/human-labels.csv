@@ -1,0 +1,4 @@
+item_id,rater_id,source,value,levels,version,labeled_at
+q-0002,user:bob,human,1,4,1,2026-08-16T00:00:00Z
+q-0003,user:carol,human,2,4,1,2026-09-03T00:00:00Z
+q-0003,user:bob,human,unsure,4,1,2026-09-04T00:00:00Z

@@ -42,6 +42,8 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Read records into a snapshot and record the import in the ledger.
+    Import(commands::import::Args),
     /// Print a published JSON Schema (`records`, `ledger-entry`).
     Schema {
         name: String,
@@ -66,6 +68,7 @@ pub(crate) fn tool_version() -> String {
 fn run(cli: &Cli) -> Result<Output, CliError> {
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
+        Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
         Command::Validate { ref records } => commands::validate::run(records),
         Command::Version => Ok(Output::success(Envelope::new(

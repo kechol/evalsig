@@ -329,6 +329,11 @@ dependencies = [
 [[package]]
 name = "evalsig-adapters"
 version = "0.1.0"
+dependencies = [
+ "evalsig-core",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "evalsig-cli"
@@ -337,6 +342,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "evalsig-adapters",
  "evalsig-core",
  "evalsig-store",
  "jsonschema",

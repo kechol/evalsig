@@ -20,6 +20,23 @@ impl Instant {
     pub fn as_unix_nanos(self) -> i128 {
         self.0
     }
+
+    pub fn from_unix_nanos(nanos: i128) -> Self {
+        Instant(nanos)
+    }
+
+    /// `YYYY-MM-DDTHH:MM:SSZ` in UTC, truncated to whole seconds.
+    pub fn to_rfc3339(self) -> String {
+        let secs = self.0.div_euclid(1_000_000_000) as i64;
+        let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+        let (y, m, d) = civil_from_days(days);
+        format!(
+            "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+            rem / 3_600,
+            rem % 3_600 / 60,
+            rem % 60
+        )
+    }
 }
 
 impl fmt::Display for Instant {
@@ -112,6 +129,19 @@ fn days_in_month(y: i64, m: i64) -> i64 {
     }
 }
 
+/// The civil date of a day count since 1970-01-01 (Howard Hinnant's algorithm).
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
+}
+
 /// Days since 1970-01-01 (Howard Hinnant's algorithm).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
@@ -143,6 +173,24 @@ mod tests {
                 .as_unix_nanos()
                 % 1_000_000_000,
             500_000_000
+        );
+    }
+
+    #[test]
+    fn formats_round_trip() {
+        for s in [
+            "1970-01-01T00:00:00Z",
+            "2000-02-29T03:00:00Z",
+            "2026-11-03T08:37:45Z",
+            "1969-12-31T23:59:59Z",
+        ] {
+            assert_eq!(Instant::parse(s).unwrap().to_rfc3339(), s);
+        }
+        assert_eq!(
+            Instant::parse("2026-11-03T17:37:45+09:00")
+                .unwrap()
+                .to_rfc3339(),
+            "2026-11-03T08:37:45Z"
         );
     }
 
