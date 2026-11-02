@@ -1,0 +1,171 @@
+//! RFC 3339 timestamps reduced to an instant, for ordering and as-of selection.
+
+use std::fmt;
+
+/// An instant as nanoseconds since 1970-01-01T00:00:00Z.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Instant(i128);
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("not an RFC 3339 timestamp: {0:?}")]
+pub struct TimestampError(pub String);
+
+impl Instant {
+    /// Parse `YYYY-MM-DDTHH:MM:SS[.fraction](Z|±HH:MM)`. A lowercase `t`/`z` and a
+    /// space separator are accepted, as RFC 3339 allows.
+    pub fn parse(s: &str) -> Result<Instant, TimestampError> {
+        parse(s.as_bytes()).ok_or_else(|| TimestampError(s.to_owned()))
+    }
+
+    pub fn as_unix_nanos(self) -> i128 {
+        self.0
+    }
+}
+
+impl fmt::Display for Instant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}ns", self.0)
+    }
+}
+
+fn digits(b: &[u8], n: usize) -> Option<i64> {
+    let s = b.get(..n)?;
+    s.iter().try_fold(0i64, |acc, c| {
+        c.is_ascii_digit().then(|| acc * 10 + i64::from(c - b'0'))
+    })
+}
+
+fn parse(b: &[u8]) -> Option<Instant> {
+    let year = digits(b, 4)?;
+    let month = digits(b.get(5..)?, 2)?;
+    let day = digits(b.get(8..)?, 2)?;
+    if b.get(4) != Some(&b'-') || b.get(7) != Some(&b'-') {
+        return None;
+    }
+    if !matches!(b.get(10), Some(b'T' | b't' | b' ')) {
+        return None;
+    }
+    let hour = digits(b.get(11..)?, 2)?;
+    let minute = digits(b.get(14..)?, 2)?;
+    let second = digits(b.get(17..)?, 2)?;
+    if b.get(13) != Some(&b':') || b.get(16) != Some(&b':') {
+        return None;
+    }
+    let mut i = 19;
+    let mut nanos: i64 = 0;
+    if b.get(i) == Some(&b'.') {
+        i += 1;
+        let start = i;
+        while b.get(i).is_some_and(u8::is_ascii_digit) {
+            if i - start < 9 {
+                nanos = nanos * 10 + i64::from(b[i] - b'0');
+            }
+            i += 1;
+        }
+        let n = i - start;
+        if n == 0 {
+            return None;
+        }
+        for _ in n..9 {
+            nanos *= 10;
+        }
+    }
+    let offset_minutes = match b.get(i)? {
+        b'Z' | b'z' if i + 1 == b.len() => 0,
+        sign @ (b'+' | b'-') if i + 6 == b.len() && b[i + 3] == b':' => {
+            let h = digits(&b[i + 1..], 2)?;
+            let m = digits(&b[i + 4..], 2)?;
+            if h > 23 || m > 59 {
+                return None;
+            }
+            let o = h * 60 + m;
+            if *sign == b'-' { -o } else { o }
+        }
+        _ => return None,
+    };
+    if !(1..=12).contains(&month)
+        || day < 1
+        || day > days_in_month(year, month)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    let secs = days * 86_400 + hour * 3_600 + minute * 60 + second - offset_minutes * 60;
+    Some(Instant(
+        i128::from(secs) * 1_000_000_000 + i128::from(nanos),
+    ))
+}
+
+fn is_leap(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+fn days_in_month(y: i64, m: i64) -> i64 {
+    match m {
+        2 if is_leap(y) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+/// Days since 1970-01-01 (Howard Hinnant's algorithm).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn secs(s: &str) -> i128 {
+        Instant::parse(s).unwrap().as_unix_nanos() / 1_000_000_000
+    }
+
+    #[test]
+    fn parses_known_instants() {
+        assert_eq!(secs("1970-01-01T00:00:00Z"), 0);
+        assert_eq!(secs("2026-10-29T09:05:00Z"), 1_793_264_700);
+        assert_eq!(secs("2000-02-29T12:00:00+09:00"), 951_793_200);
+        assert_eq!(secs("1969-12-31T23:59:59Z"), -1);
+        assert_eq!(
+            Instant::parse("2026-01-01T00:00:00.5Z")
+                .unwrap()
+                .as_unix_nanos()
+                % 1_000_000_000,
+            500_000_000
+        );
+    }
+
+    #[test]
+    fn offsets_order_correctly() {
+        let a = Instant::parse("2026-08-03T09:00:00+09:00").unwrap();
+        let b = Instant::parse("2026-08-03T01:00:00Z").unwrap();
+        assert!(a < b);
+    }
+
+    #[test]
+    fn rejects_malformed() {
+        for s in [
+            "2026-02-30T00:00:00Z",
+            "2026-13-01T00:00:00Z",
+            "2026-01-01",
+            "2026-01-01T00:00:00",
+            "2026-01-01T00:00:00.Z",
+            "2026-01-01T25:00:00Z",
+            "2026-01-01T00:00:00+0900",
+            "2026-01-01T00:00:00Zjunk",
+        ] {
+            assert!(Instant::parse(s).is_err(), "{s}");
+        }
+    }
+}
