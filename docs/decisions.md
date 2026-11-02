@@ -67,3 +67,39 @@ after the entry is `Accepted`.
   (rejected: two canonical copies drift).
 - Consequences: dependencies must have licences compatible with
   `MIT OR Apache-2.0`; `cargo deny` enforces the allow list.
+
+## D-003 Canonical record format `records/1`
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Every import path (custom harnesses, declarative mappings, Inspect,
+  promptfoo) must end in one format that analysis, hashing and the referee
+  share. Its shape is a public contract: users write it directly.
+- Decision:
+  - `records/1` is JSONL with one record per line, tagged by `record`:
+    `item`, `label`, `judgment`, `preference`, `run` and `content`, with the
+    keys and fields of `schema/records.schema.json`. Unknown records and
+    unknown fields are rejected.
+  - A judgment, label or preference carries exactly one of `value`
+    (`outcome` for preferences) and `missing{reason, detail?}`. The reason is
+    one of ten codes: `error`, `timeout`, `refused`, `invalid_output`,
+    `limit` (system side) and `grader_failed`, `not_run`, `invalidated`,
+    `excluded`, `other` (measurement side).
+  - `value` is a boolean for `binary`, an integer in `0..levels` for
+    `ordinal` (larger is more positive) and a finite number for `score`.
+    Each run has one `value_semantics` (`decision` by default, or `score`,
+    which requires `grader`) and one `output_type` with `levels`.
+  - Labels are never overwritten: a revision of the same (item, rater, task,
+    label replicate) appends a higher `version`.
+  - Absent optional fields stay absent when a record is written back; the
+    schema defaults (weight 1, task `default`, replicate 0, kind
+    `independent`) are applied when a record is read for analysis.
+  - The schema `$id` is `urn:evalsig:schema:records:1`, so the identifier does
+    not depend on a domain.
+- Alternatives: one wide table with nullable columns (rejected: preferences
+  and content do not fit, and the per-kind keys would be implicit); a value
+  field with a sentinel for missing (rejected: it hides missing data in the
+  denominator, which the specification forbids).
+- Consequences: changing a field or a reason code is a new format version
+  (`records/2`) with a `migrate` path. Integer and floating-point values are
+  kept apart so records serialize back as written.

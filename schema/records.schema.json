@@ -1,0 +1,638 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:evalsig:schema:records:1",
+ "title": "evalsig canonical records (records/1)",
+ "description": "Canonical records after import, one record per line of JSONL. A custom evaluation harness can write this format directly.",
+ "$defs": {
+  "id": {
+   "type": "string",
+   "minLength": 1,
+   "maxLength": 512
+  },
+  "hashref": {
+   "type": "string",
+   "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
+   "description": "A content-hash reference to a content blob or another object"
+  },
+  "timestamp": {
+   "type": "string",
+   "format": "date-time"
+  },
+  "output_type": {
+   "enum": [
+    "binary",
+    "ordinal",
+    "score"
+   ]
+  },
+  "value": {
+   "description": "binary: boolean; ordinal: integer from 0 (larger is more positive); score: finite number",
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "number"
+    }
+   ]
+  },
+  "typed_value": {
+   "description": "Constrains the value type by output_type",
+   "allOf": [
+    {
+     "if": {
+      "properties": {
+       "output_type": {
+        "const": "binary"
+       }
+      },
+      "required": [
+       "value"
+      ]
+     },
+     "then": {
+      "properties": {
+       "value": {
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    {
+     "if": {
+      "properties": {
+       "output_type": {
+        "const": "ordinal"
+       }
+      },
+      "required": [
+       "value"
+      ]
+     },
+     "then": {
+      "properties": {
+       "value": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "levels"
+      ]
+     }
+    },
+    {
+     "if": {
+      "properties": {
+       "output_type": {
+        "const": "score"
+       }
+      },
+      "required": [
+       "value"
+      ]
+     },
+     "then": {
+      "properties": {
+       "value": {
+        "type": "number"
+       }
+      }
+     }
+    }
+   ]
+  },
+  "missing": {
+   "type": "object",
+   "required": [
+    "reason"
+   ],
+   "additionalProperties": false,
+   "description": "System-side reasons (error, timeout, refused, invalid_output, limit) and measurement-side reasons (grader_failed, not_run, invalidated, excluded, other) have different default handling",
+   "properties": {
+    "reason": {
+     "enum": [
+      "error",
+      "timeout",
+      "refused",
+      "invalid_output",
+      "limit",
+      "grader_failed",
+      "not_run",
+      "invalidated",
+      "excluded",
+      "other"
+     ]
+    },
+    "detail": {
+     "type": "string",
+     "maxLength": 4000
+    }
+   }
+  },
+  "source": {
+   "enum": [
+    "human",
+    "model",
+    "consensus",
+    "external"
+   ]
+  },
+  "item": {
+   "type": "object",
+   "required": [
+    "record",
+    "item_id"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "record": {
+     "const": "item"
+    },
+    "item_id": {
+     "$ref": "#/$defs/id"
+    },
+    "cluster": {
+     "$ref": "#/$defs/id",
+     "description": "Group of correlated items (same document, same conversation, several tasks on one object). The resampling and splitting unit; the item itself if absent"
+    },
+    "strata": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     },
+     "description": "Stratum name to value"
+    },
+    "weight": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "default": 1,
+     "maximum": 100
+    },
+    "label_inclusion_prob": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "maximum": 1,
+     "description": "Probability that this item receives a human reference label when humans check only some items. Used to correct verification bias by weighting"
+    },
+    "occurred_at": {
+     "$ref": "#/$defs/timestamp",
+     "description": "When the item occurred; used for time-based splits and trends"
+    },
+    "input_ref": {
+     "$ref": "#/$defs/hashref",
+     "description": "The system-independent input only (no prompt template or system prompt). Items whose input differs between arms are excluded from paired comparison"
+    },
+    "attrs": {
+     "type": "object",
+     "description": "User attributes not used in analysis"
+    },
+    "reference_ref": {
+     "$ref": "#/$defs/hashref",
+     "description": "Reference text (such as the target of a graded generation task). Kept as content, not used by metrics"
+    }
+   }
+  },
+  "label": {
+   "type": "object",
+   "required": [
+    "record",
+    "item_id",
+    "rater_id",
+    "source",
+    "version"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "record": {
+     "const": "label"
+    },
+    "item_id": {
+     "$ref": "#/$defs/id"
+    },
+    "rater_id": {
+     "$ref": "#/$defs/id"
+    },
+    "source": {
+     "$ref": "#/$defs/source"
+    },
+    "task": {
+     "$ref": "#/$defs/id",
+     "description": "Task name when an item has several judgment tasks. Default \"default\""
+    },
+    "kind": {
+     "enum": [
+      "independent",
+      "revision",
+      "adjudication"
+     ],
+     "default": "independent",
+     "description": "independent: made without seeing other labels; revision: correcting the rater's own earlier label; adjudication: resolving a split after seeing the other labels (not independent)"
+    },
+    "label_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0,
+     "description": "Number of a blind re-label of the same item by the same rater. Measures human variability"
+    },
+    "value": {
+     "$ref": "#/$defs/value"
+    },
+    "missing": {
+     "$ref": "#/$defs/missing"
+    },
+    "version": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "Revision number for the same (item, rater, task, label_replicate). Revisions are appended, never overwritten"
+    },
+    "reason": {
+     "type": "string",
+     "maxLength": 4000
+    },
+    "labeled_at": {
+     "$ref": "#/$defs/timestamp"
+    },
+    "source_ref": {
+     "type": "string",
+     "maxLength": 512,
+     "description": "Reference to the original record (a Langfuse score id, an Inspect sample uuid). Not used in analysis"
+    },
+    "levels": {
+     "type": "integer",
+     "minimum": 2,
+     "description": "Number of levels of an ordinal label"
+    }
+   },
+   "oneOf": [
+    {
+     "required": [
+      "value"
+     ]
+    },
+    {
+     "required": [
+      "missing"
+     ]
+    }
+   ]
+  },
+  "feature": {
+   "type": "object",
+   "required": [
+    "feature_id",
+    "fired"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "feature_id": {
+     "$ref": "#/$defs/id"
+    },
+    "fired": {
+     "type": "boolean"
+    },
+    "strength": {
+     "type": "number"
+    }
+   }
+  },
+  "judgment": {
+   "type": "object",
+   "required": [
+    "record",
+    "item_id",
+    "run_id",
+    "gen_replicate",
+    "output_type"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "record": {
+     "const": "judgment"
+    },
+    "item_id": {
+     "$ref": "#/$defs/id"
+    },
+    "run_id": {
+     "$ref": "#/$defs/id"
+    },
+    "task": {
+     "$ref": "#/$defs/id"
+    },
+    "gen_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "Generation replicate: which re-run of the system on the same item (Inspect epoch, promptfoo repeat)"
+    },
+    "grade_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0,
+     "description": "Grading replicate: which re-grading of the same output"
+    },
+    "output_type": {
+     "$ref": "#/$defs/output_type"
+    },
+    "levels": {
+     "type": "integer",
+     "minimum": 2,
+     "description": "Number of ordinal levels"
+    },
+    "value": {
+     "$ref": "#/$defs/value"
+    },
+    "missing": {
+     "$ref": "#/$defs/missing"
+    },
+    "features": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/feature"
+     }
+    },
+    "output_ref": {
+     "$ref": "#/$defs/hashref",
+     "description": "Output text. evalsig warns if all generation replicates of an item have the same output"
+    },
+    "rationale_ref": {
+     "$ref": "#/$defs/hashref",
+     "description": "Text such as the grader's reasoning"
+    },
+    "judged_at": {
+     "$ref": "#/$defs/timestamp"
+    },
+    "cost": {
+     "type": "object",
+     "description": "Tokens, money and time (not used in analysis)"
+    },
+    "source_ref": {
+     "type": "string",
+     "maxLength": 512,
+     "description": "Reference to the original record (a Langfuse score id, an Inspect sample uuid). Not used in analysis"
+    }
+   },
+   "oneOf": [
+    {
+     "required": [
+      "value"
+     ]
+    },
+    {
+     "required": [
+      "missing"
+     ]
+    }
+   ],
+   "$ref": "#/$defs/typed_value"
+  },
+  "preference": {
+   "type": "object",
+   "required": [
+    "record",
+    "item_id",
+    "left_run_id",
+    "right_run_id",
+    "rater_id",
+    "source"
+   ],
+   "oneOf": [
+    {
+     "required": [
+      "outcome"
+     ]
+    },
+    {
+     "required": [
+      "missing"
+     ]
+    }
+   ],
+   "additionalProperties": false,
+   "description": "Which of two arms' outputs on the same item is better. A judgment with the presentation order swapped is a separate record with left and right swapped",
+   "properties": {
+    "record": {
+     "const": "preference"
+    },
+    "item_id": {
+     "$ref": "#/$defs/id"
+    },
+    "task": {
+     "$ref": "#/$defs/id"
+    },
+    "left_run_id": {
+     "$ref": "#/$defs/id",
+     "description": "Run of the output presented first (left)"
+    },
+    "right_run_id": {
+     "$ref": "#/$defs/id",
+     "description": "Run of the output presented second (right)"
+    },
+    "left_gen_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0
+    },
+    "right_gen_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0
+    },
+    "rater_id": {
+     "$ref": "#/$defs/id"
+    },
+    "source": {
+     "$ref": "#/$defs/source"
+    },
+    "grade_replicate": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0
+    },
+    "outcome": {
+     "enum": [
+      "left",
+      "right",
+      "tie"
+     ]
+    },
+    "missing": {
+     "$ref": "#/$defs/missing"
+    },
+    "rationale_ref": {
+     "$ref": "#/$defs/hashref"
+    },
+    "judged_at": {
+     "$ref": "#/$defs/timestamp"
+    },
+    "source_ref": {
+     "type": "string",
+     "maxLength": 512,
+     "description": "Reference to the original record. Not used in analysis"
+    }
+   }
+  },
+  "run": {
+   "type": "object",
+   "required": [
+    "record",
+    "run_id",
+    "system"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "record": {
+     "const": "run"
+    },
+    "run_id": {
+     "$ref": "#/$defs/id"
+    },
+    "system": {
+     "type": "object",
+     "required": [
+      "id",
+      "version"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/id"
+      },
+      "version": {
+       "type": "string"
+      },
+      "config_hash": {
+       "$ref": "#/$defs/hashref"
+      }
+     }
+    },
+    "grader": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/id"
+      },
+      "version": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "model",
+        "rule",
+        "human",
+        "mixed"
+       ]
+      },
+      "config_hash": {
+       "$ref": "#/$defs/hashref",
+       "description": "Hash of the grader prompt or code. gate checks it against the approval"
+      }
+     }
+    },
+    "harness": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "version": {
+       "type": "string"
+      },
+      "run_ref": {
+       "type": "string"
+      }
+     }
+    },
+    "started_at": {
+     "$ref": "#/$defs/timestamp"
+    },
+    "attrs": {
+     "type": "object"
+    },
+    "value_semantics": {
+     "enum": [
+      "decision",
+      "score"
+     ],
+     "default": "decision",
+     "description": "decision: a system decision compared with reference labels. score: a grade of an output that is itself the result; no reference label needed, grader required"
+    },
+    "output_type": {
+     "$ref": "#/$defs/output_type",
+     "description": "Output type of this run's judgments. Constant within a run and checked against each judgment"
+    },
+    "levels": {
+     "type": "integer",
+     "minimum": 2
+    }
+   },
+   "allOf": [
+    {
+     "if": {
+      "properties": {
+       "value_semantics": {
+        "const": "score"
+       }
+      }
+     },
+     "then": {
+      "required": [
+       "grader"
+      ]
+     }
+    }
+   ]
+  },
+  "content": {
+   "type": "object",
+   "required": [
+    "record",
+    "ref",
+    "media_type"
+   ],
+   "additionalProperties": false,
+   "description": "Inventory of content blobs. The text itself lives in objects/; this record holds metadata only",
+   "properties": {
+    "record": {
+     "const": "content"
+    },
+    "ref": {
+     "$ref": "#/$defs/hashref"
+    },
+    "media_type": {
+     "type": "string"
+    },
+    "bytes": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "stored": {
+     "enum": [
+      "full",
+      "hash",
+      "redact",
+      "purged"
+     ]
+    }
+   }
+  }
+ },
+ "oneOf": [
+  {
+   "$ref": "#/$defs/item"
+  },
+  {
+   "$ref": "#/$defs/label"
+  },
+  {
+   "$ref": "#/$defs/judgment"
+  },
+  {
+   "$ref": "#/$defs/preference"
+  },
+  {
+   "$ref": "#/$defs/run"
+  },
+  {
+   "$ref": "#/$defs/content"
+  }
+ ]
+}
