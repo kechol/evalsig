@@ -199,16 +199,27 @@ fn markdown(e: &Envelope) -> String {
     if let Json::Object(m) = &e.results
         && !m.is_empty()
     {
-        s.push_str("| Field | Value |\n|---|---|\n");
-        for (k, v) in m {
-            let cell = if v.is_object() || v.is_array() {
-                format!("`{v}`")
-            } else {
-                scalar(v)
-            };
-            let _ = writeln!(s, "| {k} | {} |", cell.replace('|', "\\|"));
+        let (tables, fields): (Vec<_>, Vec<_>) =
+            m.iter().partition(|(_, v)| table_columns(v).is_some());
+        if !fields.is_empty() {
+            s.push_str("| Field | Value |\n|---|---|\n");
+            for (k, v) in fields {
+                let _ = writeln!(s, "| {k} | {} |", md_cell(v));
+            }
+            s.push('\n');
         }
-        s.push('\n');
+        for (k, v) in tables {
+            let rows = v.as_array().expect("tables are arrays");
+            let cols = table_columns(v).expect("partitioned on columns");
+            let _ = writeln!(s, "**{k}**\n");
+            let _ = writeln!(s, "| {} |", cols.join(" | "));
+            let _ = writeln!(s, "|{}", "---|".repeat(cols.len()));
+            for row in rows {
+                let cells: Vec<String> = cols.iter().map(|c| md_cell(&row[c.as_str()])).collect();
+                let _ = writeln!(s, "| {} |", cells.join(" | "));
+            }
+            s.push('\n');
+        }
     }
     for w in &e.warnings {
         let _ = writeln!(s, "- ⚠ `{}`: {}", w.code, w.message);
@@ -218,6 +229,29 @@ fn markdown(e: &Envelope) -> String {
     }
     let _ = writeln!(s, "\n<sub>{}</sub>", e.provenance.tool);
     s
+}
+
+/// Column names when `v` is a non-empty array of objects, in first-seen order.
+fn table_columns(v: &Json) -> Option<Vec<String>> {
+    let rows = v.as_array().filter(|r| !r.is_empty())?;
+    let mut cols: Vec<String> = Vec::new();
+    for r in rows {
+        for k in r.as_object()?.keys() {
+            if !cols.contains(k) {
+                cols.push(k.clone());
+            }
+        }
+    }
+    Some(cols)
+}
+
+fn md_cell(v: &Json) -> String {
+    let cell = if v.is_object() || v.is_array() {
+        format!("`{v}`")
+    } else {
+        scalar(v)
+    };
+    cell.replace('|', "\\|")
 }
 
 fn xml_escape(s: &str) -> String {
@@ -255,6 +289,14 @@ fn junit(e: &Envelope, exit: Exit) -> String {
     s
 }
 
+fn text_cell(v: &Json) -> String {
+    if v.is_object() || v.is_array() {
+        v.to_string()
+    } else {
+        scalar(v)
+    }
+}
+
 fn text(e: &Envelope) -> String {
     let mut s = String::new();
     if let Some(v) = &e.verdict {
@@ -279,6 +321,39 @@ fn write_text_fields(s: &mut String, m: &Map<String, Json>, depth: usize) {
             Json::Object(inner) if !inner.is_empty() => {
                 let _ = writeln!(s, "{pad}{k}:");
                 write_text_fields(s, inner, depth + 1);
+            }
+            Json::Array(_) if table_columns(v).is_some() => {
+                let cols = table_columns(v).expect("checked");
+                let rows: Vec<Vec<String>> = v
+                    .as_array()
+                    .expect("checked")
+                    .iter()
+                    .map(|r| cols.iter().map(|c| text_cell(&r[c.as_str()])).collect())
+                    .collect();
+                let widths: Vec<usize> = cols
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        rows.iter()
+                            .map(|r| r[i].chars().count())
+                            .chain([c.len()])
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .collect();
+                let _ = writeln!(s, "{pad}{k}:");
+                let line = |cells: Vec<&str>| {
+                    let padded: Vec<String> = cells
+                        .iter()
+                        .zip(&widths)
+                        .map(|(c, w)| format!("{c:<w$}"))
+                        .collect();
+                    format!("{pad}  {}", padded.join("  ").trim_end())
+                };
+                let _ = writeln!(s, "{}", line(cols.iter().map(String::as_str).collect()));
+                for r in &rows {
+                    let _ = writeln!(s, "{}", line(r.iter().map(String::as_str).collect()));
+                }
             }
             Json::Array(xs) if xs.iter().all(|x| !x.is_object() && !x.is_array()) => {
                 let items: Vec<String> = xs.iter().map(scalar).collect();

@@ -1,6 +1,7 @@
 //! The `evalsig` command-line interface.
 
 mod commands;
+mod data;
 mod error;
 mod exit;
 mod output;
@@ -44,6 +45,10 @@ enum Command {
     },
     /// Read records into a snapshot and record the import in the ledger.
     Import(commands::import::Args),
+    /// List the imported items.
+    Items,
+    /// List the imported runs.
+    Runs,
     /// Print a published JSON Schema (`records`, `ledger-entry`).
     Schema {
         name: String,
@@ -69,6 +74,8 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
+        Command::Items => commands::list::items(&cli.project),
+        Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
         Command::Validate { ref records } => commands::validate::run(records),
         Command::Version => Ok(Output::success(Envelope::new(
