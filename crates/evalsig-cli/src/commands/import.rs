@@ -19,12 +19,21 @@ use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 use crate::project::{Project, actor, io_error, now};
 use crate::validate::{Issue, RecordValidator};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum AdapterArg {
     /// Canonical `records/1` JSONL.
     Records,
     /// A CSV whose columns are record field names.
     Csv,
+}
+
+impl AdapterArg {
+    fn name(self) -> String {
+        self.to_possible_value()
+            .expect("no skipped variants")
+            .get_name()
+            .to_owned()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -74,17 +83,40 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
     }
 }
 
-fn read_file(path: &Path) -> Result<(String, ContentHash), CliError> {
-    let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
-    let hash = ContentHash::blake3(&bytes);
-    let text = String::from_utf8(bytes).map_err(|_| {
-        CliError::new(
-            "invalid_input",
-            format!("{} is not UTF-8", path.display()),
-            Exit::Blocked,
-        )
-    })?;
-    Ok((text, hash))
+/// Where each candidate record came from, before validation.
+enum Candidate<'a> {
+    Line(&'a str),
+    Row(Value),
+}
+
+/// Split a file into numbered candidate records for its adapter.
+fn candidates<'a>(
+    adapter: AdapterArg,
+    text: &'a str,
+    path: &Path,
+    row: AsArg,
+) -> Result<Vec<(usize, Candidate<'a>)>, CliError> {
+    match adapter {
+        AdapterArg::Records => Ok(text
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| !l.trim().is_empty())
+            .map(|(i, l)| (i + 1, Candidate::Line(l)))
+            .collect()),
+        AdapterArg::Csv => {
+            let parsed = csv::parse(text).map_err(|e| CliError::invalid_input(path, e))?;
+            let kind = match row {
+                AsArg::Judgment => table::RowKind::Judgment,
+                AsArg::Label => table::RowKind::Label,
+            };
+            let rows =
+                table::to_records(&parsed, kind).map_err(|e| CliError::invalid_input(path, e))?;
+            Ok(rows
+                .into_iter()
+                .map(|(line, v)| (line, Candidate::Row(v)))
+                .collect())
+        }
+    }
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
@@ -94,102 +126,60 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut records = Vec::new();
     let mut issues: Vec<(String, Issue)> = Vec::new();
     let mut sources = Vec::new();
-    let mut adapters = Vec::new();
+    let mut adapters = std::collections::BTreeSet::new();
     for path in &args.files {
         let adapter = adapter_for(path, args.adapter)?;
-        let (text, hash) = read_file(path)?;
+        adapters.insert(adapter);
+        let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
         sources.push(SourceFile {
             path: path.display().to_string(),
-            hash,
+            hash: ContentHash::blake3(&bytes),
         });
-        let name = match adapter {
-            AdapterArg::Records => "records",
-            AdapterArg::Csv => "csv",
-        };
-        if !adapters.contains(&name) {
-            adapters.push(name);
-        }
-        match adapter {
-            AdapterArg::Records => {
-                for (i, line) in text.lines().enumerate() {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    let found = validator.validate_line(i + 1, line);
-                    if found.is_empty() {
-                        records.push(Record::from_json(line).expect("validated line parses"));
-                    } else {
-                        issues.extend(found.into_iter().map(|f| (path.display().to_string(), f)));
-                    }
-                }
-            }
-            AdapterArg::Csv => {
-                let parsed = csv::parse(&text).map_err(|e| {
-                    CliError::new(
-                        "invalid_input",
-                        format!("{}: {e}", path.display()),
-                        Exit::Blocked,
-                    )
-                })?;
-                let kind = match args.row {
-                    AsArg::Judgment => table::RowKind::Judgment,
-                    AsArg::Label => table::RowKind::Label,
-                };
-                let rows = table::to_records(&parsed, kind).map_err(|e| {
-                    CliError::new(
-                        "invalid_input",
-                        format!("{}: {e}", path.display()),
-                        Exit::Blocked,
-                    )
-                })?;
-                // Rows pass the same schema and record checks as canonical records.
-                for (line, value) in rows {
-                    let text = value.to_string();
-                    let found = validator.validate_line(line, &text);
-                    if found.is_empty() {
-                        records.push(Record::from_value(value).expect("validated row parses"));
-                    } else {
-                        issues.extend(found.into_iter().map(|f| (path.display().to_string(), f)));
-                    }
+        let text =
+            String::from_utf8(bytes).map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
+        for (line, candidate) in candidates(adapter, &text, path, args.row)? {
+            let checked = match candidate {
+                Candidate::Line(l) => validator.check_line(line, l),
+                Candidate::Row(v) => validator.check_value(line, v),
+            };
+            match checked {
+                Ok(r) => records.push(r),
+                Err(found) => {
+                    issues.extend(found.into_iter().map(|f| (path.display().to_string(), f)))
                 }
             }
         }
     }
     let mut warnings = Vec::new();
     apply_overrides(&mut records, args, &mut warnings)?;
-    rows::sort(&mut records);
-    records.dedup();
-    for w in records.windows(2) {
-        if rows::compare(&w[0], &w[1]).is_eq() {
-            issues.push((
-                "<snapshot>".into(),
-                Issue {
-                    line: 0,
-                    code: "record.duplicate_key".into(),
-                    path: String::new(),
-                    message: format!(
-                        "two different records share a primary key: {}",
-                        key_text(&w[1])
-                    ),
-                },
-            ));
-        }
+    for key in rows::dedup_and_conflicts(&mut records) {
+        issues.push((
+            "<snapshot>".into(),
+            Issue {
+                line: 0,
+                code: "record.duplicate_key".into(),
+                path: String::new(),
+                message: format!("two different records share a primary key: {key}"),
+            },
+        ));
     }
     if !issues.is_empty() {
         return Ok(blocked(issues));
     }
     let counts = counts(&records);
-    let converter = match &args.converter {
-        Some(p) => Some(ContentHash::blake3(
-            &std::fs::read(p).map_err(|e| io_error(p, &e))?,
-        )),
-        None => None,
-    };
+    let converter = args
+        .converter
+        .as_deref()
+        .map(|p| {
+            std::fs::read(p)
+                .map(|b| ContentHash::blake3(&b))
+                .map_err(|e| io_error(p, &e))
+        })
+        .transpose()?;
     let mut envelope = Envelope::new("evalsig.import/1", Value::Null);
     envelope.warnings = warnings;
     if args.dry_run {
-        let (_, hash) = rows::canonical_lines(&mut records.clone())
-            .map_err(|e| CliError::new("invalid_input", e.to_string(), Exit::Blocked))?;
+        let (_, hash) = rows::canonical_lines(&mut records).map_err(CliError::store)?;
         envelope.results =
             json!({ "dry_run": true, "snapshot": hash, "records": counts, "sources": sources });
         return Ok(Output::success(envelope));
@@ -197,9 +187,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let tool = crate::tool_version();
     let imported_at = now();
     let who = actor();
-    let adapter = adapters.join("+");
-    let store = project.objects();
-    let written = snapshot::write(&store, records, |snapshot| Provenance {
+    let adapter = adapters
+        .iter()
+        .map(|a| a.name())
+        .collect::<Vec<_>>()
+        .join("+");
+    let written = snapshot::write(&project.objects(), records, |snapshot| Provenance {
         schema: PROVENANCE_SCHEMA.into(),
         snapshot,
         sources: sources.clone(),
@@ -211,7 +204,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         imported_at: imported_at.clone(),
         actor: who.clone(),
     })
-    .map_err(|e| CliError::new("store", e.to_string(), Exit::Blocked))?;
+    .map_err(CliError::store)?;
     let mut summary = serde_json::Map::new();
     summary.insert("adapter".into(), json!(adapter));
     for (k, v) in &counts {
@@ -234,7 +227,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             tool,
         },
     )
-    .map_err(|e| CliError::new("ledger", e.to_string(), Exit::Blocked))?;
+    .map_err(CliError::store)?;
     envelope.results = json!({
         "snapshot": written.snapshot,
         "provenance": written.provenance,
@@ -288,26 +281,6 @@ fn apply_overrides(
         });
     }
     Ok(())
-}
-
-fn key_text(r: &Record) -> String {
-    let mut v = serde_json::to_value(r).expect("records serialize");
-    if let Value::Object(m) = &mut v {
-        m.retain(|k, _| {
-            matches!(
-                k.as_str(),
-                "record"
-                    | "item_id"
-                    | "run_id"
-                    | "rater_id"
-                    | "task"
-                    | "version"
-                    | "gen_replicate"
-                    | "grade_replicate"
-            )
-        });
-    }
-    v.to_string()
 }
 
 fn counts(records: &[Record]) -> BTreeMap<&'static str, u64> {

@@ -30,6 +30,20 @@ impl CliError {
         CliError::new("usage", message, Exit::Usage)
     }
 
+    /// Input that cannot be read as the requested format.
+    pub fn invalid_input(path: &std::path::Path, e: impl std::fmt::Display) -> Self {
+        CliError::new(
+            "invalid_input",
+            format!("{}: {e}", path.display()),
+            Exit::Blocked,
+        )
+    }
+
+    /// The object store, snapshots or ledger failed.
+    pub fn store(e: impl std::fmt::Display) -> Self {
+        CliError::new("store", e.to_string(), Exit::Blocked)
+    }
+
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
         self

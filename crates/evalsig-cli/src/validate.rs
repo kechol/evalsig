@@ -53,15 +53,10 @@ impl RecordValidator {
         RecordValidator { per_kind }
     }
 
-    pub fn validate_line(&self, line_no: usize, line: &str) -> Vec<Issue> {
-        let issue = |code: &str, path: &str, message: String| Issue {
-            line: line_no,
-            code: code.to_owned(),
-            path: path.to_owned(),
-            message,
-        };
-        let value = match Canonical::parse(line) {
-            Ok(c) => c.into_json(),
+    /// Check one line of JSONL; the record if it conforms, its issues otherwise.
+    pub fn check_line(&self, line_no: usize, line: &str) -> Result<Record, Vec<Issue>> {
+        match Canonical::parse(line) {
+            Ok(c) => self.check_value(line_no, c.into_json()),
             Err(e) => {
                 let code = match e {
                     CanonicalError::DuplicateKey(_) | CanonicalError::DuplicateKeyAfterNfc(_) => {
@@ -70,37 +65,45 @@ impl RecordValidator {
                     CanonicalError::IntegerOutOfRange(_) => "json.integer_range",
                     CanonicalError::Json(_) | CanonicalError::NonFinite => "json.invalid",
                 };
-                return vec![issue(code, "", e.to_string())];
+                Err(vec![issue(line_no, code, "", e.to_string())])
             }
+        }
+    }
+
+    /// Check a record object that is already parsed (for example a CSV row).
+    pub fn check_value(&self, line_no: usize, value: Value) -> Result<Record, Vec<Issue>> {
+        let one = |code: &str, path: &str, message: String| {
+            Err(vec![issue(line_no, code, path, message)])
         };
         let Some(obj) = value.as_object() else {
-            return vec![issue(
+            return one(
                 "record.not_object",
                 "",
                 "a record must be a JSON object".into(),
-            )];
+            );
         };
         let Some(kind) = obj.get("record").and_then(Value::as_str) else {
-            return vec![issue(
+            return one(
                 "record.missing_kind",
                 "/record",
                 "a record needs a string `record` field".into(),
-            )];
+            );
         };
         let Some(validator) = self.per_kind.get(kind) else {
-            return vec![issue(
+            return one(
                 "record.unknown_kind",
                 "/record",
                 format!(
                     "unknown record kind {kind:?}; expected one of {}",
                     KINDS.join(", ")
                 ),
-            )];
+            );
         };
         let schema_issues: Vec<Issue> = validator
             .iter_errors(&value)
             .map(|e| {
                 issue(
+                    line_no,
                     schema_code(e.kind().keyword()),
                     &e.instance_path().to_string(),
                     e.to_string(),
@@ -108,12 +111,18 @@ impl RecordValidator {
             })
             .collect();
         if !schema_issues.is_empty() {
-            return schema_issues;
+            return Err(schema_issues);
         }
-        match Record::from_value(value) {
-            Ok(_) => Vec::new(),
-            Err(e) => vec![issue(e.code(), "", e.to_string())],
-        }
+        Record::from_value(value).map_err(|e| vec![issue(line_no, e.code(), "", e.to_string())])
+    }
+}
+
+fn issue(line: usize, code: &str, path: &str, message: String) -> Issue {
+    Issue {
+        line,
+        code: code.to_owned(),
+        path: path.to_owned(),
+        message,
     }
 }
 
@@ -146,7 +155,9 @@ mod tests {
 
     fn codes(line: &str) -> Vec<String> {
         RecordValidator::new()
-            .validate_line(1, line)
+            .check_line(1, line)
+            .err()
+            .unwrap_or_default()
             .into_iter()
             .map(|i| i.code)
             .collect()
@@ -178,7 +189,7 @@ mod tests {
             .lines()
             .enumerate()
         {
-            assert_eq!(v.validate_line(i + 1, line), [], "line {}", i + 1);
+            assert!(v.check_line(i + 1, line).is_ok(), "line {}", i + 1);
         }
     }
 

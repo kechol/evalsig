@@ -150,13 +150,7 @@ fn row_to_record(
     }
     let output_type = m
         .get("output_type")
-        .and_then(Value::as_str)
-        .and_then(|t| match t {
-            "binary" => Some(OutputType::Binary),
-            "ordinal" => Some(OutputType::Ordinal),
-            "score" => Some(OutputType::Score),
-            _ => None,
-        });
+        .and_then(|t| serde_json::from_value::<OutputType>(t.clone()).ok());
     let levels = m.get("levels").and_then(Value::as_u64);
     match map_value(raw_value.unwrap_or(""), output_type, levels) {
         Ok(v) => {

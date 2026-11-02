@@ -34,7 +34,10 @@ pub fn run(records: &Path) -> Result<Output, CliError> {
         line_no += 1;
         let found = match std::str::from_utf8(&buf) {
             Ok(text) if text.trim().is_empty() => continue,
-            Ok(text) => validator.validate_line(line_no, text.trim_end_matches(['\n', '\r'])),
+            Ok(text) => validator
+                .check_line(line_no, text.trim_end_matches(['\n', '\r']))
+                .err()
+                .unwrap_or_default(),
             Err(e) => vec![Issue {
                 line: line_no,
                 code: "json.invalid".into(),

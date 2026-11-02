@@ -13,8 +13,7 @@ pub const TEMPLATE: &str = include_str!("../config_template.toml");
 pub fn run(root: &Path, force: bool) -> Result<Output, CliError> {
     let p = Project::at(root);
     let mut created = Vec::new();
-    for dir in
-        std::iter::once(p.root.clone()).chain(project::SUBDIRS.iter().map(|d| p.root.join(d)))
+    for dir in std::iter::once(p.dir.clone()).chain(project::SUBDIRS.iter().map(|d| p.dir.join(d)))
     {
         if !dir.is_dir() {
             std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;
@@ -36,7 +35,7 @@ pub fn run(root: &Path, force: bool) -> Result<Output, CliError> {
     Ok(Output::success(Envelope::new(
         "evalsig.init/1",
         json!({
-            "project": p.root.display().to_string(),
+            "project": p.dir.display().to_string(),
             "created": created,
             "config": { "path": config.display().to_string(), "state": config_state },
         }),

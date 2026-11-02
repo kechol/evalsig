@@ -2,11 +2,12 @@
 //! key. The same rules are implemented by `scripts/evalsig_canon.py`; the shared
 //! vectors in `tests/fixtures/canonicalization-vectors.json` keep the two in step.
 
+use std::borrow::Cow;
 use std::fmt::{self, Write as _};
 
-use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::de::{Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfc_quick};
 
 /// Largest integer magnitude an IEEE 754 double represents exactly.
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
@@ -25,8 +26,16 @@ pub enum CanonicalError {
     NonFinite,
 }
 
-/// A JSON value ready for canonical encoding: object keys are unique after NFC and
-/// numbers are either exact integers or finite doubles.
+impl From<serde_json::Error> for CanonicalError {
+    fn from(e: serde_json::Error) -> Self {
+        CanonicalError::Json(e.to_string())
+    }
+}
+
+/// A JSON value in canonical form: strings and keys are NFC, object entries are
+/// unique and sorted by UTF-16 code units, numbers are exact integers or finite
+/// doubles. Values are only built through [`Canonical::parse`] and
+/// [`Canonical::from_value`], which establish these invariants.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Canonical {
     Null,
@@ -38,37 +47,82 @@ pub enum Canonical {
     Object(Vec<(String, Canonical)>),
 }
 
+/// The parse tree before the canonical rules are applied: duplicate keys are kept
+/// and integers are wide, so violations come back as typed errors.
+enum Raw {
+    Null,
+    Bool(bool),
+    Int(i128),
+    Float(f64),
+    String(String),
+    Array(Vec<Raw>),
+    Object(Vec<(String, Raw)>),
+}
+
 impl Canonical {
     /// Parse JSON text, rejecting duplicate keys (also after NFC normalization),
     /// integers beyond ±(2^53 − 1), NaN and infinities.
     pub fn parse(text: &str) -> Result<Canonical, CanonicalError> {
         let mut de = serde_json::Deserializer::from_str(text);
-        let v = Canonical::deserialize(&mut de).map_err(|e| from_json_error(&e))?;
-        de.end().map_err(|e| from_json_error(&e))?;
-        v.check()?;
-        Ok(v)
+        let raw = Raw::deserialize(&mut de)?;
+        de.end()?;
+        Canonical::from_raw(raw)
     }
 
     /// Convert any serializable value (a record, a configuration, a ledger entry).
     pub fn from_serialize<T: Serialize + ?Sized>(value: &T) -> Result<Canonical, CanonicalError> {
-        let text = serde_json::to_string(value).map_err(|e| from_json_error(&e))?;
-        Canonical::parse(&text)
+        Canonical::from_value(serde_json::to_value(value)?)
     }
 
-    fn check(&self) -> Result<(), CanonicalError> {
-        match self {
-            Canonical::Float(f) if !f.is_finite() => Err(CanonicalError::NonFinite),
-            Canonical::Array(xs) => xs.iter().try_for_each(Canonical::check),
-            Canonical::Object(kv) => {
-                let mut keys: Vec<String> = kv.iter().map(|(k, _)| nfc(k)).collect();
-                keys.sort_unstable();
-                if let Some(w) = keys.windows(2).find(|w| w[0] == w[1]) {
-                    return Err(CanonicalError::DuplicateKeyAfterNfc(w[0].clone()));
+    /// Convert a parsed JSON value. Its keys are already unique; NFC may still merge
+    /// two of them.
+    pub fn from_value(v: serde_json::Value) -> Result<Canonical, CanonicalError> {
+        use serde_json::Value as J;
+        Ok(match v {
+            J::Null => Canonical::Null,
+            J::Bool(b) => Canonical::Bool(b),
+            J::Number(n) => match (n.as_i64(), n.as_u64()) {
+                (Some(i), _) => int(i128::from(i))?,
+                (None, Some(u)) => int(i128::from(u))?,
+                (None, None) => float(n.as_f64().ok_or(CanonicalError::NonFinite)?)?,
+            },
+            J::String(s) => Canonical::String(nfc(&s).into_owned()),
+            J::Array(xs) => Canonical::Array(
+                xs.into_iter()
+                    .map(Canonical::from_value)
+                    .collect::<Result<_, _>>()?,
+            ),
+            J::Object(m) => object(
+                m.into_iter()
+                    .map(|(k, v)| Ok((k, Canonical::from_value(v)?))),
+            )?,
+        })
+    }
+
+    fn from_raw(raw: Raw) -> Result<Canonical, CanonicalError> {
+        Ok(match raw {
+            Raw::Null => Canonical::Null,
+            Raw::Bool(b) => Canonical::Bool(b),
+            Raw::Int(i) => int(i)?,
+            Raw::Float(f) => float(f)?,
+            Raw::String(s) => Canonical::String(nfc(&s).into_owned()),
+            Raw::Array(xs) => Canonical::Array(
+                xs.into_iter()
+                    .map(Canonical::from_raw)
+                    .collect::<Result<_, _>>()?,
+            ),
+            Raw::Object(kv) => {
+                for (i, (k, _)) in kv.iter().enumerate() {
+                    if kv[..i].iter().any(|(e, _)| e == k) {
+                        return Err(CanonicalError::DuplicateKey(k.clone()));
+                    }
                 }
-                kv.iter().try_for_each(|(_, v)| v.check())
+                object(
+                    kv.into_iter()
+                        .map(|(k, v)| Ok((k, Canonical::from_raw(v)?))),
+                )?
             }
-            _ => Ok(()),
-        }
+        })
     }
 
     /// The value as `serde_json::Value`, for code that deserializes typed structures
@@ -103,7 +157,7 @@ impl Canonical {
                 let _ = write!(out, "{i}");
             }
             Canonical::Float(f) => write_number(*f, out),
-            Canonical::String(s) => write_string(&nfc(s), out),
+            Canonical::String(s) => write_string(s, out),
             Canonical::Array(xs) => {
                 out.push('[');
                 for (i, x) in xs.iter().enumerate() {
@@ -115,11 +169,8 @@ impl Canonical {
                 out.push(']');
             }
             Canonical::Object(kv) => {
-                let mut entries: Vec<(String, &Canonical)> =
-                    kv.iter().map(|(k, v)| (nfc(k), v)).collect();
-                entries.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
                 out.push('{');
-                for (i, (k, v)) in entries.iter().enumerate() {
+                for (i, (k, v)) in kv.iter().enumerate() {
                     if i > 0 {
                         out.push(',');
                     }
@@ -131,6 +182,35 @@ impl Canonical {
             }
         }
     }
+}
+
+fn int(i: i128) -> Result<Canonical, CanonicalError> {
+    if i.unsigned_abs() > u128::from(MAX_SAFE_INTEGER) {
+        return Err(CanonicalError::IntegerOutOfRange(i.to_string()));
+    }
+    Ok(Canonical::Int(i as i64))
+}
+
+fn float(f: f64) -> Result<Canonical, CanonicalError> {
+    if f.is_finite() {
+        Ok(Canonical::Float(f))
+    } else {
+        Err(CanonicalError::NonFinite)
+    }
+}
+
+/// NFC-normalize keys, reject keys that NFC merges, and sort by UTF-16 code units.
+fn object(
+    entries: impl Iterator<Item = Result<(String, Canonical), CanonicalError>>,
+) -> Result<Canonical, CanonicalError> {
+    let mut kv: Vec<(String, Canonical)> = entries
+        .map(|e| e.map(|(k, v)| (nfc(&k).into_owned(), v)))
+        .collect::<Result<_, _>>()?;
+    kv.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+    if let Some(w) = kv.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(CanonicalError::DuplicateKeyAfterNfc(w[0].0.clone()));
+    }
+    Ok(Canonical::Object(kv))
 }
 
 /// Canonical bytes of JSON text.
@@ -153,23 +233,12 @@ pub fn round_output(x: f64) -> f64 {
     if rounded == 0.0 { 0.0 } else { rounded }
 }
 
-fn nfc(s: &str) -> String {
-    s.nfc().collect()
-}
-
-fn from_json_error(e: &serde_json::Error) -> CanonicalError {
-    let msg = e.to_string();
-    for prefix in ["duplicate key ", "integer "] {
-        if let Some(rest) = msg.strip_prefix(prefix) {
-            let value = rest.split(" at line").next().unwrap_or(rest).to_owned();
-            return if prefix == "integer " {
-                CanonicalError::IntegerOutOfRange(value)
-            } else {
-                CanonicalError::DuplicateKey(value)
-            };
-        }
+fn nfc(s: &str) -> Cow<'_, str> {
+    if s.is_ascii() || is_nfc_quick(s.chars()) == IsNormalized::Yes {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(s.nfc().collect())
     }
-    CanonicalError::Json(msg)
 }
 
 fn write_string(s: &str, out: &mut String) {
@@ -231,73 +300,63 @@ fn write_number(x: f64, out: &mut String) {
     }
 }
 
-impl<'de> Deserialize<'de> for Canonical {
+impl<'de> Deserialize<'de> for Raw {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        d.deserialize_any(CanonicalVisitor)
+        d.deserialize_any(RawVisitor)
     }
 }
 
-struct CanonicalVisitor;
+struct RawVisitor;
 
-impl<'de> Visitor<'de> for CanonicalVisitor {
-    type Value = Canonical;
+impl<'de> Visitor<'de> for RawVisitor {
+    type Value = Raw;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("a JSON value")
     }
 
-    fn visit_unit<E>(self) -> Result<Canonical, E> {
-        Ok(Canonical::Null)
+    fn visit_unit<E>(self) -> Result<Raw, E> {
+        Ok(Raw::Null)
     }
 
-    fn visit_bool<E>(self, b: bool) -> Result<Canonical, E> {
-        Ok(Canonical::Bool(b))
+    fn visit_bool<E>(self, b: bool) -> Result<Raw, E> {
+        Ok(Raw::Bool(b))
     }
 
-    fn visit_i64<E: de::Error>(self, i: i64) -> Result<Canonical, E> {
-        if i.unsigned_abs() > MAX_SAFE_INTEGER {
-            return Err(E::custom(format_args!("integer {i}")));
-        }
-        Ok(Canonical::Int(i))
+    fn visit_i64<E>(self, i: i64) -> Result<Raw, E> {
+        Ok(Raw::Int(i128::from(i)))
     }
 
-    fn visit_u64<E: de::Error>(self, u: u64) -> Result<Canonical, E> {
-        if u > MAX_SAFE_INTEGER {
-            return Err(E::custom(format_args!("integer {u}")));
-        }
-        Ok(Canonical::Int(u as i64))
+    fn visit_u64<E>(self, u: u64) -> Result<Raw, E> {
+        Ok(Raw::Int(i128::from(u)))
     }
 
-    fn visit_f64<E>(self, f: f64) -> Result<Canonical, E> {
-        Ok(Canonical::Float(f))
+    fn visit_f64<E>(self, f: f64) -> Result<Raw, E> {
+        Ok(Raw::Float(f))
     }
 
-    fn visit_str<E>(self, s: &str) -> Result<Canonical, E> {
-        Ok(Canonical::String(s.to_owned()))
+    fn visit_str<E>(self, s: &str) -> Result<Raw, E> {
+        Ok(Raw::String(s.to_owned()))
     }
 
-    fn visit_string<E>(self, s: String) -> Result<Canonical, E> {
-        Ok(Canonical::String(s))
+    fn visit_string<E>(self, s: String) -> Result<Raw, E> {
+        Ok(Raw::String(s))
     }
 
-    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Canonical, A::Error> {
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Raw, A::Error> {
         let mut out = Vec::new();
         while let Some(v) = seq.next_element()? {
             out.push(v);
         }
-        Ok(Canonical::Array(out))
+        Ok(Raw::Array(out))
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Canonical, A::Error> {
-        let mut out: Vec<(String, Canonical)> = Vec::new();
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Raw, A::Error> {
+        let mut out = Vec::new();
         while let Some(k) = map.next_key::<String>()? {
-            if out.iter().any(|(e, _)| *e == k) {
-                return Err(de::Error::custom(format_args!("duplicate key {k:?}")));
-            }
-            let v = map.next_value()?;
-            out.push((k, v));
+            out.push((k, map.next_value()?));
         }
-        Ok(Canonical::Object(out))
+        Ok(Raw::Object(out))
     }
 }
 

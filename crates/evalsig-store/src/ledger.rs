@@ -191,7 +191,7 @@ impl std::fmt::Display for Problem {
 /// The hash of an entry: BLAKE3 of the canonical entry without `hash`, unless the
 /// entry's existing hash names sha256 (ledgers written by other tools).
 pub fn entry_hash(entry: &Entry) -> Result<String, LedgerError> {
-    let mut v = serde_json::to_value(entry).map_err(CanonicalError::from_serde)?;
+    let mut v = serde_json::to_value(entry).map_err(CanonicalError::from)?;
     let algorithm = entry
         .hash
         .parse::<ContentHash>()
@@ -271,7 +271,7 @@ fn append_locked(
         hash: String::new(),
     };
     entry.hash = entry_hash(&entry)?;
-    let mut line = serde_json::to_vec(&entry).map_err(CanonicalError::from_serde)?;
+    let mut line = serde_json::to_vec(&entry).map_err(CanonicalError::from)?;
     line.push(b'\n');
     file.write_all(&line)?;
     file.sync_data()?;
@@ -358,12 +358,6 @@ pub fn verify(text: &str, side: Option<LedgerSide>) -> Vec<Problem> {
 /// The head hash to anchor externally; `genesis` for an empty ledger.
 pub fn head(entries: &[Entry]) -> &str {
     entries.last().map_or(GENESIS, |e| e.hash.as_str())
-}
-
-impl CanonicalError {
-    fn from_serde(e: serde_json::Error) -> CanonicalError {
-        CanonicalError::Json(e.to_string())
-    }
 }
 
 #[cfg(test)]

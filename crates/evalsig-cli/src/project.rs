@@ -16,13 +16,13 @@ pub const SUBDIRS: [&str; 3] = ["objects", "cache", "reports"];
 
 #[derive(Debug, Clone)]
 pub struct Project {
-    pub root: PathBuf,
+    pub dir: PathBuf,
 }
 
 impl Project {
     pub fn at(root: &Path) -> Self {
         Project {
-            root: root.join(DIR),
+            dir: root.join(DIR),
         }
     }
 
@@ -32,7 +32,7 @@ impl Project {
         if !p.config_path().is_file() {
             return Err(CliError::new(
                 "not_initialized",
-                format!("no evalsig project at {}", p.root.display()),
+                format!("no evalsig project at {}", p.dir.display()),
                 Exit::Usage,
             )
             .with_hint("run `evalsig init` first, or pass --project <dir>"));
@@ -41,15 +41,15 @@ impl Project {
     }
 
     pub fn config_path(&self) -> PathBuf {
-        self.root.join(CONFIG)
+        self.dir.join(CONFIG)
     }
 
     pub fn ledger_path(&self) -> PathBuf {
-        self.root.join(LEDGER)
+        self.dir.join(LEDGER)
     }
 
     pub fn objects(&self) -> ObjectStore {
-        ObjectStore::new(self.root.join("objects"))
+        ObjectStore::new(self.dir.join("objects"))
     }
 
     pub fn config(&self) -> Result<Config, CliError> {

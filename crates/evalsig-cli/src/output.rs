@@ -368,3 +368,15 @@ fn write_text_fields(s: &mut String, m: &Map<String, Json>, depth: usize) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verdict_names_match_their_serialization() {
+        for c in VerdictCode::ALL {
+            assert_eq!(serde_json::to_value(c).unwrap(), c.as_str());
+        }
+    }
+}

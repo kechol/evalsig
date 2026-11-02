@@ -13,7 +13,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
 use crate::error::CliError;
@@ -101,12 +101,7 @@ fn requested_format(args: &[String]) -> Format {
             None => None,
         };
         if let Some(v) = value {
-            return match v.as_str() {
-                "json" => Format::Json,
-                "md" => Format::Md,
-                "junit" => Format::Junit,
-                _ => Format::Text,
-            };
+            return Format::from_str(&v, false).unwrap_or_default();
         }
     }
     Format::Text
