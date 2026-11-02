@@ -164,3 +164,29 @@ after the entry is `Accepted`.
   snapshots, and sha256 remains accepted for verification).
 - Consequences: changing any rule changes every hash, so it needs a new
   decision and a migration.
+
+## D-010 Archive dependencies
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: evalsig compresses its objects and reads Inspect `.eval` logs, which
+  are zip archives whose entries are Zstandard (method 93) or Deflate. C code
+  in the binary would complicate cross-compilation and the PyPI wheel.
+- Decision:
+  - Objects are zstd-compressed with `ruzstd` at `Fastest` and named by the
+    BLAKE3 hash of the uncompressed bytes, under
+    `objects/blake3/<2 hex>/<62 hex>.zst`. Writes go to a temporary file and
+    are renamed into place; an existing object is never rewritten.
+  - Inspect archives are read with `zip` with default features off and only
+    `deflate`; Zstandard entries are taken raw (`by_index_raw`) and
+    decompressed with `ruzstd`.
+  - Measured on 2026-11-03 with 200,000 synthetic judgment lines (43.2 MB,
+    each with a random 64-hex `output_ref`): `ruzstd` `Fastest` gives
+    9.03 MB (ratio 4.78) at about 240 MB/s compressing and 710 MB/s
+    decompressing; the `zstd` CLI gives 7.06 MB at level 1 and 7.04 MB at
+    level 3. The 28 % larger objects are acceptable for local storage.
+- Alternatives: the `zstd` crate (rejected for now: it builds the C libzstd;
+  the stored format stays zstd, so switching later keeps old objects
+  readable); zip's `zstd` feature (rejected: same C dependency).
+- Consequences: object sizes are about a quarter larger than zstd level 3.
+  Switch to the `zstd` crate if users report storage pressure.
