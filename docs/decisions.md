@@ -221,3 +221,38 @@ after the entry is `Accepted`.
   stable to hash, audit spec §1).
 - Consequences: the agent-side ledger is evidence, not proof; only the
   referee ledger and its results back a gate.
+
+## D-008 CLI output envelope, verdict codes and exit codes
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: CI jobs and AI agents act on evalsig's output, so its shape, its
+  conclusions and its exit codes are a public API that must not shift under
+  them.
+- Decision:
+  - Every command supports `--format json|md|junit|text` (default `text`).
+    JSON output is one envelope with the keys `schema` (such as
+    `evalsig.report/1`), `ok` (the command ran to the end; not a pass),
+    `verdict` (`code` and `text`, or null), `results`, `warnings` (`code`,
+    `message`), `next` (`command`, `why`), `provenance` (`snapshots`,
+    `config`, `seed`, `tool`, `ledger`, `ledger_seq`) and `truncated`.
+  - `verdict.code` is one of `pass`, `fail`, `improved`, `negligible`,
+    `worsened`, `indistinguishable`, `drifted`, `stable`, `human_parity`,
+    `below_human`, `insufficient_data`, `blocked`, `needs_decisions` and
+    `budget_exhausted`. Verdicts follow only formulas and configuration.
+  - Exit codes: 0 success or pass, 1 fail, 2 holdout budget exhausted,
+    3 conditions invalid or not matching the approval or the candidate failed
+    the referee's checks, 4 too few items to decide, 5 stopped by a validity
+    check, 64 usage error.
+  - Errors are `{"error": {"code", "message", "hint"}}` on standard error
+    when JSON is requested (usage errors included), and
+    `error[<code>]: <message>` plus `hint:` otherwise. Error codes are stable
+    snake_case strings.
+  - Compatibility: within a schema version, adding fields is compatible;
+    changing a field's meaning, removing a field or adding a verdict code
+    raises the version. Consumers treat unknown verdict codes as
+    uninterpreted and quote them.
+- Alternatives: per-command JSON shapes (rejected: agents would need a parser
+  per command); clap's default exit code 2 for usage errors (rejected: 2 means
+  an exhausted budget here, and 64 is the BSD `EX_USAGE` convention).
+- Consequences: any change to these sets is a versioned, documented change.

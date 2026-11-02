@@ -1,0 +1,61 @@
+{
+  "schema": "evalsig.version/1",
+  "ok": true,
+  "verdict": null,
+  "results": {
+    "exit_codes": [
+      {
+        "code": 0,
+        "meaning": "success, or the gate or check passed"
+      },
+      {
+        "code": 1,
+        "meaning": "the gate or check failed"
+      },
+      {
+        "code": 2,
+        "meaning": "the holdout budget is exhausted"
+      },
+      {
+        "code": 3,
+        "meaning": "conditions are invalid or do not match the approval, or the candidate failed the referee's checks"
+      },
+      {
+        "code": 4,
+        "meaning": "too few items to decide"
+      },
+      {
+        "code": 5,
+        "meaning": "stopped by a validity check"
+      },
+      {
+        "code": 64,
+        "meaning": "usage error"
+      }
+    ],
+    "records": "records/1",
+    "verdict_codes": [
+      "pass",
+      "fail",
+      "improved",
+      "negligible",
+      "worsened",
+      "indistinguishable",
+      "drifted",
+      "stable",
+      "human_parity",
+      "below_human",
+      "insufficient_data",
+      "blocked",
+      "needs_decisions",
+      "budget_exhausted"
+    ],
+    "version": "<VERSION>"
+  },
+  "warnings": [],
+  "next": [],
+  "provenance": {
+    "tool": "evalsig <VERSION>"
+  },
+  "truncated": null
+}
