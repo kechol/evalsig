@@ -27,6 +27,7 @@ unicode-normalization = "0.1.26"
 blake3 = "1.8"
 sha2 = "0.11"
 ruzstd = "0.9.1"
+jsonschema = { version = "0.60", default-features = false }
 
 assert_cmd = "2"
 predicates = "3"

@@ -17,6 +17,7 @@ anyhow.workspace = true
 clap.workspace = true
 evalsig-core.workspace = true
 evalsig-store.workspace = true
+jsonschema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

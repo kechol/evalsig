@@ -5,6 +5,8 @@ mod error;
 mod exit;
 mod output;
 mod project;
+mod schemas;
+mod validate;
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -40,6 +42,19 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Print a published JSON Schema (`records`, `ledger-entry`).
+    Schema {
+        name: String,
+        /// Print only the schema document, without the envelope.
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Check a `records/1` JSONL file line by line.
+    Validate {
+        /// The records file.
+        #[arg(long, value_name = "FILE")]
+        records: PathBuf,
+    },
     /// Show the tool, record-format and output-schema versions.
     Version,
 }
@@ -51,6 +66,8 @@ pub(crate) fn tool_version() -> String {
 fn run(cli: &Cli) -> Result<Output, CliError> {
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
+        Command::Schema { ref name, raw: _ } => commands::schema::run(name),
+        Command::Validate { ref records } => commands::validate::run(records),
         Command::Version => Ok(Output::success(Envelope::new(
             "evalsig.version/1",
             json!({
@@ -120,6 +137,15 @@ fn main() -> ExitCode {
             return ExitCode::from(Exit::Usage.code());
         }
     };
+    if let Command::Schema { name, raw: true } = &cli.command {
+        return match commands::schema::raw(name) {
+            Ok(text) => {
+                let _ = std::io::stdout().write_all(text.as_bytes());
+                ExitCode::SUCCESS
+            }
+            Err(err) => report_error(&err, cli.format),
+        };
+    }
     match run(&cli) {
         Ok(out) => {
             let _ = std::io::stdout().write_all(output::render(&out, cli.format).as_bytes());

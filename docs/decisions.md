@@ -78,8 +78,9 @@ after the entry is `Accepted`.
 - Decision:
   - `records/1` is JSONL with one record per line, tagged by `record`:
     `item`, `label`, `judgment`, `preference`, `run` and `content`, with the
-    keys and fields of `schema/records.schema.json`. Unknown records and
-    unknown fields are rejected.
+    keys and fields of `crates/evalsig-cli/schema/records.schema.json`
+    (printed by `evalsig schema records`). Unknown records and unknown
+    fields are rejected.
   - A judgment, label or preference carries exactly one of `value`
     (`outcome` for preferences) and `missing{reason, detail?}`. The reason is
     one of ten codes: `error`, `timeout`, `refused`, `invalid_output`,
@@ -200,9 +201,10 @@ after the entry is `Accepted`.
   rewrite files in its own environment, so evidence must live where it cannot.
 - Decision:
   - A ledger is append-only JSONL; each line follows
-    `schema/ledger-entry.schema.json`: `seq` (from 0), `ts`, `actor`, `kind`,
-    `ledger` (`agent` or `referee`), `inputs`, `outputs`, `summary`, `tool`,
-    `prev` (the previous line's `hash`, `genesis` first) and `hash`.
+    `crates/evalsig-cli/schema/ledger-entry.schema.json`: `seq` (from 0),
+    `ts`, `actor`, `kind`, `ledger` (`agent` or `referee`), `inputs`,
+    `outputs`, `summary`, `tool`, `prev` (the previous line's `hash`,
+    `genesis` first) and `hash`.
   - `hash` is the BLAKE3 reference of the canonical bytes (D-005) of the line
     without `hash`. Verification also accepts `sha256:` lines.
   - Summaries hold no floating-point numbers; metric values are rounded
@@ -256,3 +258,32 @@ after the entry is `Accepted`.
   per command); clap's default exit code 2 for usage errors (rejected: 2 means
   an exhausted budget here, and 64 is the BSD `EX_USAGE` convention).
 - Consequences: any change to these sets is a versioned, documented change.
+
+## D-012 JSON Schema validation
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Users who write `records/1` directly need a schema to target and a
+  validator whose error codes stay stable, so scripts and agents can act on
+  them.
+- Decision:
+  - The schemas live in `crates/evalsig-cli/schema/` and are embedded in the
+    binary; `evalsig schema <name>` prints them (`--raw` for the document
+    alone).
+  - `evalsig validate --records <file>` uses the `jsonschema` crate with
+    default features off (no network retrieval, no TLS) and format checking
+    on. Each line is validated against its record kind's definition, so
+    errors name the failing keyword.
+  - Issue codes: `json.invalid`, `json.duplicate_key`, `json.integer_range`,
+    `record.not_object`, `record.missing_kind`, `record.unknown_kind`,
+    `schema.<keyword>` (snake_case JSON Schema keyword, such as
+    `schema.required`), and `record.<rule>` for the rules the schema cannot
+    express (such as `record.level_out_of_range`). Invalid records give
+    verdict `blocked` and exit code 5.
+  - The licence allow list gains `MIT-0` (a dependency of `jsonschema`; more
+    permissive than MIT).
+- Alternatives: validating only through serde (rejected: errors would be
+  serde messages without stable codes, and the published schema would not be
+  what is enforced).
+- Consequences: about 70 more crates in the CLI's dependency tree; the core
+  library stays free of them.
