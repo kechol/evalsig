@@ -1,0 +1,15 @@
+# Build output
+/target/
+
+# Local reports and scratch artifacts
+/.output/
+
+# Local evalsig working state
+.evalsig/
+
+# Local planning and reference material
+/docs/backlog.md
+/spec/
+
+# Operating system files
+.DS_Store
