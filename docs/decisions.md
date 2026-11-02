@@ -131,3 +131,36 @@ after the entry is `Accepted`.
   back to a default and change results).
 - Consequences: renaming or removing a key is a breaking change of the
   configuration format.
+
+## D-005 Canonicalization and hashing
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Reports, snapshots and ledgers are verified by recomputing hashes,
+  also from other languages, so the bytes that get hashed must be defined
+  independently of any one JSON library.
+- Decision:
+  - Canonical bytes are RFC 8785 (JSON Canonicalization Scheme) with every
+    string and object key normalized to Unicode NFC first. Keys sort by UTF-16
+    code units; numbers use the ECMAScript shortest form.
+  - Input is rejected when keys repeat (also after NFC), when an integer lies
+    outside ±(2^53 − 1), or when it is not JSON (NaN, infinities, unpaired
+    surrogates). Harness scores that are NaN or infinite become missing
+    (`invalid_output`) at import.
+  - Snapshot files hold canonical records in primary-key order: by kind (run,
+    item, label, judgment, preference, content), then by the kind's key
+    fields, strings by code point. A file hash is over the lines joined with
+    LF, without a trailing newline.
+  - evalsig writes `blake3:<hex>` references and reads `blake3:` and
+    `sha256:`. Numbers written to output envelopes are rounded to 10 decimal
+    places before hashing.
+  - Implementation: evalsig's own encoder in `evalsig-store` (no JCS crate),
+    with `unicode-normalization`, `blake3` and `sha2`. The Python reference
+    in `scripts/evalsig_canon.py` and the shared vectors in
+    `tests/fixtures/canonicalization-vectors.json` must agree.
+- Alternatives: an existing JCS crate (rejected: none adds NFC or the
+  integer-range rule, and the encoder is small enough to own and test against
+  the shared vectors); sha256 only (rejected: BLAKE3 is much faster on large
+  snapshots, and sha256 remains accepted for verification).
+- Consequences: changing any rule changes every hash, so it needs a new
+  decision and a migration.

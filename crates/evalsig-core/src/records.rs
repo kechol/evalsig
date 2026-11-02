@@ -347,6 +347,16 @@ pub enum Value {
 }
 
 impl Value {
+    /// A score from a harness. NaN and infinities have no JSON representation and
+    /// become missing (`invalid_output`) instead of a number.
+    pub fn from_score(x: f64) -> Result<Value, MissingReason> {
+        if x.is_finite() {
+            Ok(Value::Float(x))
+        } else {
+            Err(MissingReason::InvalidOutput)
+        }
+    }
+
     /// The value as a number (`true` = 1, `false` = 0).
     pub fn as_f64(self) -> f64 {
         match self {

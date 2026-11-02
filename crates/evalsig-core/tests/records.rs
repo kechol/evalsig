@@ -156,3 +156,11 @@ fn defaults_come_from_accessors() {
         evalsig_core::records::ValueSemantics::Decision
     );
 }
+
+#[test]
+fn non_finite_scores_become_missing() {
+    assert_eq!(Value::from_score(0.5), Ok(Value::Float(0.5)));
+    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(Value::from_score(x), Err(MissingReason::InvalidOutput));
+    }
+}
