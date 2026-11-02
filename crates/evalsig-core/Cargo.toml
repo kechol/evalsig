@@ -1,0 +1,14 @@
+[package]
+name = "evalsig-core"
+description = "Data types, metrics and validity checks for evalsig (pure computation, no I/O)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
