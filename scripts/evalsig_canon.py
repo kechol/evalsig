@@ -11,11 +11,10 @@ import hashlib
 import json
 import math
 import unicodedata
+from decimal import Decimal
 
 
 def _number(x) -> str:
-    if isinstance(x, bool):
-        raise TypeError("bool is not a number")
     if isinstance(x, int):
         if abs(x) > 2**53 - 1:
             raise ValueError(f"integer {x} is outside the IEEE 754 exact range")
@@ -42,51 +41,14 @@ def _number(x) -> str:
 
 def _shortest_digits(x: float):
     """Return (digits, exponent) with x == int(digits) * 10**exponent, digits minimal."""
-    r = repr(x)
-    if "e" in r:
-        m, e = r.split("e")
-        e = int(e)
-    else:
-        m, e = r, 0
-    if "." in m:
-        i, f = m.split(".")
-    else:
-        i, f = m, ""
-    digits = (i + f).lstrip("0")
-    exp = e - len(f)
-    stripped = digits.rstrip("0")
-    exp += len(digits) - len(stripped)
-    return stripped, exp
+    t = Decimal(repr(x)).normalize().as_tuple()
+    return "".join(map(str, t.digits)), t.exponent
 
 
 def _string(s: str) -> str:
-    out = ['"']
-    for ch in unicodedata.normalize("NFC", s):
-        o = ord(ch)
-        if ch == '"':
-            out.append('\\"')
-        elif ch == "\\":
-            out.append("\\\\")
-        elif ch == "\b":
-            out.append("\\b")
-        elif ch == "\f":
-            out.append("\\f")
-        elif ch == "\n":
-            out.append("\\n")
-        elif ch == "\r":
-            out.append("\\r")
-        elif ch == "\t":
-            out.append("\\t")
-        elif o < 0x20:
-            out.append(f"\\u{o:04x}")
-        else:
-            out.append(ch)
-    out.append('"')
-    return "".join(out)
-
-
-def _utf16_key(s: str):
-    return s.encode("utf-16-be")
+    # json.dumps escapes exactly what RFC 8785 requires: quote, backslash, the short
+    # escapes and other controls below U+0020 as lowercase \u00xx; nothing else.
+    return json.dumps(unicodedata.normalize("NFC", s), ensure_ascii=False)
 
 
 def _encode(v) -> str:
@@ -111,7 +73,7 @@ def _encode(v) -> str:
             if nk in items:
                 raise ValueError(f"duplicate key after NFC normalization: {nk!r}")
             items[nk] = x
-        keys = sorted(items, key=_utf16_key)
+        keys = sorted(items, key=lambda k: k.encode("utf-16-be"))
         return "{" + ",".join(_string(k) + ":" + _encode(items[k]) for k in keys) + "}"
     raise TypeError(f"unsupported type {type(v).__name__}")
 
@@ -131,7 +93,10 @@ def blake3_ref(b: bytes) -> str:
 
 
 def loads(text: str):
-    """Parse JSON keeping integers as int and rejecting duplicate keys."""
+    """Parse JSON keeping integers as int; reject NaN, infinities and duplicate keys."""
+
+    def constant(name):
+        raise ValueError(f"{name} is not JSON")
 
     def pairs(ps):
         d = {}
@@ -141,4 +106,4 @@ def loads(text: str):
             d[k] = v
         return d
 
-    return json.loads(text, object_pairs_hook=pairs)
+    return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)

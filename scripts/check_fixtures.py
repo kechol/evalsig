@@ -13,8 +13,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from gen_canonicalization_vectors import OUT as VECTORS
+from reference_values import OUT as REFERENCE
+
 HERE = Path(__file__).resolve().parent
-FIXTURES = HERE.parent / "tests" / "fixtures"
 TOL = 1e-12
 
 
@@ -43,14 +45,13 @@ def main():
     errors = []
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        for script, name in (("gen_canonicalization_vectors.py", "canonicalization-vectors.json"),
-                             ("reference_values.py", "reference-values.json")):
-            subprocess.run([sys.executable, str(HERE / script), "--out", str(tmp / name)], check=True,
+        for script, out in (("gen_canonicalization_vectors.py", VECTORS), ("reference_values.py", REFERENCE)):
+            subprocess.run([sys.executable, str(HERE / script), "--out", str(tmp / out.name)], check=True,
                            stdout=subprocess.DEVNULL)
-        if (tmp / "canonicalization-vectors.json").read_bytes() != (FIXTURES / "canonicalization-vectors.json").read_bytes():
-            errors.append("canonicalization-vectors.json: bytes differ")
-        compare(json.loads((FIXTURES / "reference-values.json").read_text(encoding="utf-8")),
-                json.loads((tmp / "reference-values.json").read_text(encoding="utf-8")), "reference-values", errors)
+        if (tmp / VECTORS.name).read_bytes() != VECTORS.read_bytes():
+            errors.append(f"{VECTORS.name}: bytes differ")
+        compare(json.loads(REFERENCE.read_text(encoding="utf-8")),
+                json.loads((tmp / REFERENCE.name).read_text(encoding="utf-8")), REFERENCE.name, errors)
     for e in errors:
         print(e)
     print("fixtures ok" if not errors else f"{len(errors)} difference(s)")

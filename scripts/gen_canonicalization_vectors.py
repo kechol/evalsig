@@ -56,17 +56,15 @@ def ledger_entry():
     return e
 
 
-def vector(name, text):
-    obj = c.loads(text)
-    b = c.canonical(obj)
+def vector(name, text, obj=None):
+    b = c.canonical(c.loads(text) if obj is None else obj)
     return {"name": name, "input": text, "canonical": b.decode("utf-8"),
             "sha256": c.sha256_ref(b), "blake3": c.blake3_ref(b)}
 
 
 def rejected(text):
     try:
-        obj = c.loads(text)
-        c.canonical(obj).decode("utf-8")
+        c.canonical(c.loads(text))
     except (ValueError, TypeError, UnicodeError):
         return True
     return False
@@ -79,12 +77,11 @@ def main():
 
     vectors = [vector(n, t) for n, t in VALID]
     entry = ledger_entry()
-    body = c.canonical({k: v for k, v in entry.items() if k != "hash"})
-    vectors.append({"name": "ledger_entry_without_hash",
-                    "input": json.dumps(entry, ensure_ascii=False),
-                    "canonical": body.decode("utf-8"),
-                    "sha256": entry["hash"], "blake3": c.blake3_ref(body),
-                    "note": "the entry hash is the hash of the entry without its `hash` key"})
+    v = vector("ledger_entry_without_hash", json.dumps(entry, ensure_ascii=False),
+               obj={k: x for k, x in entry.items() if k != "hash"})
+    assert v["sha256"] == entry["hash"]
+    v["note"] = "the entry hash is the hash of the entry without its `hash` key"
+    vectors.append(v)
     invalid = []
     for n, t, why in INVALID:
         assert rejected(t), n
