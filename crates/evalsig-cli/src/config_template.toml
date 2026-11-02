@@ -1,0 +1,25 @@
+# evalsig project configuration. See examples/evalsig.toml in the evalsig repository
+# for every option. The referee (gate) never reads this file.
+
+[project]
+name = "my-evaluation"
+# Which reference label values count as positive. Binary labels default to true.
+# positive = { ordinal_at_least = 2 }
+# From which judgment value the system says positive. Without it, H and F are not
+# reported for score outputs, only ROC.
+# decision = { score_at_least = 0.5 }
+
+[store]
+content = "full"          # full / hash / redact
+
+[stats]
+level = 0.95
+bootstrap = 2000
+# seed = 12345            # Fix to make bootstrap intervals reproducible
+estimand = "single_shot"  # single_shot / majority@k / any@k / all@k
+interval = "auto"
+
+[missing]
+# System-side reasons (error, timeout, refused, invalid_output, limit) default to worst;
+# measurement-side reasons (grader_failed, not_run, invalidated, excluded, other) to drop.
+# refused = "worst"

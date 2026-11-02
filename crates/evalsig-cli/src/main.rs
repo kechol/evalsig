@@ -1,10 +1,13 @@
 //! The `evalsig` command-line interface.
 
+mod commands;
 mod error;
 mod exit;
 mod output;
+mod project;
 
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -21,12 +24,22 @@ struct Cli {
     #[arg(long, global = true, value_enum, default_value_t = Format::Text)]
     format: Format,
 
+    /// Project root holding `.evalsig/`.
+    #[arg(long, global = true, value_name = "DIR", default_value = ".")]
+    project: PathBuf,
+
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create `.evalsig/` and a commented configuration template.
+    Init {
+        /// Replace an existing configuration file with the template.
+        #[arg(long)]
+        force: bool,
+    },
     /// Show the tool, record-format and output-schema versions.
     Version,
 }
@@ -37,6 +50,7 @@ pub(crate) fn tool_version() -> String {
 
 fn run(cli: &Cli) -> Result<Output, CliError> {
     match cli.command {
+        Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Version => Ok(Output::success(Envelope::new(
             "evalsig.version/1",
             json!({

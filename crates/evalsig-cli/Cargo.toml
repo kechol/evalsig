@@ -22,6 +22,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+evalsig-core.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
