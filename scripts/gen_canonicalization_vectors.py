@@ -32,13 +32,15 @@ VALID = [
     ("record_judgment", '{"kind": "judgment", "run_id": "r1", "item_id": "item-0007", "gen_replicate": 0, "grade_replicate": 0, "value": 0.85, "value_semantics": "score"}'),
 ]
 
+# The reason must appear in the error raised by evalsig_canon, so a vector cannot pass
+# by being rejected for an unrelated cause.
 INVALID = [
-    ("nan_literal", '{"x": NaN}', "not JSON"),
-    ("infinity_literal", '{"x": Infinity}', "not JSON"),
+    ("nan_literal", '{"x": NaN}', "NaN is not JSON"),
+    ("infinity_literal", '{"x": Infinity}', "Infinity is not JSON"),
     ("duplicate_key", '{"a": 1, "a": 2}', "duplicate key"),
-    ("duplicate_key_after_nfc", '{"\\u00e9": 1, "e\\u0301": 2}', "duplicate key after NFC"),
-    ("integer_outside_exact_range", '{"x": 9007199254740993}', "integer outside the IEEE 754 exact range"),
-    ("lone_surrogate", '{"x": "\\ud800"}', "unpaired surrogate"),
+    ("duplicate_key_after_nfc", '{"\\u00e9": 1, "e\\u0301": 2}', "duplicate key after NFC normalization"),
+    ("integer_outside_exact_range", '{"x": 9007199254740993}', "outside the IEEE 754 exact range"),
+    ("lone_surrogate", '{"x": "\\ud800"}', "surrogates not allowed"),
 ]
 
 
@@ -62,12 +64,12 @@ def vector(name, text, obj=None):
             "sha256": c.sha256_ref(b), "blake3": c.blake3_ref(b)}
 
 
-def rejected(text):
+def rejection(text):
     try:
         c.canonical(c.loads(text))
-    except (ValueError, TypeError, UnicodeError):
-        return True
-    return False
+    except (ValueError, TypeError, UnicodeError) as e:
+        return str(e)
+    return None
 
 
 def main():
@@ -77,14 +79,15 @@ def main():
 
     vectors = [vector(n, t) for n, t in VALID]
     entry = ledger_entry()
-    v = vector("ledger_entry_without_hash", json.dumps(entry, ensure_ascii=False),
-               obj={k: x for k, x in entry.items() if k != "hash"})
+    body = {k: x for k, x in entry.items() if k != "hash"}
+    v = vector("ledger_entry_without_hash", json.dumps(body, ensure_ascii=False))
     assert v["sha256"] == entry["hash"]
-    v["note"] = "the entry hash is the hash of the entry without its `hash` key"
+    v["note"] = "a ledger entry's `hash` is the sha256 of the entry without its `hash` key, as here"
     vectors.append(v)
     invalid = []
     for n, t, why in INVALID:
-        assert rejected(t), n
+        err = rejection(t)
+        assert err is not None and why in err, (n, err)
         invalid.append({"name": n, "input": t, "reason": why})
     lines = [c.canonical(c.loads(t)) for t in (
         '{"item_id": "a", "kind": "item"}', '{"item_id": "b", "kind": "item", "stratum": {"lang": "ja"}}')]

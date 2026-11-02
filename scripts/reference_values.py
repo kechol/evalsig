@@ -27,7 +27,9 @@ Z95_ONE = stats.norm.ppf(0.95)
 
 
 def r(x):
-    return None if x is None else float(f"{x:.12g}")
+    # Full double precision: rounding to fewer digits lets a last-bit library difference
+    # flip a stored digit, which would exceed the regeneration tolerance.
+    return None if x is None else float(x)
 
 
 def wilson(k, n, z):
@@ -109,7 +111,7 @@ def ordinal_cases():
 
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
-    If a cell is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
+    If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
     out = []
     for a, n1, b, n0 in [(12, 50, 3, 50), (30, 40, 30, 60), (0, 40, 5, 60), (7, 20, 0, 80)]:
         aa, bb, m1, m0 = (a, b, n1, n0) if a and b else (a + 0.5, b + 0.5, n1 + 1, n0 + 1)
@@ -179,6 +181,7 @@ def agreement_cases():
     D = [1, 2, 3, 3, 2, 4, 4, 1, 2, 5, 1, None]
     units = list(zip(A, B, C, D))
     alpha = krippendorff_alpha_nominal(units)
+    assert round(alpha, 3) == 0.743, alpha
     return [
         {"input": {"confusion": [[20, 5], [10, 15]]}, "source": "closed (po = 0.7, pe = 0.5, so kappa = 0.4 by hand)",
          "expected": {"cohen_kappa": r(cohen_kappa([[20, 5], [10, 15]]))}},

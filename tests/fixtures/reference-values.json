@@ -20,18 +20,18 @@
     "expected": {
      "wilson95": [
       0.0,
-      0.277532799863
+      0.27753279986288926
      ],
      "clopper_pearson95": [
       0.0,
-      0.308497107819
+      0.3084971078187608
      ],
      "jeffreys95": [
       0.0,
-      0.217196267509
+      0.21719626750921053
      ],
-     "wilson_one_sided95_upper": 0.212941970083,
-     "clopper_pearson_one_sided95_upper": 0.258865550893
+     "wilson_one_sided95_upper": 0.21294197008340696,
+     "clopper_pearson_one_sided95_upper": 0.2588655508930522
     }
    },
    {
@@ -43,18 +43,18 @@
     "expected": {
      "wilson95": [
       0.0,
-      0.0141312470782
+      0.01413124707820208
      ],
      "clopper_pearson95": [
       0.0,
-      0.0136701783277
+      0.013670178327655037
      ],
      "jeffreys95": [
       0.0,
-      0.00932046850499
+      0.009320468504985588
      ],
-     "wilson_one_sided95_upper": 0.00999441466759,
-     "clopper_pearson_one_sided95_upper": 0.0111158626121
+     "wilson_one_sided95_upper": 0.009994414667589553,
+     "clopper_pearson_one_sided95_upper": 0.011115862612126295
     }
    },
    {
@@ -66,18 +66,18 @@
     "expected": {
      "wilson95": [
       0.0,
-      0.0126429712245
+      0.012642971224546036
      ],
      "clopper_pearson95": [
       0.0,
-      0.0122209746943
+      0.01222097469429355
      ],
      "jeffreys95": [
       0.0,
-      0.00833126511963
+      0.008331265119628204
      ],
-     "wilson_one_sided95_upper": 0.00893787217513,
-     "clopper_pearson_one_sided95_upper": 0.00993608194446
+     "wilson_one_sided95_upper": 0.008937872175128175,
+     "clopper_pearson_one_sided95_upper": 0.009936081944457708
     }
    },
    {
@@ -88,19 +88,19 @@
     "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
     "expected": {
      "wilson95": [
-      0.0523687458962,
-      0.360418864741
+      0.05236874589621662,
+      0.3604188647407569
      ],
      "clopper_pearson95": [
-      0.0320709371855,
-      0.378926826545
+      0.032070937185463715,
+      0.3789268265453139
      ],
      "jeffreys95": [
-      0.0441313419752,
-      0.348577710858
+      0.04413134197515587,
+      0.34857771085845396
      ],
-     "wilson_one_sided95_upper": 0.321828075675,
-     "clopper_pearson_one_sided95_upper": 0.343663804314
+     "wilson_one_sided95_upper": 0.3218280756753068,
+     "clopper_pearson_one_sided95_upper": 0.3436638043142818
     }
    },
    {
@@ -111,19 +111,19 @@
     "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
     "expected": {
      "wilson95": [
-      0.210124670724,
-      0.484474926232
+      0.2101246707235726,
+      0.48447492623166194
      ],
      "clopper_pearson95": [
-      0.195668048037,
-      0.495487464263
+      0.1956680480365183,
+      0.49548746426323076
      ],
      "jeffreys95": [
-      0.205540134667,
-      0.483222054067
+      0.20554013466673135,
+      0.4832220540665938
      ],
-     "wilson_one_sided95_upper": 0.459826256789,
-     "clopper_pearson_one_sided95_upper": 0.471105289465
+     "wilson_one_sided95_upper": 0.45982625678881905,
+     "clopper_pearson_one_sided95_upper": 0.4711052894653001
     }
    },
    {
@@ -134,19 +134,19 @@
     "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
     "expected": {
      "wilson95": [
-      0.403831530366,
-      0.596168469634
+      0.4038315303659956,
+      0.5961684696340044
      ],
      "clopper_pearson95": [
-      0.398321129503,
-      0.601678870497
+      0.3983211295033009,
+      0.601678870496699
      ],
      "jeffreys95": [
-      0.403173950896,
-      0.596826049104
+      0.4031739508964181,
+      0.596826049103582
      ],
-     "wilson_one_sided95_upper": 0.581152203887,
-     "clopper_pearson_one_sided95_upper": 0.586378285369
+     "wilson_one_sided95_upper": 0.5811522038874705,
+     "clopper_pearson_one_sided95_upper": 0.5863782853690882
     }
    },
    {
@@ -157,19 +157,19 @@
     "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
     "expected": {
      "wilson95": [
-      0.945513803821,
-      0.998232567936
+      0.9455138038212946,
+      0.9982325679358593
      ],
      "clopper_pearson95": [
-      0.945540614608,
-      0.999746853967
+      0.9455406146079194,
+      0.9997468539670226
      ],
      "jeffreys95": [
-      0.954221103399,
-      0.998918898291
+      0.9542211033992769,
+      0.99891889829092
      ],
-     "wilson_one_sided95_upper": 0.997765907167,
-     "clopper_pearson_one_sided95_upper": 0.999487198584
+     "wilson_one_sided95_upper": 0.9977659071665452,
+     "clopper_pearson_one_sided95_upper": 0.9994871985837377
     }
    },
    {
@@ -180,15 +180,15 @@
     "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
     "expected": {
      "wilson95": [
-      0.963006501793,
+      0.9630065017930143,
       1.0
      ],
      "clopper_pearson95": [
-      0.963783307355,
+      0.9637833073548235,
       1.0
      ],
      "jeffreys95": [
-      0.975254729985,
+      0.9752547299847301,
       1.0
      ],
      "wilson_one_sided95_upper": 1.0,
@@ -208,10 +208,10 @@
     "expected": {
      "H_raw": 0.8,
      "F_raw": 0.1,
-     "H_ll": 0.794117647059,
-     "F_ll": 0.107843137255,
-     "dprime": 2.05887242388,
-     "c": 0.208644123607
+     "H_ll": 0.7941176470588235,
+     "F_ll": 0.10784313725490197,
+     "dprime": 2.058872423879488,
+     "c": 0.20864412360736362
     }
    },
    {
@@ -225,10 +225,10 @@
     "expected": {
      "H_raw": 1.0,
      "F_raw": 0.0,
-     "H_ll": 0.990196078431,
-     "F_ll": 0.00980392156863,
-     "dprime": 4.66753714961,
-     "c": -2.22044604925e-16
+     "H_ll": 0.9901960784313726,
+     "F_ll": 0.00980392156862745,
+     "dprime": 4.667537149614278,
+     "c": -2.220446049250313e-16
     }
    },
    {
@@ -242,10 +242,10 @@
     "expected": {
      "H_raw": 0.2,
      "F_raw": 0.2,
-     "H_ll": 0.205882352941,
-     "F_ll": 0.205882352941,
+     "H_ll": 0.20588235294117646,
+     "F_ll": 0.20588235294117646,
      "dprime": 0.0,
-     "c": 0.820792088332
+     "c": 0.8207920883323805
     }
    },
    {
@@ -258,11 +258,11 @@
     "source": "closed (log-linear correction) + scipy 1.18.1 norm.ppf",
     "expected": {
      "H_raw": 0.75,
-     "F_raw": 0.133333333333,
-     "H_ll": 0.743902439024,
-     "F_ll": 0.139344262295,
-     "dprime": 1.73869366872,
-     "c": 0.213923329128
+     "F_raw": 0.13333333333333333,
+     "H_ll": 0.7439024390243902,
+     "F_ll": 0.13934426229508196,
+     "dprime": 1.7386936687240981,
+     "c": 0.21392332912762246
     }
    }
   ],
@@ -284,24 +284,24 @@
     },
     "source": "scipy 1.18.1 mannwhitneyu + numpy polyfit (z-ROC with log-linear correction)",
     "expected": {
-     "auc": 0.852083333333,
+     "auc": 0.8520833333333333,
      "roc_points_FH": [
       [
-       0.0333333333333,
+       0.03333333333333333,
        0.5
       ],
       [
-       0.166666666667,
+       0.16666666666666666,
        0.75
       ],
       [
-       0.333333333333,
+       0.3333333333333333,
        0.875
       ]
      ],
-     "zroc_slope_b": 0.839844495786,
-     "zroc_intercept_a": 1.45766247258,
-     "d_a": 1.57858014901
+     "zroc_slope_b": 0.8398444957858658,
+     "zroc_intercept_a": 1.4576624725807985,
+     "d_a": 1.5785801490147007
     }
    },
    {
@@ -336,9 +336,9 @@
        0.75
       ]
      ],
-     "zroc_slope_b": 1.0,
-     "zroc_intercept_a": 5.06963597409e-17,
-     "d_a": 5.06963597409e-17
+     "zroc_slope_b": 0.9999999999999999,
+     "zroc_intercept_a": 5.069635974093331e-17,
+     "d_a": 5.069635974093331e-17
     }
    },
    {
@@ -358,10 +358,10 @@
     },
     "source": "scipy 1.18.1 mannwhitneyu + numpy polyfit (z-ROC with log-linear correction)",
     "expected": {
-     "auc": 0.983333333333,
+     "auc": 0.9833333333333333,
      "roc_points_FH": [
       [
-       0.0333333333333,
+       0.03333333333333333,
        1.0
       ],
       [
@@ -373,9 +373,9 @@
        1.0
       ]
      ],
-     "zroc_slope_b": 8.04356149656e-16,
-     "zroc_intercept_a": 2.14119812097,
-     "d_a": 3.02811142241
+     "zroc_slope_b": 8.043561496561139e-16,
+     "zroc_intercept_a": 2.1411981209720183,
+     "d_a": 3.0281114224064156
     }
    }
   ],
@@ -391,8 +391,8 @@
     "expected": {
      "lr": 4.0,
      "katz95": [
-      1.20129750381,
-      13.3189321956
+      1.2012975038101394,
+      13.318932195607674
      ]
     }
    },
@@ -407,8 +407,8 @@
     "expected": {
      "lr": 1.5,
      "katz95": [
-      1.10028318981,
-      2.04492808836
+      1.1002831898134005,
+      2.044928088360218
      ]
     }
    },
@@ -421,10 +421,10 @@
     },
     "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells)",
     "expected": {
-     "lr": 0.135254988914,
+     "lr": 0.1352549889135255,
      "katz95": [
-      0.00768514120392,
-      2.38042627202
+      0.007685141203923863,
+      2.380426272019236
      ]
     }
    },
@@ -437,10 +437,10 @@
     },
     "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells)",
     "expected": {
-     "lr": 57.8571428571,
+     "lr": 57.85714285714286,
      "katz95": [
-      3.44108303575,
-      972.789364516
+      3.4410830357467654,
+      972.789364516277
      ]
     }
    }
@@ -465,7 +465,7 @@
     "source": "scipy 1.18.1 binomtest (exact binomial)",
     "expected": {
      "exact_two_sided_p": 0.021484375,
-     "mid_p_two_sided": 0.01171875
+     "mid_p_two_sided": 0.011718749999999991
     }
    },
    {
@@ -475,8 +475,8 @@
     },
     "source": "scipy 1.18.1 binomtest (exact binomial)",
     "expected": {
-     "exact_two_sided_p": 0.041389465332,
-     "mid_p_two_sided": 0.0266036987305
+     "exact_two_sided_p": 0.04138946533203125,
+     "mid_p_two_sided": 0.026603698730468743
     }
    },
    {
@@ -486,8 +486,8 @@
     },
     "source": "scipy 1.18.1 binomtest (exact binomial)",
     "expected": {
-     "exact_two_sided_p": 0.831811904907,
-     "mid_p_two_sided": 0.677639484406
+     "exact_two_sided_p": 0.8318119049072266,
+     "mid_p_two_sided": 0.6776394844055177
     }
    },
    {
@@ -508,8 +508,8 @@
     },
     "source": "scipy 1.18.1 binomtest (exact binomial)",
     "expected": {
-     "exact_two_sided_p": 0.056887933641,
-     "mid_p_two_sided": 0.0460440669293
+     "exact_two_sided_p": 0.05688793364098089,
+     "mid_p_two_sided": 0.0460440669293429
     }
    }
   ],
@@ -529,7 +529,7 @@
     },
     "source": "closed (po = 0.7, pe = 0.5, so kappa = 0.4 by hand)",
     "expected": {
-     "cohen_kappa": 0.4
+     "cohen_kappa": 0.3999999999999999
     }
    },
    {
@@ -595,7 +595,7 @@
     },
     "source": "literature (Krippendorff 2011 example; nominal alpha = 0.743)",
     "expected": {
-     "krippendorff_alpha_nominal": 0.743421052632,
+     "krippendorff_alpha_nominal": 0.743421052631579,
      "literature_value_3dp": 0.743
     }
    }
@@ -616,10 +616,10 @@
     },
     "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
     "expected": {
-     "cohen_kappa": 0.699519230769,
-     "gwet_ac1": 0.700748129676,
-     "positive_agreement": 0.842105263158,
-     "negative_agreement": 0.857142857143
+     "cohen_kappa": 0.6995192307692307,
+     "gwet_ac1": 0.7007481296758106,
+     "positive_agreement": 0.8421052631578947,
+     "negative_agreement": 0.8571428571428571
     }
    },
    {
@@ -637,10 +637,10 @@
     },
     "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
     "expected": {
-     "cohen_kappa": 0.444444444444,
-     "gwet_ac1": 0.878048780488,
+     "cohen_kappa": 0.4444444444444447,
+     "gwet_ac1": 0.8780487804878049,
      "positive_agreement": 0.5,
-     "negative_agreement": 0.944444444444
+     "negative_agreement": 0.9444444444444444
     }
    },
    {
@@ -658,10 +658,10 @@
     },
     "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
     "expected": {
-     "cohen_kappa": 0.186046511628,
-     "gwet_ac1": 0.92341775614,
-     "positive_agreement": 0.222222222222,
-     "negative_agreement": 0.96335078534
+     "cohen_kappa": 0.18604651162790722,
+     "gwet_ac1": 0.923417756140255,
+     "positive_agreement": 0.2222222222222222,
+     "negative_agreement": 0.9633507853403142
     }
    }
   ],
@@ -759,15 +759,15 @@
     "expected": {
      "majority@1": 0.4,
      "majority@2": 0.4,
-     "majority@3": 0.333333333333,
+     "majority@3": 0.3333333333333333,
      "majority@10": 0.0,
      "any@1": 0.4,
-     "any@2": 0.666666666667,
-     "any@3": 0.833333333333,
+     "any@2": 0.6666666666666667,
+     "any@3": 0.8333333333333334,
      "any@10": 1.0,
      "all@1": 0.4,
-     "all@2": 0.133333333333,
-     "all@3": 0.0333333333333,
+     "all@2": 0.13333333333333333,
+     "all@3": 0.03333333333333333,
      "all@10": 0.0
     }
    },
@@ -780,15 +780,15 @@
     "expected": {
      "majority@1": 0.7,
      "majority@2": 0.7,
-     "majority@3": 0.816666666667,
+     "majority@3": 0.8166666666666667,
      "majority@10": 1.0,
      "any@1": 0.7,
-     "any@2": 0.933333333333,
-     "any@3": 0.991666666667,
+     "any@2": 0.9333333333333333,
+     "any@3": 0.9916666666666667,
      "any@10": 1.0,
      "all@1": 0.7,
-     "all@2": 0.466666666667,
-     "all@3": 0.291666666667,
+     "all@2": 0.4666666666666667,
+     "all@3": 0.2916666666666667,
      "all@10": 0.0
     }
    }
@@ -806,7 +806,7 @@
     },
     "source": "closed (Kish effective sample size (sum w)^2 / sum w^2)",
     "expected": {
-     "kish_n_eff": 3.84615384615
+     "kish_n_eff": 3.8461538461538463
     }
    },
    {
@@ -818,7 +818,7 @@
     "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
     "expected": {
      "posterior_threshold": 0.25,
-     "lr_threshold": 3.0
+     "lr_threshold": 2.9999999999999996
     }
    },
    {
@@ -829,7 +829,7 @@
     },
     "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
     "expected": {
-     "posterior_threshold": 0.0909090909091,
+     "posterior_threshold": 0.09090909090909091,
      "lr_threshold": 0.9
     }
    },
@@ -842,7 +842,7 @@
     "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
     "expected": {
      "posterior_threshold": 0.25,
-     "lr_threshold": 0.333333333333
+     "lr_threshold": 0.3333333333333333
     }
    },
    {

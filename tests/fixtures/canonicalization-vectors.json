@@ -88,23 +88,23 @@
   },
   {
    "name": "ledger_entry_without_hash",
-   "input": "{\"seq\": 0, \"ts\": \"2026-10-29T09:05:00Z\", \"actor\": \"user:alice\", \"kind\": \"split\", \"ledger\": \"referee\", \"inputs\": [\"sha256:1520e93b89fc1bd479f8701f4699158bf295fb7832849b8cd9ca5ce6095b6cee\"], \"outputs\": [\"sha256:ef260e9aa3c673af240d17a2660480361a8e081d1ffeca2a5ed0e3219fc18567\", \"sha256:97dfc65f74283f60c606bda3f75a6a6bec3fc1e513b8b40797b5ecb86c824ee2\", \"sha256:d179b28cc8927b726d766bc0a22ed40ffc879d40f62a100e7d97dabb24253669\"], \"summary\": {\"method\": \"time\", \"boundary\": \"2026-09-01\", \"seed\": 20261029, \"unit\": \"cluster\"}, \"tool\": \"evalsig-proto 0\", \"prev\": \"genesis\", \"hash\": \"sha256:079384ee5e795505d99ef70c835c672e82c93173f561e6a24950382d057716cd\"}",
+   "input": "{\"seq\": 0, \"ts\": \"2026-10-29T09:05:00Z\", \"actor\": \"user:alice\", \"kind\": \"split\", \"ledger\": \"referee\", \"inputs\": [\"sha256:1520e93b89fc1bd479f8701f4699158bf295fb7832849b8cd9ca5ce6095b6cee\"], \"outputs\": [\"sha256:ef260e9aa3c673af240d17a2660480361a8e081d1ffeca2a5ed0e3219fc18567\", \"sha256:97dfc65f74283f60c606bda3f75a6a6bec3fc1e513b8b40797b5ecb86c824ee2\", \"sha256:d179b28cc8927b726d766bc0a22ed40ffc879d40f62a100e7d97dabb24253669\"], \"summary\": {\"method\": \"time\", \"boundary\": \"2026-09-01\", \"seed\": 20261029, \"unit\": \"cluster\"}, \"tool\": \"evalsig-proto 0\", \"prev\": \"genesis\"}",
    "canonical": "{\"actor\":\"user:alice\",\"inputs\":[\"sha256:1520e93b89fc1bd479f8701f4699158bf295fb7832849b8cd9ca5ce6095b6cee\"],\"kind\":\"split\",\"ledger\":\"referee\",\"outputs\":[\"sha256:ef260e9aa3c673af240d17a2660480361a8e081d1ffeca2a5ed0e3219fc18567\",\"sha256:97dfc65f74283f60c606bda3f75a6a6bec3fc1e513b8b40797b5ecb86c824ee2\",\"sha256:d179b28cc8927b726d766bc0a22ed40ffc879d40f62a100e7d97dabb24253669\"],\"prev\":\"genesis\",\"seq\":0,\"summary\":{\"boundary\":\"2026-09-01\",\"method\":\"time\",\"seed\":20261029,\"unit\":\"cluster\"},\"tool\":\"evalsig-proto 0\",\"ts\":\"2026-10-29T09:05:00Z\"}",
    "sha256": "sha256:079384ee5e795505d99ef70c835c672e82c93173f561e6a24950382d057716cd",
    "blake3": "blake3:b1c16ba986a961012b004bee5edce42800cd8c2649bb75bb95fb042e818e61ec",
-   "note": "the entry hash is the hash of the entry without its `hash` key"
+   "note": "a ledger entry's `hash` is the sha256 of the entry without its `hash` key, as here"
   }
  ],
  "invalid": [
   {
    "name": "nan_literal",
    "input": "{\"x\": NaN}",
-   "reason": "not JSON"
+   "reason": "NaN is not JSON"
   },
   {
    "name": "infinity_literal",
    "input": "{\"x\": Infinity}",
-   "reason": "not JSON"
+   "reason": "Infinity is not JSON"
   },
   {
    "name": "duplicate_key",
@@ -114,17 +114,17 @@
   {
    "name": "duplicate_key_after_nfc",
    "input": "{\"\\u00e9\": 1, \"e\\u0301\": 2}",
-   "reason": "duplicate key after NFC"
+   "reason": "duplicate key after NFC normalization"
   },
   {
    "name": "integer_outside_exact_range",
    "input": "{\"x\": 9007199254740993}",
-   "reason": "integer outside the IEEE 754 exact range"
+   "reason": "outside the IEEE 754 exact range"
   },
   {
    "name": "lone_surrogate",
    "input": "{\"x\": \"\\ud800\"}",
-   "reason": "unpaired surrogate"
+   "reason": "surrogates not allowed"
   }
  ],
  "files": [
