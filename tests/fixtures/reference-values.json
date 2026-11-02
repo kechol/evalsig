@@ -1,0 +1,872 @@
+{
+ "schema": "reference-values/1",
+ "generated_with": {
+  "python": "3.13.13",
+  "scipy": "1.18.1",
+  "numpy": "2.5.4"
+ },
+ "tolerance": {
+  "abs": 1e-09,
+  "note": "Rust tests require agreement within this absolute tolerance, allowing for differences in normal quantile implementations"
+ },
+ "cases": {
+  "proportion_interval": [
+   {
+    "input": {
+     "k": 0,
+     "n": 10
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.0,
+      0.277532799863
+     ],
+     "clopper_pearson95": [
+      0.0,
+      0.308497107819
+     ],
+     "jeffreys95": [
+      0.0,
+      0.217196267509
+     ],
+     "wilson_one_sided95_upper": 0.212941970083,
+     "clopper_pearson_one_sided95_upper": 0.258865550893
+    }
+   },
+   {
+    "input": {
+     "k": 0,
+     "n": 268
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.0,
+      0.0141312470782
+     ],
+     "clopper_pearson95": [
+      0.0,
+      0.0136701783277
+     ],
+     "jeffreys95": [
+      0.0,
+      0.00932046850499
+     ],
+     "wilson_one_sided95_upper": 0.00999441466759,
+     "clopper_pearson_one_sided95_upper": 0.0111158626121
+    }
+   },
+   {
+    "input": {
+     "k": 0,
+     "n": 300
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.0,
+      0.0126429712245
+     ],
+     "clopper_pearson95": [
+      0.0,
+      0.0122209746943
+     ],
+     "jeffreys95": [
+      0.0,
+      0.00833126511963
+     ],
+     "wilson_one_sided95_upper": 0.00893787217513,
+     "clopper_pearson_one_sided95_upper": 0.00993608194446
+    }
+   },
+   {
+    "input": {
+     "k": 3,
+     "n": 20
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.0523687458962,
+      0.360418864741
+     ],
+     "clopper_pearson95": [
+      0.0320709371855,
+      0.378926826545
+     ],
+     "jeffreys95": [
+      0.0441313419752,
+      0.348577710858
+     ],
+     "wilson_one_sided95_upper": 0.321828075675,
+     "clopper_pearson_one_sided95_upper": 0.343663804314
+    }
+   },
+   {
+    "input": {
+     "k": 14,
+     "n": 42
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.210124670724,
+      0.484474926232
+     ],
+     "clopper_pearson95": [
+      0.195668048037,
+      0.495487464263
+     ],
+     "jeffreys95": [
+      0.205540134667,
+      0.483222054067
+     ],
+     "wilson_one_sided95_upper": 0.459826256789,
+     "clopper_pearson_one_sided95_upper": 0.471105289465
+    }
+   },
+   {
+    "input": {
+     "k": 50,
+     "n": 100
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.403831530366,
+      0.596168469634
+     ],
+     "clopper_pearson95": [
+      0.398321129503,
+      0.601678870497
+     ],
+     "jeffreys95": [
+      0.403173950896,
+      0.596826049104
+     ],
+     "wilson_one_sided95_upper": 0.581152203887,
+     "clopper_pearson_one_sided95_upper": 0.586378285369
+    }
+   },
+   {
+    "input": {
+     "k": 99,
+     "n": 100
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.945513803821,
+      0.998232567936
+     ],
+     "clopper_pearson95": [
+      0.945540614608,
+      0.999746853967
+     ],
+     "jeffreys95": [
+      0.954221103399,
+      0.998918898291
+     ],
+     "wilson_one_sided95_upper": 0.997765907167,
+     "clopper_pearson_one_sided95_upper": 0.999487198584
+    }
+   },
+   {
+    "input": {
+     "k": 100,
+     "n": 100
+    },
+    "source": "scipy 1.18.1 (binomtest.proportion_ci, beta.ppf)",
+    "expected": {
+     "wilson95": [
+      0.963006501793,
+      1.0
+     ],
+     "clopper_pearson95": [
+      0.963783307355,
+      1.0
+     ],
+     "jeffreys95": [
+      0.975254729985,
+      1.0
+     ],
+     "wilson_one_sided95_upper": 1.0,
+     "clopper_pearson_one_sided95_upper": 1.0
+    }
+   }
+  ],
+  "sdt_binary": [
+   {
+    "input": {
+     "k_hit": 40,
+     "n_pos": 50,
+     "k_fa": 5,
+     "n_neg": 50
+    },
+    "source": "closed (log-linear correction) + scipy 1.18.1 norm.ppf",
+    "expected": {
+     "H_raw": 0.8,
+     "F_raw": 0.1,
+     "H_ll": 0.794117647059,
+     "F_ll": 0.107843137255,
+     "dprime": 2.05887242388,
+     "c": 0.208644123607
+    }
+   },
+   {
+    "input": {
+     "k_hit": 50,
+     "n_pos": 50,
+     "k_fa": 0,
+     "n_neg": 50
+    },
+    "source": "closed (log-linear correction) + scipy 1.18.1 norm.ppf",
+    "expected": {
+     "H_raw": 1.0,
+     "F_raw": 0.0,
+     "H_ll": 0.990196078431,
+     "F_ll": 0.00980392156863,
+     "dprime": 4.66753714961,
+     "c": -2.22044604925e-16
+    }
+   },
+   {
+    "input": {
+     "k_hit": 10,
+     "n_pos": 50,
+     "k_fa": 10,
+     "n_neg": 50
+    },
+    "source": "closed (log-linear correction) + scipy 1.18.1 norm.ppf",
+    "expected": {
+     "H_raw": 0.2,
+     "F_raw": 0.2,
+     "H_ll": 0.205882352941,
+     "F_ll": 0.205882352941,
+     "dprime": 0.0,
+     "c": 0.820792088332
+    }
+   },
+   {
+    "input": {
+     "k_hit": 30,
+     "n_pos": 40,
+     "k_fa": 8,
+     "n_neg": 60
+    },
+    "source": "closed (log-linear correction) + scipy 1.18.1 norm.ppf",
+    "expected": {
+     "H_raw": 0.75,
+     "F_raw": 0.133333333333,
+     "H_ll": 0.743902439024,
+     "F_ll": 0.139344262295,
+     "dprime": 1.73869366872,
+     "c": 0.213923329128
+    }
+   }
+  ],
+  "ordinal_roc": [
+   {
+    "input": {
+     "hist_pos": [
+      20,
+      10,
+      5,
+      5
+     ],
+     "hist_neg": [
+      2,
+      8,
+      10,
+      40
+     ]
+    },
+    "source": "scipy 1.18.1 mannwhitneyu + numpy polyfit (z-ROC with log-linear correction)",
+    "expected": {
+     "auc": 0.852083333333,
+     "roc_points_FH": [
+      [
+       0.0333333333333,
+       0.5
+      ],
+      [
+       0.166666666667,
+       0.75
+      ],
+      [
+       0.333333333333,
+       0.875
+      ]
+     ],
+     "zroc_slope_b": 0.839844495786,
+     "zroc_intercept_a": 1.45766247258,
+     "d_a": 1.57858014901
+    }
+   },
+   {
+    "input": {
+     "hist_pos": [
+      5,
+      5,
+      5,
+      5
+     ],
+     "hist_neg": [
+      5,
+      5,
+      5,
+      5
+     ]
+    },
+    "source": "scipy 1.18.1 mannwhitneyu + numpy polyfit (z-ROC with log-linear correction)",
+    "expected": {
+     "auc": 0.5,
+     "roc_points_FH": [
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ]
+     ],
+     "zroc_slope_b": 1.0,
+     "zroc_intercept_a": 5.06963597409e-17,
+     "d_a": 5.06963597409e-17
+    }
+   },
+   {
+    "input": {
+     "hist_pos": [
+      30,
+      0,
+      0,
+      0
+     ],
+     "hist_neg": [
+      1,
+      2,
+      3,
+      24
+     ]
+    },
+    "source": "scipy 1.18.1 mannwhitneyu + numpy polyfit (z-ROC with log-linear correction)",
+    "expected": {
+     "auc": 0.983333333333,
+     "roc_points_FH": [
+      [
+       0.0333333333333,
+       1.0
+      ],
+      [
+       0.1,
+       1.0
+      ],
+      [
+       0.2,
+       1.0
+      ]
+     ],
+     "zroc_slope_b": 8.04356149656e-16,
+     "zroc_intercept_a": 2.14119812097,
+     "d_a": 3.02811142241
+    }
+   }
+  ],
+  "feature_likelihood_ratio": [
+   {
+    "input": {
+     "hit_pos": 12,
+     "n_pos": 50,
+     "hit_neg": 3,
+     "n_neg": 50
+    },
+    "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells); checked against scipy 1.18.1 contingency.relative_risk",
+    "expected": {
+     "lr": 4.0,
+     "katz95": [
+      1.20129750381,
+      13.3189321956
+     ]
+    }
+   },
+   {
+    "input": {
+     "hit_pos": 30,
+     "n_pos": 40,
+     "hit_neg": 30,
+     "n_neg": 60
+    },
+    "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells); checked against scipy 1.18.1 contingency.relative_risk",
+    "expected": {
+     "lr": 1.5,
+     "katz95": [
+      1.10028318981,
+      2.04492808836
+     ]
+    }
+   },
+   {
+    "input": {
+     "hit_pos": 0,
+     "n_pos": 40,
+     "hit_neg": 5,
+     "n_neg": 60
+    },
+    "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells)",
+    "expected": {
+     "lr": 0.135254988914,
+     "katz95": [
+      0.00768514120392,
+      2.38042627202
+     ]
+    }
+   },
+   {
+    "input": {
+     "hit_pos": 7,
+     "n_pos": 20,
+     "hit_neg": 0,
+     "n_neg": 80
+    },
+    "source": "closed (Katz 1978 log method; zero cells get +0.5 on all four cells)",
+    "expected": {
+     "lr": 57.8571428571,
+     "katz95": [
+      3.44108303575,
+      972.789364516
+     ]
+    }
+   }
+  ],
+  "mcnemar": [
+   {
+    "input": {
+     "b": 0,
+     "c": 0
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 1.0,
+     "mid_p_two_sided": 1.0
+    }
+   },
+   {
+    "input": {
+     "b": 1,
+     "c": 9
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 0.021484375,
+     "mid_p_two_sided": 0.01171875
+    }
+   },
+   {
+    "input": {
+     "b": 5,
+     "c": 15
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 0.041389465332,
+     "mid_p_two_sided": 0.0266036987305
+    }
+   },
+   {
+    "input": {
+     "b": 10,
+     "c": 12
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 0.831811904907,
+     "mid_p_two_sided": 0.677639484406
+    }
+   },
+   {
+    "input": {
+     "b": 3,
+     "c": 0
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 0.25,
+     "mid_p_two_sided": 0.125
+    }
+   },
+   {
+    "input": {
+     "b": 40,
+     "c": 60
+    },
+    "source": "scipy 1.18.1 binomtest (exact binomial)",
+    "expected": {
+     "exact_two_sided_p": 0.056887933641,
+     "mid_p_two_sided": 0.0460440669293
+    }
+   }
+  ],
+  "agreement": [
+   {
+    "input": {
+     "confusion": [
+      [
+       20,
+       5
+      ],
+      [
+       10,
+       15
+      ]
+     ]
+    },
+    "source": "closed (po = 0.7, pe = 0.5, so kappa = 0.4 by hand)",
+    "expected": {
+     "cohen_kappa": 0.4
+    }
+   },
+   {
+    "input": {
+     "coders": {
+      "A": [
+       1,
+       2,
+       3,
+       3,
+       2,
+       1,
+       4,
+       1,
+       2,
+       null,
+       null,
+       null
+      ],
+      "B": [
+       1,
+       2,
+       3,
+       3,
+       2,
+       2,
+       4,
+       1,
+       2,
+       5,
+       null,
+       3
+      ],
+      "C": [
+       null,
+       3,
+       3,
+       3,
+       2,
+       3,
+       4,
+       2,
+       2,
+       5,
+       1,
+       null
+      ],
+      "D": [
+       1,
+       2,
+       3,
+       3,
+       2,
+       4,
+       4,
+       1,
+       2,
+       5,
+       1,
+       null
+      ]
+     }
+    },
+    "source": "literature (Krippendorff 2011 example; nominal alpha = 0.743)",
+    "expected": {
+     "krippendorff_alpha_nominal": 0.743421052632,
+     "literature_value_3dp": 0.743
+    }
+   }
+  ],
+  "agreement_prevalence_robust": [
+   {
+    "input": {
+     "table": [
+      [
+       40,
+       9
+      ],
+      [
+       6,
+       45
+      ]
+     ]
+    },
+    "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
+    "expected": {
+     "cohen_kappa": 0.699519230769,
+     "gwet_ac1": 0.700748129676,
+     "positive_agreement": 0.842105263158,
+     "negative_agreement": 0.857142857143
+    }
+   },
+   {
+    "input": {
+     "table": [
+      [
+       5,
+       5
+      ],
+      [
+       5,
+       85
+      ]
+     ]
+    },
+    "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
+    "expected": {
+     "cohen_kappa": 0.444444444444,
+     "gwet_ac1": 0.878048780488,
+     "positive_agreement": 0.5,
+     "negative_agreement": 0.944444444444
+    }
+   },
+   {
+    "input": {
+     "table": [
+      [
+       1,
+       4
+      ],
+      [
+       3,
+       92
+      ]
+     ]
+    },
+    "source": "closed (Gwet 2008 AC1, positive and negative agreement)",
+    "expected": {
+     "cohen_kappa": 0.186046511628,
+     "gwet_ac1": 0.92341775614,
+     "positive_agreement": 0.222222222222,
+     "negative_agreement": 0.96335078534
+    }
+   }
+  ],
+  "estimand_at_k": [
+   {
+    "input": {
+     "positives": 0,
+     "replicates": 5
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 0.0,
+     "majority@2": 0.0,
+     "majority@3": 0.0,
+     "majority@5": 0.0,
+     "any@1": 0.0,
+     "any@2": 0.0,
+     "any@3": 0.0,
+     "any@5": 0.0,
+     "all@1": 0.0,
+     "all@2": 0.0,
+     "all@3": 0.0,
+     "all@5": 0.0
+    }
+   },
+   {
+    "input": {
+     "positives": 2,
+     "replicates": 5
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 0.4,
+     "majority@2": 0.4,
+     "majority@3": 0.3,
+     "majority@5": 0.0,
+     "any@1": 0.4,
+     "any@2": 0.7,
+     "any@3": 0.9,
+     "any@5": 1.0,
+     "all@1": 0.4,
+     "all@2": 0.1,
+     "all@3": 0.0,
+     "all@5": 0.0
+    }
+   },
+   {
+    "input": {
+     "positives": 3,
+     "replicates": 5
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 0.6,
+     "majority@2": 0.6,
+     "majority@3": 0.7,
+     "majority@5": 1.0,
+     "any@1": 0.6,
+     "any@2": 0.9,
+     "any@3": 1.0,
+     "any@5": 1.0,
+     "all@1": 0.6,
+     "all@2": 0.3,
+     "all@3": 0.1,
+     "all@5": 0.0
+    }
+   },
+   {
+    "input": {
+     "positives": 5,
+     "replicates": 5
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 1.0,
+     "majority@2": 1.0,
+     "majority@3": 1.0,
+     "majority@5": 1.0,
+     "any@1": 1.0,
+     "any@2": 1.0,
+     "any@3": 1.0,
+     "any@5": 1.0,
+     "all@1": 1.0,
+     "all@2": 1.0,
+     "all@3": 1.0,
+     "all@5": 1.0
+    }
+   },
+   {
+    "input": {
+     "positives": 4,
+     "replicates": 10
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 0.4,
+     "majority@2": 0.4,
+     "majority@3": 0.333333333333,
+     "majority@10": 0.0,
+     "any@1": 0.4,
+     "any@2": 0.666666666667,
+     "any@3": 0.833333333333,
+     "any@10": 1.0,
+     "all@1": 0.4,
+     "all@2": 0.133333333333,
+     "all@3": 0.0333333333333,
+     "all@10": 0.0
+    }
+   },
+   {
+    "input": {
+     "positives": 7,
+     "replicates": 10
+    },
+    "source": "closed (hypergeometric sum; checked by enumerating every k-subset)",
+    "expected": {
+     "majority@1": 0.7,
+     "majority@2": 0.7,
+     "majority@3": 0.816666666667,
+     "majority@10": 1.0,
+     "any@1": 0.7,
+     "any@2": 0.933333333333,
+     "any@3": 0.991666666667,
+     "any@10": 1.0,
+     "all@1": 0.7,
+     "all@2": 0.466666666667,
+     "all@3": 0.291666666667,
+     "all@10": 0.0
+    }
+   }
+  ],
+  "misc": [
+   {
+    "input": {
+     "weights": [
+      1,
+      1,
+      2,
+      2,
+      4
+     ]
+    },
+    "source": "closed (Kish effective sample size (sum w)^2 / sum w^2)",
+    "expected": {
+     "kish_n_eff": 3.84615384615
+    }
+   },
+   {
+    "input": {
+     "cost_fp": 1,
+     "cost_fn": 3,
+     "prevalence": 0.1
+    },
+    "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
+    "expected": {
+     "posterior_threshold": 0.25,
+     "lr_threshold": 3.0
+    }
+   },
+   {
+    "input": {
+     "cost_fp": 1,
+     "cost_fn": 10,
+     "prevalence": 0.1
+    },
+    "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
+    "expected": {
+     "posterior_threshold": 0.0909090909091,
+     "lr_threshold": 0.9
+    }
+   },
+   {
+    "input": {
+     "cost_fp": 1,
+     "cost_fn": 3,
+     "prevalence": 0.5
+    },
+    "source": "closed (cost-minimising decision: posterior and likelihood ratio thresholds)",
+    "expected": {
+     "posterior_threshold": 0.25,
+     "lr_threshold": 0.333333333333
+    }
+   },
+   {
+    "input": {
+     "upper_bound": 0.05,
+     "confidence_one_sided": 0.95
+    },
+    "source": "closed (items needed for a one-sided upper bound below u with zero events)",
+    "expected": {
+     "n_exact": 59,
+     "n_wilson": 52
+    }
+   },
+   {
+    "input": {
+     "upper_bound": 0.01,
+     "confidence_one_sided": 0.95
+    },
+    "source": "closed (items needed for a one-sided upper bound below u with zero events)",
+    "expected": {
+     "n_exact": 299,
+     "n_wilson": 268
+    }
+   }
+  ]
+ }
+}

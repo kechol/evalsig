@@ -1,0 +1,141 @@
+{
+ "schema": "canonicalization-vectors/1",
+ "rules": "RFC 8785 plus NFC normalization of all strings and keys. Integers must lie within +/-(2^53-1). A ledger entry hash covers the entry without its `hash` key. A file hash covers its canonical lines joined with LF and no trailing newline.",
+ "vectors": [
+  {
+   "name": "key_order_and_whitespace",
+   "input": "{ \"b\": 1, \"a\": \"é\", \"n\": [1, 2] }",
+   "canonical": "{\"a\":\"é\",\"b\":1,\"n\":[1,2]}",
+   "sha256": "sha256:a63897096ff9792bb735a7c0f84893b68af447eba6758ec4aa3cc82d7e7fa80d",
+   "blake3": "blake3:6ac1edcc1949a9d01a81a108229b3574db4a3c6adeee0ff992fa6b6706a9ba9e"
+  },
+  {
+   "name": "nfc_of_string_value",
+   "input": "{\"s\": \"e\\u0301\"}",
+   "canonical": "{\"s\":\"é\"}",
+   "sha256": "sha256:86028b41ba792eaf82aa26a45b218f6734f7f1096a86f1746c8296e088a0ccb4",
+   "blake3": "blake3:42c321cca8f4840f747d93115ed41da54f4fb4bf5326c83b7300eb6457d9737d"
+  },
+  {
+   "name": "nfc_of_object_key",
+   "input": "{\"e\\u0301\": true}",
+   "canonical": "{\"é\":true}",
+   "sha256": "sha256:b5d9df6432c4d6d59fb4f9f0b52fbabfa111a0a296f568a43f0eb6d957ec021e",
+   "blake3": "blake3:c5ca7c4f376a94d9bde72cd91a40b66ca23e2c016e2362ad998817b5047a6087"
+  },
+  {
+   "name": "utf16_key_order",
+   "input": "{\"\\ufb01\": 2, \"\\ud83d\\ude00\": 1, \"z\": 0, \"\\u00e9\": 3}",
+   "canonical": "{\"z\":0,\"é\":3,\"😀\":1,\"ﬁ\":2}",
+   "sha256": "sha256:3eb8168d7e95c827840555c78484545eebf7e550a69f0f873f7e9791b0f603a8",
+   "blake3": "blake3:b9fd3416cf4110f0e1faceda815b470fd599f8f1284c7d340b996d6bb1ef5699"
+  },
+  {
+   "name": "string_escapes",
+   "input": "{\"q\": \"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u0001\\u001f\\u007f\"}",
+   "canonical": "{\"q\":\"\\\"\\\\/\\b\\f\\n\\r\\t\\u0001\\u001f\"}",
+   "sha256": "sha256:26e82d40a99d2dd641375bd45f4802528ca040f74267819c3c1c0dcd0709866f",
+   "blake3": "blake3:a016b45e2da9abc6758e462e6003fa0e8386733ac061bd1e8377347b678d75af"
+  },
+  {
+   "name": "non_ascii_is_not_escaped",
+   "input": "{\"ja\": \"\\u8a55\\u4fa1\", \"emoji\": \"\\ud83d\\udcca\"}",
+   "canonical": "{\"emoji\":\"📊\",\"ja\":\"評価\"}",
+   "sha256": "sha256:ce563be8fe639162cf31bb2c60673ae918ea097569e26bd6e7c4d6c39fdcd909",
+   "blake3": "blake3:bd75aa5dd107e3c87b8f58bae2d38a76c31eb96345a910a6458bff31e146ae06"
+  },
+  {
+   "name": "literals",
+   "input": "{\"t\": true, \"f\": false, \"z\": null, \"e\": {}, \"a\": []}",
+   "canonical": "{\"a\":[],\"e\":{},\"f\":false,\"t\":true,\"z\":null}",
+   "sha256": "sha256:c29fb47f23c05d750fd71225489bd17278b4c437d061d3d4ba6eece5a4241ba8",
+   "blake3": "blake3:5767ffacc4ea101f244378034b85df887e96edc48999031cf35e5e0180cac4c4"
+  },
+  {
+   "name": "integers",
+   "input": "{\"zero\": 0, \"neg\": -42, \"max_safe\": 9007199254740991, \"min_safe\": -9007199254740991}",
+   "canonical": "{\"max_safe\":9007199254740991,\"min_safe\":-9007199254740991,\"neg\":-42,\"zero\":0}",
+   "sha256": "sha256:d53a3aea4db9c0052a6f752e9c9cf0f3eb834596be00cecf2ef2f9f516123b79",
+   "blake3": "blake3:16ed7e9c3556e19d7046833dbd82955dd9b57aabde237adb0ab71cec202652c3"
+  },
+  {
+   "name": "float_shortest_form",
+   "input": "[1.0, 0.1, 0.30000000000000004, 123.456, -0.0, 1e21, 1e20, 1e-7, 1.5e-6, 0.000001, 5e-324, 1.7976931348623157e308]",
+   "canonical": "[1,0.1,0.30000000000000004,123.456,0,1e+21,100000000000000000000,1e-7,0.0000015,0.000001,5e-324,1.7976931348623157e+308]",
+   "sha256": "sha256:aed7698b7ca2459f90579b6eab0a64807789fded97fad8097735bcbdcf78824b",
+   "blake3": "blake3:b39a968d1ed9b7acb8f5db77dd502ddb12b7251986101e9d48a044ac68956b5c"
+  },
+  {
+   "name": "float_exponent_input",
+   "input": "[1E3, 2.50e-1, 1e+2]",
+   "canonical": "[1000,0.25,100]",
+   "sha256": "sha256:e72a643ee4ddef360da3cb8e22e0cb3cbb3fafd3a5baeb444ff295cf51f07e6f",
+   "blake3": "blake3:52352a6d958aadc88644ccc342a7472ce9d4145fa188d3e002f1bd3e4ec00f4f"
+  },
+  {
+   "name": "nested",
+   "input": "{\"z\": [{\"b\": [3, {\"y\": 1, \"x\": 2}], \"a\": null}], \"a\": {\"c\": {\"b\": {\"a\": 0}}}}",
+   "canonical": "{\"a\":{\"c\":{\"b\":{\"a\":0}}},\"z\":[{\"a\":null,\"b\":[3,{\"x\":2,\"y\":1}]}]}",
+   "sha256": "sha256:961fb55c5141e1226d9f527f3a3ca5759dcd2cb14ed087d064dc8eb420939157",
+   "blake3": "blake3:5edfee2cb8624e91669bf302ea40a4713c8e648a93225d97c29be1123c5af1f4"
+  },
+  {
+   "name": "record_judgment",
+   "input": "{\"kind\": \"judgment\", \"run_id\": \"r1\", \"item_id\": \"item-0007\", \"gen_replicate\": 0, \"grade_replicate\": 0, \"value\": 0.85, \"value_semantics\": \"score\"}",
+   "canonical": "{\"gen_replicate\":0,\"grade_replicate\":0,\"item_id\":\"item-0007\",\"kind\":\"judgment\",\"run_id\":\"r1\",\"value\":0.85,\"value_semantics\":\"score\"}",
+   "sha256": "sha256:6be0568b73175f27ed76f7c07e8f50174c6c6dc0ffc04cd5532778e233eb1e1a",
+   "blake3": "blake3:17f5f46786b751f402c48a7a7e45e603202ea98bb670a8b0167d656f3571f738"
+  },
+  {
+   "name": "ledger_entry_without_hash",
+   "input": "{\"seq\": 0, \"ts\": \"2026-10-29T09:05:00Z\", \"actor\": \"user:alice\", \"kind\": \"split\", \"ledger\": \"referee\", \"inputs\": [\"sha256:1520e93b89fc1bd479f8701f4699158bf295fb7832849b8cd9ca5ce6095b6cee\"], \"outputs\": [\"sha256:ef260e9aa3c673af240d17a2660480361a8e081d1ffeca2a5ed0e3219fc18567\", \"sha256:97dfc65f74283f60c606bda3f75a6a6bec3fc1e513b8b40797b5ecb86c824ee2\", \"sha256:d179b28cc8927b726d766bc0a22ed40ffc879d40f62a100e7d97dabb24253669\"], \"summary\": {\"method\": \"time\", \"boundary\": \"2026-09-01\", \"seed\": 20261029, \"unit\": \"cluster\"}, \"tool\": \"evalsig-proto 0\", \"prev\": \"genesis\", \"hash\": \"sha256:079384ee5e795505d99ef70c835c672e82c93173f561e6a24950382d057716cd\"}",
+   "canonical": "{\"actor\":\"user:alice\",\"inputs\":[\"sha256:1520e93b89fc1bd479f8701f4699158bf295fb7832849b8cd9ca5ce6095b6cee\"],\"kind\":\"split\",\"ledger\":\"referee\",\"outputs\":[\"sha256:ef260e9aa3c673af240d17a2660480361a8e081d1ffeca2a5ed0e3219fc18567\",\"sha256:97dfc65f74283f60c606bda3f75a6a6bec3fc1e513b8b40797b5ecb86c824ee2\",\"sha256:d179b28cc8927b726d766bc0a22ed40ffc879d40f62a100e7d97dabb24253669\"],\"prev\":\"genesis\",\"seq\":0,\"summary\":{\"boundary\":\"2026-09-01\",\"method\":\"time\",\"seed\":20261029,\"unit\":\"cluster\"},\"tool\":\"evalsig-proto 0\",\"ts\":\"2026-10-29T09:05:00Z\"}",
+   "sha256": "sha256:079384ee5e795505d99ef70c835c672e82c93173f561e6a24950382d057716cd",
+   "blake3": "blake3:b1c16ba986a961012b004bee5edce42800cd8c2649bb75bb95fb042e818e61ec",
+   "note": "the entry hash is the hash of the entry without its `hash` key"
+  }
+ ],
+ "invalid": [
+  {
+   "name": "nan_literal",
+   "input": "{\"x\": NaN}",
+   "reason": "not JSON"
+  },
+  {
+   "name": "infinity_literal",
+   "input": "{\"x\": Infinity}",
+   "reason": "not JSON"
+  },
+  {
+   "name": "duplicate_key",
+   "input": "{\"a\": 1, \"a\": 2}",
+   "reason": "duplicate key"
+  },
+  {
+   "name": "duplicate_key_after_nfc",
+   "input": "{\"\\u00e9\": 1, \"e\\u0301\": 2}",
+   "reason": "duplicate key after NFC"
+  },
+  {
+   "name": "integer_outside_exact_range",
+   "input": "{\"x\": 9007199254740993}",
+   "reason": "integer outside the IEEE 754 exact range"
+  },
+  {
+   "name": "lone_surrogate",
+   "input": "{\"x\": \"\\ud800\"}",
+   "reason": "unpaired surrogate"
+  }
+ ],
+ "files": [
+  {
+   "name": "two_item_lines",
+   "lines": [
+    "{\"item_id\":\"a\",\"kind\":\"item\"}",
+    "{\"item_id\":\"b\",\"kind\":\"item\",\"stratum\":{\"lang\":\"ja\"}}"
+   ],
+   "sha256": "sha256:f3904614619eccdedb3f0ad343290ee15be9b1cc6c317a6836abc7ac533e08a1",
+   "blake3": "blake3:1dc5749d0f4e6bfee8d0be21e656e3c3918fa7cbc92b9eceeba5c46b741cd07e"
+  }
+ ]
+}

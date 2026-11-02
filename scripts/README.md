@@ -1,0 +1,31 @@
+# Scripts
+
+Fixture generators and cross-language verifiers. They run with the pinned Python
+environment in this directory:
+
+```sh
+uv run --project scripts scripts/<script>.py
+```
+
+| Script | Purpose |
+|---|---|
+| `evalsig_canon.py` | Canonical JSON bytes (RFC 8785 + NFC) and `sha256:` / `blake3:` references. Standard library only, except BLAKE3 |
+| `gen_canonicalization_vectors.py` | Writes `tests/fixtures/canonicalization-vectors.json` |
+| `reference_values.py` | Writes `tests/fixtures/reference-values.json` from scipy, closed forms and published values |
+| `check_fixtures.py` | Regenerates both fixtures in a temporary directory and compares them with the committed files |
+
+## Regenerating the fixtures
+
+The fixtures are generated files; edit the generators, never the JSON.
+
+```sh
+uv run --project scripts scripts/gen_canonicalization_vectors.py
+uv run --project scripts scripts/reference_values.py
+uv run --project scripts scripts/check_fixtures.py
+```
+
+`check_fixtures.py` requires the canonicalization vectors to match byte for byte and
+the reference values to match within 1e-12. The Rust tests compare their results with
+the reference values within the tolerance stated in the file (1e-9). Dependency
+versions are pinned in `pyproject.toml` and `uv.lock`; changing them is a fixture
+change and needs `check_fixtures.py` to pass.
