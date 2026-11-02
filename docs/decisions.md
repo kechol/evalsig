@@ -103,3 +103,31 @@ after the entry is `Accepted`.
 - Consequences: changing a field or a reason code is a new format version
   (`records/2`) with a `migrate` path. Integer and floating-point values are
   kept apart so records serialize back as written.
+
+## D-004 Project configuration file
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: The positive definition, decision rules, missing-value handling,
+  store mode, import blocks, seeds and interval method change results, so
+  the file that holds them is part of every result's provenance.
+- Decision:
+  - The project configuration is TOML at `.evalsig/config.toml`, with the
+    tables `[project]` (name, `positive`, `decision`, per-task
+    `[project.tasks.<task>]` overrides), `[store]`, `[stats]`, `[missing]`,
+    `[reference]`, `[compare]`, `[cost]`, `[checks]` and `[[import]]`, as in
+    `examples/evalsig.toml`.
+  - Rules are one-key tables: `{ ordinal_at_least = n }`,
+    `{ score_at_least = x }` or `{ equals = v }`. With no `positive`, binary
+    labels treat `true` as positive; other label types need one.
+  - Every table rejects unknown keys and suggests the closest known key.
+  - For hashing, the configuration is converted to JSON with every default
+    filled in, then canonicalized like any other object, so files that mean
+    the same thing hash the same.
+  - The referee never reads this file. Values that affect a gate are resolved
+    into the approved preregistration.
+- Alternatives: YAML (rejected: implicit typing turns `no` and `1.10` into
+  other values); ignoring unknown keys (rejected: a typo would silently fall
+  back to a default and change results).
+- Consequences: renaming or removing a key is a breaking change of the
+  configuration format.

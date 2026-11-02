@@ -1,0 +1,87 @@
+# Example project configuration (.evalsig/config.toml).
+# The referee (gate) does not read this file: values that affect a gate are resolved
+# and frozen when the preregistration is approved.
+[project]
+name = "support-ticket-triage"
+positive = { ordinal_at_least = 2 }   # Which reference label values count as positive (binary: { equals = true }). Needed only by metrics that use reference labels
+decision = { ordinal_at_least = 2 }   # From which judgment value the system says positive. For score output: { score_at_least = 0.5 }. Without it, H and F are not reported, only ROC
+
+[project.tasks.urgency]               # Per-task overrides of positive and decision
+positive = { ordinal_at_least = 3 }
+
+[store]
+content = "full"                      # full / hash / redact
+redact_patterns = ["(?i)api[_-]?key\\s*[:=]\\s*\\S+"]   # Applied to content and to attrs, reason, detail and strata
+engine = "sqlite"                     # Working store
+
+[stats]
+level = 0.95
+bootstrap = 2000                      # Gates at one-sided alpha/B require at least 50/(alpha/B)
+seed = 20261029
+estimand = "single_shot"              # single_shot (one production run) / majority@k / any@k / all@k
+interval = "auto"                     # auto / wilson / clopper_pearson / jeffreys / bootstrap
+
+[missing]                             # worst / best / drop per reason; unlisted reasons keep their default
+# System side (error, timeout, refused, invalid_output, limit) defaults to worst.
+# Measurement side (grader_failed, not_run, invalidated, excluded, other) defaults to drop.
+refused = "worst"
+
+[reference]
+mode = "soft"                         # Default for items with two or more human raters. latent needs three or more raters per item
+rater_design = "auto"                 # auto / nested / crossed, detected from the overlap
+
+[compare]
+min_effect = { accuracy = 0.02, false_alarm_rate = 0.02 }   # Minimum effect of practical importance
+validation_warn_after = 20            # Warn that the validation split is due for a rebuild after this many comparisons
+
+[cost]
+# Rows: reference label (negative, positive). Columns: judgment levels 0..3
+matrix = [[0, 1, 3, 5], [9, 6, 1, 0]]
+prevalence = 0.12                     # Production prevalence (not the test-set share)
+ratio_range = [3, 10]                 # Range for the cost-ratio sensitivity analysis
+
+[checks]
+fail_on_mixed_grader_versions = true
+fail_on_unexplained_missing = true
+warn_missing_rate_differs = true      # Missing rates differ between arms
+warn_identical_replicates = true      # All generation replicates of an item have the same output (a cache suspect)
+warn_run_variance_exceeds_delta = true
+
+# Import blocks (path 2: map a flat table to one judgment or one label per row)
+[[import]]
+name = "generic-jsonl"
+adapter = "jsonl"
+path = "data/judgments.jsonl"
+value_semantics = "decision"          # decision (a system decision) / score (a grade of the output; no reference label, grader required)
+map.item_id = "$.id"
+map.gen_replicate = "$.trial"
+map.value = "$.verdict"
+map.output_type = "ordinal"
+map.levels = 4
+map.offset = 1                        # Subtract 1 when the source values start at 1
+map.run_id = "$.run"
+map.strata.lang = "$.meta.lang"
+map.input_ref = "$.question"          # The system-independent input; never the prompt template
+
+[[import]]
+name = "human-labels"
+adapter = "csv"
+as = "label"                          # One label per row
+path = "labels/human.csv"
+map.item_id = "id"
+map.rater_id = "annotator"
+map.source = "human"
+map.value = "label"
+value_map = { yes = true, no = false } # Values that cannot be mapped become missing (invalid_output)
+map.labeled_at = "labeled_at"
+map.version = 1
+
+[[import]]
+name = "inspect-logs"
+adapter = "inspect"                   # Reads .eval (zip) or .json
+path = "logs/*.eval"
+score = "rubric"                      # Which entry of samples[].scores becomes the judgment
+value_semantics = "score"             # C/I grade the output: no reference label is synthesized; the target becomes reference_ref content
+value_map = { C = 1, I = 0, P = 0.5 } # Values that cannot be mapped become missing (invalid_output)
+# system.version is task@task_version + model + revision.commit; grader is the scorer name + grader model.
+# --system-version and --grader override them.
