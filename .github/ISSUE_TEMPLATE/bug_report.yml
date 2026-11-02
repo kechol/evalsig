@@ -1,0 +1,37 @@
+name: Bug report
+description: Something evalsig does wrong (a wrong number, a crash, a misleading verdict)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suspected security issues (referee bypass, sealed label exposure, ledger forgery,
+        importer crashes on untrusted files) go through private reporting instead; see SECURITY.md.
+        Use synthetic data only. Do not paste real evaluation records.
+  - type: input
+    id: version
+    attributes:
+      label: evalsig version
+      description: Output of `evalsig --version`
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and architecture
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of commands and synthetic input files that shows the problem
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true
