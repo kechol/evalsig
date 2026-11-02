@@ -347,6 +347,22 @@ impl Config {
         if self.stats.bootstrap == 0 {
             return invalid("stats.bootstrap", "must be at least 1");
         }
+        let rules = std::iter::once((self.project.positive, self.project.decision))
+            .chain(
+                self.project
+                    .tasks
+                    .values()
+                    .map(|t| (t.positive, t.decision)),
+            )
+            .flat_map(|(p, d)| [p, d])
+            .flatten();
+        for r in rules {
+            if matches!(r, Rule::ScoreAtLeast(t) if !t.is_finite())
+                || matches!(r, Rule::Equals(Value::Float(t)) if !t.is_finite())
+            {
+                return invalid("project", "rule thresholds must be finite");
+            }
+        }
         if self
             .compare
             .min_effect
@@ -396,6 +412,9 @@ impl Config {
                 && l < 2
             {
                 return invalid("import.map.levels", "must be at least 2");
+            }
+            if import.map.version == Some(0) {
+                return invalid("import.map.version", "must be at least 1");
             }
         }
         Ok(())
@@ -556,6 +575,8 @@ mod tests {
             "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 1.0\n",
             "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\nratio_range = [10, 3]\n",
             "[compare]\nmin_effect = { accuracy = -0.1 }\n",
+            "[project]\npositive = { score_at_least = nan }\n",
+            "[[import]]\nname = \"a\"\nadapter = \"csv\"\npath = \"x\"\nmap.version = 0\n",
             "[[import]]\nname = \"a\"\nadapter = \"csv\"\npath = \"x\"\n[[import]]\nname = \"a\"\nadapter = \"csv\"\npath = \"y\"\n",
         ] {
             assert!(Config::from_toml(bad).is_err(), "{bad}");

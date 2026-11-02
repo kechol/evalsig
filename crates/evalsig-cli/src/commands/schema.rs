@@ -28,9 +28,8 @@ pub fn run(name: &str) -> Result<Output, CliError> {
     )))
 }
 
-/// The schema document alone, for `--raw`.
+/// The schema document alone, exactly as published, for `--raw`.
 pub fn raw(name: &str) -> Result<String, CliError> {
-    let mut s = serde_json::to_string_pretty(&lookup(name)?).expect("schema serializes");
-    s.push('\n');
-    Ok(s)
+    lookup(name)?;
+    Ok(schemas::by_name(name).expect("looked up above").to_owned())
 }

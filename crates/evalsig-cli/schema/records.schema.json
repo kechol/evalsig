@@ -571,7 +571,10 @@
        "value_semantics": {
         "const": "score"
        }
-      }
+      },
+      "required": [
+       "value_semantics"
+      ]
      },
      "then": {
       "required": [

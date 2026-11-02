@@ -37,6 +37,13 @@ pub enum LabelError {
     Timestamp(#[from] TimestampError),
 }
 
+/// The labels selected as of an instant.
+#[derive(Debug, Default)]
+pub struct AsOf<'a> {
+    pub labels: Vec<&'a Label>,
+    pub undated_skipped: usize,
+}
+
 /// A revision with its `labeled_at` parsed once on insert.
 #[derive(Debug, Clone)]
 struct Revision {
@@ -90,18 +97,27 @@ impl LabelSet {
     }
 
     /// The latest version of each label whose `labeled_at` is at or before `as_of`.
-    /// Revisions without `labeled_at` cannot be placed in time and are not selected.
-    pub fn as_of(&self, as_of: Instant) -> Vec<&Label> {
-        self.revisions
-            .values()
-            .filter_map(|versions| {
-                versions
-                    .values()
-                    .rev()
-                    .find(|r| r.at.is_some_and(|t| t <= as_of))
-                    .map(|r| &r.label)
-            })
-            .collect()
+    /// Revisions without `labeled_at` cannot be placed in time and are not selected;
+    /// `undated_skipped` counts the labels whose newer revisions include an undated
+    /// one (including labels with only undated revisions), so callers can warn that
+    /// the as-of view may be stale.
+    pub fn as_of(&self, as_of: Instant) -> AsOf<'_> {
+        let mut out = AsOf::default();
+        for versions in self.revisions.values() {
+            let mut skipped = false;
+            for r in versions.values().rev() {
+                match r.at {
+                    Some(t) if t <= as_of => {
+                        out.labels.push(&r.label);
+                        break;
+                    }
+                    Some(_) => {}
+                    None => skipped = true,
+                }
+            }
+            out.undated_skipped += usize::from(skipped);
+        }
+        out
     }
 }
 
@@ -151,7 +167,7 @@ mod tests {
         let mut set = LabelSet::default();
         set.insert(alice(1, 3, "2026-08-03T00:00:00Z")).unwrap();
         set.insert(alice(2, 2, "2026-09-10T00:00:00Z")).unwrap();
-        let at = |s| set.as_of(Instant::parse(s).unwrap());
+        let at = |s| set.as_of(Instant::parse(s).unwrap()).labels;
         assert!(at("2026-08-01T00:00:00Z").is_empty());
         assert_eq!(at("2026-08-03T00:00:00Z")[0].version, 1);
         assert_eq!(at("2026-09-09T23:59:59Z")[0].version, 1);
@@ -169,6 +185,18 @@ mod tests {
         assert_eq!(set.latest().len(), 4);
         // Undated revisions are never selected as of a time.
         let as_of = set.as_of(Instant::parse("2027-01-01T00:00:00Z").unwrap());
-        assert_eq!(as_of.len(), 1);
+        assert_eq!(as_of.labels.len(), 1);
+        assert_eq!(as_of.undated_skipped, 3);
+    }
+
+    #[test]
+    fn a_newer_undated_revision_is_reported() {
+        let mut set = LabelSet::default();
+        set.insert(alice(1, 3, "2026-08-03T00:00:00Z")).unwrap();
+        set.insert(label(r#"{"record":"label","item_id":"q1","rater_id":"alice","source":"human","value":2,"levels":4,"version":2}"#)).unwrap();
+        let as_of = set.as_of(Instant::parse("2027-01-01T00:00:00Z").unwrap());
+        assert_eq!(as_of.labels[0].version, 1);
+        assert_eq!(as_of.undated_skipped, 1);
+        assert_eq!(set.latest()[0].version, 2);
     }
 }

@@ -338,14 +338,46 @@ pub struct Content {
     pub stored: Option<Stored>,
 }
 
-/// A judgment or label value. Integers and floats are kept apart so that a record
-/// serializes back exactly as read.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// A judgment or label value. A number with no fractional part is an integer, so
+/// `2` and `2.0`, which have the same canonical form, are the same value.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Value {
     Bool(bool),
     Int(i64),
     Float(f64),
+}
+
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = Value;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a boolean or a number")
+            }
+            fn visit_bool<E>(self, b: bool) -> Result<Value, E> {
+                Ok(Value::Bool(b))
+            }
+            fn visit_i64<E>(self, i: i64) -> Result<Value, E> {
+                Ok(Value::Int(i))
+            }
+            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Value, E> {
+                i64::try_from(u)
+                    .map(Value::Int)
+                    .map_err(|_| E::custom("integer out of range"))
+            }
+            fn visit_f64<E>(self, f: f64) -> Result<Value, E> {
+                // Exact for |f| < 2^63; larger integral floats stay floats.
+                if f.fract() == 0.0 && f.abs() < 9.2e18 {
+                    Ok(Value::Int(f as i64))
+                } else {
+                    Ok(Value::Float(f))
+                }
+            }
+        }
+        d.deserialize_any(V)
+    }
 }
 
 impl Value {
@@ -449,6 +481,8 @@ pub enum RecordError {
     NonFinite,
     #[error(transparent)]
     Timestamp(#[from] TimestampError),
+    #[error("{0}")]
+    OutOfRange(&'static str),
 }
 
 impl RecordError {
@@ -464,6 +498,7 @@ impl RecordError {
             RecordError::TooFewLevels => "record.too_few_levels",
             RecordError::NonFinite => "record.non_finite",
             RecordError::Timestamp(_) => "record.timestamp",
+            RecordError::OutOfRange(_) => "record.out_of_range",
         }
     }
 }
@@ -495,7 +530,9 @@ impl Record {
                 check_levels(j.levels)
             }
             Record::Label(l) => {
-                l.observation()?;
+                if let (Observation::Value(v), Some(levels)) = (l.observation()?, l.levels) {
+                    check_value(OutputType::Ordinal, Some(levels), *v)?;
+                }
                 check_time(&l.labeled_at)?;
                 check_levels(l.levels)
             }
@@ -507,7 +544,19 @@ impl Record {
                 check_time(&r.started_at)?;
                 check_levels(r.levels)
             }
-            Record::Item(i) => check_time(&i.occurred_at),
+            Record::Item(i) => {
+                if i.weight.is_some_and(|w| !(w > 0.0 && w <= 100.0)) {
+                    return Err(RecordError::OutOfRange("weight must lie in (0, 100]"));
+                }
+                if i.label_inclusion_prob
+                    .is_some_and(|p| !(p > 0.0 && p <= 1.0))
+                {
+                    return Err(RecordError::OutOfRange(
+                        "label_inclusion_prob must lie in (0, 1]",
+                    ));
+                }
+                check_time(&i.occurred_at)
+            }
             Record::Content(_) => Ok(()),
         }
     }

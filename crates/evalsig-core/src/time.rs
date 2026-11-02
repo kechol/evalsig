@@ -11,8 +11,8 @@ pub struct Instant(i128);
 pub struct TimestampError(pub String);
 
 impl Instant {
-    /// Parse `YYYY-MM-DDTHH:MM:SS[.fraction](Z|±HH:MM)`. A lowercase `t`/`z` and a
-    /// space separator are accepted, as RFC 3339 allows.
+    /// Parse `YYYY-MM-DDTHH:MM:SS[.fraction](Z|±HH:MM)`, the JSON Schema `date-time`
+    /// format. Lowercase `t` and `z` are accepted; leap seconds are not.
     pub fn parse(s: &str) -> Result<Instant, TimestampError> {
         parse(s.as_bytes()).ok_or_else(|| TimestampError(s.to_owned()))
     }
@@ -59,7 +59,7 @@ fn parse(b: &[u8]) -> Option<Instant> {
     if b.get(4) != Some(&b'-') || b.get(7) != Some(&b'-') {
         return None;
     }
-    if !matches!(b.get(10), Some(b'T' | b't' | b' ')) {
+    if !matches!(b.get(10), Some(b'T' | b't')) {
         return None;
     }
     let hour = digits(b.get(11..)?, 2)?;
@@ -105,7 +105,7 @@ fn parse(b: &[u8]) -> Option<Instant> {
         || day > days_in_month(year, month)
         || hour > 23
         || minute > 59
-        || second > 60
+        || second > 59
     {
         return None;
     }
@@ -212,6 +212,8 @@ mod tests {
             "2026-01-01T25:00:00Z",
             "2026-01-01T00:00:00+0900",
             "2026-01-01T00:00:00Zjunk",
+            "2026-01-01 00:00:00Z",
+            "2026-06-30T23:59:60Z",
         ] {
             assert!(Instant::parse(s).is_err(), "{s}");
         }

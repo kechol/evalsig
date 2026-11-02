@@ -177,3 +177,50 @@ fn timestamps_must_be_rfc3339() {
         .is_ok()
     );
 }
+
+#[test]
+fn integral_numbers_are_integers() {
+    let j = r#"{"record":"judgment","item_id":"a","run_id":"r","gen_replicate":0,"output_type":"ordinal","levels":4,"value":2.0}"#;
+    let Record::Judgment(j) = Record::from_json(j).unwrap() else {
+        panic!()
+    };
+    assert_eq!(j.value, Some(Value::Int(2)));
+}
+
+#[test]
+fn label_levels_and_item_ranges_are_checked() {
+    let label = |v: &str| {
+        format!(
+            r#"{{"record":"label","item_id":"a","rater_id":"u","source":"human","version":1,"levels":4,"value":{v}}}"#
+        )
+    };
+    assert!(Record::from_json(&label("3")).is_ok());
+    assert_eq!(
+        Record::from_json(&label("7")).unwrap_err().code(),
+        "record.level_out_of_range"
+    );
+    assert_eq!(
+        Record::from_json(&label("-1")).unwrap_err().code(),
+        "record.level_out_of_range"
+    );
+    for item in [
+        r#"{"record":"item","item_id":"a","weight":0}"#,
+        r#"{"record":"item","item_id":"a","weight":-1}"#,
+        r#"{"record":"item","item_id":"a","label_inclusion_prob":0}"#,
+        r#"{"record":"item","item_id":"a","label_inclusion_prob":1.5}"#,
+    ] {
+        assert_eq!(
+            Record::from_json(item).unwrap_err().code(),
+            "record.out_of_range",
+            "{item}"
+        );
+    }
+}
+
+#[test]
+fn a_decision_run_needs_no_grader() {
+    assert!(
+        Record::from_json(r#"{"record":"run","run_id":"r","system":{"id":"a","version":"1"}}"#)
+            .is_ok()
+    );
+}

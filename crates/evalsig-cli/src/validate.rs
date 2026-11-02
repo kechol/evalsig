@@ -153,6 +153,25 @@ mod tests {
     }
 
     #[test]
+    fn kinds_match_the_schema() {
+        let schema: Value = serde_json::from_str(schemas::RECORDS).unwrap();
+        let mut in_schema: Vec<&str> = schema["$defs"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter_map(|(k, d)| {
+                d["properties"]["record"]["const"]
+                    .as_str()
+                    .map(|_| k.as_str())
+            })
+            .collect();
+        in_schema.sort_unstable();
+        let mut kinds = KINDS.to_vec();
+        kinds.sort_unstable();
+        assert_eq!(kinds, in_schema);
+    }
+
+    #[test]
     fn every_example_is_valid() {
         let v = RecordValidator::new();
         for (i, line) in include_str!("../../../examples/records.jsonl")
