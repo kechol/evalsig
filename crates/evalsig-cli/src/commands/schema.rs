@@ -7,7 +7,7 @@ use crate::exit::Exit;
 use crate::output::{Envelope, Output};
 use crate::schemas;
 
-pub fn run(name: &str) -> Result<Output, CliError> {
+fn lookup(name: &str) -> Result<Value, CliError> {
     let text = schemas::by_name(name).ok_or_else(|| {
         let names: Vec<&str> = schemas::ALL.iter().map(|(n, _)| *n).collect();
         CliError::new(
@@ -17,7 +17,11 @@ pub fn run(name: &str) -> Result<Output, CliError> {
         )
         .with_hint(format!("available: {}", names.join(", ")))
     })?;
-    let schema: Value = serde_json::from_str(text).expect("embedded schema is JSON");
+    Ok(serde_json::from_str(text).expect("embedded schema is JSON"))
+}
+
+pub fn run(name: &str) -> Result<Output, CliError> {
+    let schema = lookup(name)?;
     Ok(Output::success(Envelope::new(
         "evalsig.schema/1",
         json!({ "name": name, "id": schema["$id"], "schema": schema }),
@@ -26,10 +30,7 @@ pub fn run(name: &str) -> Result<Output, CliError> {
 
 /// The schema document alone, for `--raw`.
 pub fn raw(name: &str) -> Result<String, CliError> {
-    run(name).map(|o| {
-        let mut s =
-            serde_json::to_string_pretty(&o.envelope.results["schema"]).expect("schema serializes");
-        s.push('\n');
-        s
-    })
+    let mut s = serde_json::to_string_pretty(&lookup(name)?).expect("schema serializes");
+    s.push('\n');
+    Ok(s)
 }

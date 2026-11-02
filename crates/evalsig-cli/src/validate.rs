@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use evalsig_core::records::{Record, RecordError};
+use evalsig_core::records::Record;
 use evalsig_store::canonical::{Canonical, CanonicalError};
 use serde::Serialize;
 use serde_json::Value;
@@ -23,32 +23,29 @@ pub struct Issue {
 }
 
 pub struct RecordValidator {
-    per_kind: BTreeMap<String, jsonschema::Validator>,
+    per_kind: BTreeMap<&'static str, jsonschema::Validator>,
 }
+
+/// The record kinds of `records/1`, one `$defs` entry each.
+const KINDS: [&str; 6] = ["item", "label", "judgment", "preference", "run", "content"];
 
 impl RecordValidator {
     pub fn new() -> Self {
         let schema: Value =
             serde_json::from_str(schemas::RECORDS).expect("embedded schema is JSON");
-        let kinds: Vec<String> = schema["$defs"]
-            .as_object()
-            .expect("schema has $defs")
-            .iter()
-            .filter(|(_, d)| d["properties"]["record"]["const"].is_string())
-            .map(|(k, _)| k.clone())
-            .collect();
-        let per_kind = kinds
+        let per_kind = KINDS
             .into_iter()
             .map(|kind| {
                 // Validate against the kind's definition directly, so errors name the
                 // failing keyword instead of the top-level `oneOf`.
-                let mut s = schema.clone();
-                let obj = s.as_object_mut().expect("schema is an object");
-                obj.remove("oneOf");
-                obj.insert("$ref".into(), Value::String(format!("#/$defs/{kind}")));
+                let wrapper = serde_json::json!({
+                    "$schema": schema["$schema"],
+                    "$defs": schema["$defs"],
+                    "$ref": format!("#/$defs/{kind}"),
+                });
                 let v = jsonschema::options()
                     .should_validate_formats(true)
-                    .build(&s)
+                    .build(&wrapper)
                     .expect("embedded schema compiles");
                 (kind, v)
             })
@@ -63,17 +60,19 @@ impl RecordValidator {
             path: path.to_owned(),
             message,
         };
-        if let Err(e) = Canonical::parse(line) {
-            let code = match e {
-                CanonicalError::DuplicateKey(_) | CanonicalError::DuplicateKeyAfterNfc(_) => {
-                    "json.duplicate_key"
-                }
-                CanonicalError::IntegerOutOfRange(_) => "json.integer_range",
-                CanonicalError::Json(_) | CanonicalError::NonFinite => "json.invalid",
-            };
-            return vec![issue(code, "", e.to_string())];
-        }
-        let value: Value = serde_json::from_str(line).expect("canonical JSON parses");
+        let value = match Canonical::parse(line) {
+            Ok(c) => c.into_json(),
+            Err(e) => {
+                let code = match e {
+                    CanonicalError::DuplicateKey(_) | CanonicalError::DuplicateKeyAfterNfc(_) => {
+                        "json.duplicate_key"
+                    }
+                    CanonicalError::IntegerOutOfRange(_) => "json.integer_range",
+                    CanonicalError::Json(_) | CanonicalError::NonFinite => "json.invalid",
+                };
+                return vec![issue(code, "", e.to_string())];
+            }
+        };
         let Some(obj) = value.as_object() else {
             return vec![issue(
                 "record.not_object",
@@ -89,13 +88,12 @@ impl RecordValidator {
             )];
         };
         let Some(validator) = self.per_kind.get(kind) else {
-            let known: Vec<&str> = self.per_kind.keys().map(String::as_str).collect();
             return vec![issue(
                 "record.unknown_kind",
                 "/record",
                 format!(
                     "unknown record kind {kind:?}; expected one of {}",
-                    known.join(", ")
+                    KINDS.join(", ")
                 ),
             )];
         };
@@ -103,7 +101,7 @@ impl RecordValidator {
             .iter_errors(&value)
             .map(|e| {
                 issue(
-                    &format!("schema.{}", snake(e.kind().keyword())),
+                    schema_code(e.kind().keyword()),
                     &e.instance_path().to_string(),
                     e.to_string(),
                 )
@@ -112,37 +110,34 @@ impl RecordValidator {
         if !schema_issues.is_empty() {
             return schema_issues;
         }
-        match Record::from_json(line) {
+        match Record::from_value(value) {
             Ok(_) => Vec::new(),
-            Err(e) => vec![issue(record_code(&e), "", e.to_string())],
+            Err(e) => vec![issue(e.code(), "", e.to_string())],
         }
     }
 }
 
-fn record_code(e: &RecordError) -> &'static str {
-    match e {
-        RecordError::Json(_) => "record.invalid",
-        RecordError::ValueAndMissing => "record.value_and_missing",
-        RecordError::NeitherValueNorMissing => "record.neither_value_nor_missing",
-        RecordError::ValueType { .. } => "record.value_type",
-        RecordError::MissingLevels => "record.missing_levels",
-        RecordError::LevelOutOfRange { .. } => "record.level_out_of_range",
-        RecordError::TooFewLevels => "record.too_few_levels",
-        RecordError::NonFinite => "record.non_finite",
+/// Stable issue codes for JSON Schema keywords (D-012), independent of how the
+/// validator crate spells them.
+fn schema_code(keyword: &str) -> &'static str {
+    match keyword {
+        "required" => "schema.required",
+        "additionalProperties" => "schema.additional_properties",
+        "type" => "schema.type",
+        "enum" => "schema.enum",
+        "const" => "schema.const",
+        "oneOf" => "schema.one_of",
+        "anyOf" => "schema.any_of",
+        "minimum" => "schema.minimum",
+        "maximum" => "schema.maximum",
+        "exclusiveMinimum" => "schema.exclusive_minimum",
+        "exclusiveMaximum" => "schema.exclusive_maximum",
+        "minLength" => "schema.min_length",
+        "maxLength" => "schema.max_length",
+        "pattern" => "schema.pattern",
+        "format" => "schema.format",
+        _ => "schema.other",
     }
-}
-
-fn snake(keyword: &str) -> String {
-    let mut out = String::new();
-    for c in keyword.chars() {
-        if c.is_ascii_uppercase() {
-            out.push('_');
-            out.push(c.to_ascii_lowercase());
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 #[cfg(test)]

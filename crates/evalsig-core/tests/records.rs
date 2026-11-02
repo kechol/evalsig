@@ -164,3 +164,16 @@ fn non_finite_scores_become_missing() {
         assert_eq!(Value::from_score(x), Err(MissingReason::InvalidOutput));
     }
 }
+
+#[test]
+fn timestamps_must_be_rfc3339() {
+    let bad = r#"{"record":"item","item_id":"a","occurred_at":"yesterday"}"#;
+    let err = Record::from_json(bad).unwrap_err();
+    assert_eq!(err.code(), "record.timestamp");
+    assert!(
+        Record::from_json(
+            r#"{"record":"item","item_id":"a","occurred_at":"2026-08-01T00:00:00Z"}"#
+        )
+        .is_ok()
+    );
+}

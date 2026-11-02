@@ -14,19 +14,19 @@ pub fn run(records: &Path) -> Result<Output, CliError> {
     let text = std::fs::read_to_string(records).map_err(|e| io_error(records, &e))?;
     let validator = RecordValidator::new();
     let mut lines = 0;
+    let mut invalid_lines = 0;
     let mut issues = Vec::new();
     for (i, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
         lines += 1;
-        issues.extend(validator.validate_line(i + 1, line));
+        let found = validator.validate_line(i + 1, line);
+        if !found.is_empty() {
+            invalid_lines += 1;
+            issues.extend(found);
+        }
     }
-    let invalid_lines = {
-        let mut ls: Vec<usize> = issues.iter().map(|i| i.line).collect();
-        ls.dedup();
-        ls.len()
-    };
     let mut envelope = Envelope::new(
         "evalsig.validate/1",
         json!({

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::records::{DEFAULT_TASK, Value};
+use crate::records::Value;
 
 /// A rule that classifies a value as positive. Unordered classes are handled one class
 /// against the rest with `equals`.
@@ -59,15 +59,12 @@ impl RuleSet {
     pub fn for_task(&self, task: &str) -> Option<&Rule> {
         self.per_task.get(task).or(self.default.as_ref())
     }
-
-    pub fn for_default_task(&self) -> Option<&Rule> {
-        self.for_task(DEFAULT_TASK)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::records::DEFAULT_TASK;
 
     #[test]
     fn rules_classify_values_of_their_type() {
@@ -93,22 +90,27 @@ mod tests {
             RuleSet::new(Rule::OrdinalAtLeast(2)).with_task("severity", Rule::OrdinalAtLeast(3));
         assert_eq!(set.for_task("severity"), Some(&Rule::OrdinalAtLeast(3)));
         assert_eq!(set.for_task("other"), Some(&Rule::OrdinalAtLeast(2)));
-        assert_eq!(set.for_default_task(), Some(&Rule::OrdinalAtLeast(2)));
+        assert_eq!(set.for_task(DEFAULT_TASK), Some(&Rule::OrdinalAtLeast(2)));
         assert_eq!(RuleSet::default().for_task("x"), None);
     }
 
     #[test]
-    fn rules_read_from_configuration_tables() {
-        let r: Rule = toml_like(r#"{"ordinal_at_least": 2}"#);
-        assert_eq!(r, Rule::OrdinalAtLeast(2));
-        let r: Rule = toml_like(r#"{"score_at_least": 0.5}"#);
-        assert_eq!(r, Rule::ScoreAtLeast(0.5));
-        let r: Rule = toml_like(r#"{"equals": true}"#);
-        assert_eq!(r, Rule::Equals(Value::Bool(true)));
-        assert!(serde_json::from_str::<Rule>(r#"{"ordinal_at_most": 2}"#).is_err());
-    }
-
-    fn toml_like(s: &str) -> Rule {
-        serde_json::from_str(s).unwrap()
+    fn rules_read_from_one_key_tables() {
+        let rule = |s: &str| {
+            toml::from_str::<std::collections::BTreeMap<String, Rule>>(&format!("r = {s}"))
+        };
+        assert_eq!(
+            rule("{ ordinal_at_least = 2 }").unwrap()["r"],
+            Rule::OrdinalAtLeast(2)
+        );
+        assert_eq!(
+            rule("{ score_at_least = 0.5 }").unwrap()["r"],
+            Rule::ScoreAtLeast(0.5)
+        );
+        assert_eq!(
+            rule("{ equals = true }").unwrap()["r"],
+            Rule::Equals(Value::Bool(true))
+        );
+        assert!(rule("{ ordinal_at_most = 2 }").is_err());
     }
 }

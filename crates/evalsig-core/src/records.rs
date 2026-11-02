@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
+use crate::time::{Instant, TimestampError};
+
 /// The schema version written by this crate.
 pub const RECORDS_VERSION: &str = "records/1";
 
@@ -34,21 +36,21 @@ pub enum Record {
 #[serde(deny_unknown_fields)]
 pub struct Item {
     pub item_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strata: Option<Map<String, Json>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label_inclusion_prob: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub occurred_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_ref: Option<HashRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attrs: Option<Map<String, Json>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_ref: Option<HashRef>,
 }
 
@@ -88,24 +90,24 @@ pub struct Label {
     pub item_id: String,
     pub rater_id: String,
     pub source: Source,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<LabelKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label_replicate: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub missing: Option<Missing>,
     pub version: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub labeled_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_ref: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
 }
 
@@ -133,7 +135,7 @@ impl Label {
 pub struct Feature {
     pub feature_id: String,
     pub fired: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<f64>,
 }
 
@@ -142,29 +144,29 @@ pub struct Feature {
 pub struct Judgment {
     pub item_id: String,
     pub run_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     pub gen_replicate: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub grade_replicate: Option<u32>,
     pub output_type: OutputType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub missing: Option<Missing>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<Feature>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_ref: Option<HashRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale_ref: Option<HashRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub judged_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Map<String, Json>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_ref: Option<String>,
 }
 
@@ -195,27 +197,27 @@ pub enum PreferenceOutcome {
 #[serde(deny_unknown_fields)]
 pub struct Preference {
     pub item_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     pub left_run_id: String,
     pub right_run_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub left_gen_replicate: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub right_gen_replicate: Option<u32>,
     pub rater_id: String,
     pub source: Source,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub grade_replicate: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<PreferenceOutcome>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub missing: Option<Missing>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale_ref: Option<HashRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub judged_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_ref: Option<String>,
 }
 
@@ -252,7 +254,7 @@ pub enum OutputType {
 pub struct SystemRef {
     pub id: String,
     pub version: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub config_hash: Option<HashRef>,
 }
 
@@ -267,23 +269,23 @@ pub enum GraderKind {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct GraderRef {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<GraderKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub config_hash: Option<HashRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct HarnessRef {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub run_ref: Option<String>,
 }
 
@@ -292,19 +294,19 @@ pub struct HarnessRef {
 pub struct Run {
     pub run_id: String,
     pub system: SystemRef,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub grader: Option<GraderRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<HarnessRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attrs: Option<Map<String, Json>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value_semantics: Option<ValueSemantics>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_type: Option<OutputType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
 }
 
@@ -330,9 +332,9 @@ pub struct Content {
     #[serde(rename = "ref")]
     pub content_ref: HashRef,
     pub media_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stored: Option<Stored>,
 }
 
@@ -402,7 +404,7 @@ impl MissingReason {
 #[serde(deny_unknown_fields)]
 pub struct Missing {
     pub reason: MissingReason,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
@@ -445,6 +447,25 @@ pub enum RecordError {
     TooFewLevels,
     #[error("score value must be finite")]
     NonFinite,
+    #[error(transparent)]
+    Timestamp(#[from] TimestampError),
+}
+
+impl RecordError {
+    /// The stable issue code reported by `evalsig validate` (D-012).
+    pub fn code(&self) -> &'static str {
+        match self {
+            RecordError::Json(_) => "record.invalid",
+            RecordError::ValueAndMissing => "record.value_and_missing",
+            RecordError::NeitherValueNorMissing => "record.neither_value_nor_missing",
+            RecordError::ValueType { .. } => "record.value_type",
+            RecordError::MissingLevels => "record.missing_levels",
+            RecordError::LevelOutOfRange { .. } => "record.level_out_of_range",
+            RecordError::TooFewLevels => "record.too_few_levels",
+            RecordError::NonFinite => "record.non_finite",
+            RecordError::Timestamp(_) => "record.timestamp",
+        }
+    }
 }
 
 impl Record {
@@ -455,24 +476,48 @@ impl Record {
         Ok(record)
     }
 
-    /// Check value-xor-missing and that values match the declared output type.
+    /// Like [`Record::from_json`], for a value that is already parsed.
+    pub fn from_value(value: serde_json::Value) -> Result<Record, RecordError> {
+        let record: Record = serde_json::from_value(value)?;
+        record.check()?;
+        Ok(record)
+    }
+
+    /// Check value-xor-missing, that values match the declared output type, and that
+    /// timestamps are RFC 3339.
     pub fn check(&self) -> Result<(), RecordError> {
         match self {
             Record::Judgment(j) => {
                 if let Observation::Value(v) = j.observation()? {
                     check_value(j.output_type, j.levels, *v)?;
                 }
+                check_time(&j.judged_at)?;
                 check_levels(j.levels)
             }
             Record::Label(l) => {
                 l.observation()?;
+                check_time(&l.labeled_at)?;
                 check_levels(l.levels)
             }
-            Record::Preference(p) => p.observation().map(|_| ()),
-            Record::Run(r) => check_levels(r.levels),
-            Record::Item(_) | Record::Content(_) => Ok(()),
+            Record::Preference(p) => {
+                p.observation()?;
+                check_time(&p.judged_at)
+            }
+            Record::Run(r) => {
+                check_time(&r.started_at)?;
+                check_levels(r.levels)
+            }
+            Record::Item(i) => check_time(&i.occurred_at),
+            Record::Content(_) => Ok(()),
         }
     }
+}
+
+fn check_time(ts: &Option<Timestamp>) -> Result<(), RecordError> {
+    if let Some(t) = ts {
+        Instant::parse(t)?;
+    }
+    Ok(())
 }
 
 fn check_levels(levels: Option<u32>) -> Result<(), RecordError> {

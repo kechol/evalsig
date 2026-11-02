@@ -10,51 +10,44 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as Json;
 
 use crate::missing::{MissingPolicy, Policy};
-use crate::records::{MissingReason, OutputType, Value, ValueSemantics};
+use crate::records::{MissingReason, OutputType, Source, Value, ValueSemantics};
 use crate::rules::{Rule, RuleSet};
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
-    #[serde(default)]
     pub project: Project,
-    #[serde(default)]
     pub store: Store,
-    #[serde(default)]
     pub stats: Stats,
-    #[serde(default)]
     pub missing: BTreeMap<MissingReason, Policy>,
-    #[serde(default)]
     pub reference: Reference,
-    #[serde(default)]
     pub compare: Compare,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
-    #[serde(default)]
     pub checks: Checks,
-    #[serde(default, rename = "import", skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "import", skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<Import>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Project {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub positive: Option<Rule>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<Rule>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub tasks: BTreeMap<String, TaskRules>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct TaskRules {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub positive: Option<Rule>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<Rule>,
 }
 
@@ -75,13 +68,11 @@ pub enum Engine {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Store {
-    #[serde(default)]
     pub content: ContentMode,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub redact_patterns: Vec<String>,
-    #[serde(default)]
     pub engine: Engine,
 }
 
@@ -154,35 +145,21 @@ pub enum IntervalMethod {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Stats {
-    #[serde(default = "Stats::default_level")]
     pub level: f64,
-    #[serde(default = "Stats::default_bootstrap")]
     pub bootstrap: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
-    #[serde(default)]
     pub estimand: Estimand,
-    #[serde(default)]
     pub interval: IntervalMethod,
-}
-
-impl Stats {
-    fn default_level() -> f64 {
-        0.95
-    }
-
-    fn default_bootstrap() -> u32 {
-        2000
-    }
 }
 
 impl Default for Stats {
     fn default() -> Self {
         Stats {
-            level: Stats::default_level(),
-            bootstrap: Stats::default_bootstrap(),
+            level: 0.95,
+            bootstrap: 2000,
             seed: None,
             estimand: Estimand::default(),
             interval: IntervalMethod::default(),
@@ -210,34 +187,25 @@ pub enum RaterDesign {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Reference {
-    #[serde(default)]
     pub mode: ReferenceMode,
-    #[serde(default)]
     pub rater_design: RaterDesign,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Compare {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub min_effect: BTreeMap<String, f64>,
-    #[serde(default = "Compare::default_validation_warn_after")]
     pub validation_warn_after: u32,
-}
-
-impl Compare {
-    fn default_validation_warn_after() -> u32 {
-        20
-    }
 }
 
 impl Default for Compare {
     fn default() -> Self {
         Compare {
             min_effect: BTreeMap::new(),
-            validation_warn_after: Compare::default_validation_warn_after(),
+            validation_warn_after: 20,
         }
     }
 }
@@ -248,27 +216,18 @@ pub struct Cost {
     /// Rows: reference negative, positive. Columns: judgment levels.
     pub matrix: Vec<Vec<f64>>,
     pub prevalence: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ratio_range: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Checks {
-    #[serde(default = "yes")]
     pub fail_on_mixed_grader_versions: bool,
-    #[serde(default = "yes")]
     pub fail_on_unexplained_missing: bool,
-    #[serde(default = "yes")]
     pub warn_missing_rate_differs: bool,
-    #[serde(default = "yes")]
     pub warn_identical_replicates: bool,
-    #[serde(default = "yes")]
     pub warn_run_variance_exceeds_delta: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 impl Default for Checks {
@@ -309,10 +268,10 @@ pub struct Import {
     pub path: String,
     #[serde(default, rename = "as")]
     pub import_as: ImportAs,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value_semantics: Option<ValueSemantics>,
     /// For harness adapters: which score becomes the judgment.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<String>,
     #[serde(default)]
     pub map: FieldMap,
@@ -323,37 +282,37 @@ pub struct Import {
 /// Where each record field comes from: a path into the source row (`$.a.b` for
 /// JSON, a column name for CSV) or, for some fields, a constant.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct FieldMap {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rater_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gen_replicate: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub grade_replicate: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_type: Option<OutputType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<i64>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub strata: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_ref: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<crate::records::Source>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub labeled_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
 }
 
@@ -483,7 +442,9 @@ impl Config {
     }
 }
 
-/// Add a "did you mean" to unknown-key errors when a known key is one edit away.
+/// Add a "did you mean" to unknown-key errors when a known key is within two edits.
+/// It reads serde's "unknown field `x`, expected one of `a`, `b`" wording; the tests
+/// pin that wording so a toml upgrade that changes it fails loudly.
 fn hint(e: toml::de::Error) -> String {
     let msg = e.to_string();
     let Some(rest) = msg.split("unknown field `").nth(1) else {

@@ -71,6 +71,23 @@ impl Canonical {
         }
     }
 
+    /// The value as `serde_json::Value`, for code that deserializes typed structures
+    /// from input it has already parsed here.
+    pub fn into_json(self) -> serde_json::Value {
+        use serde_json::Value as J;
+        match self {
+            Canonical::Null => J::Null,
+            Canonical::Bool(b) => J::Bool(b),
+            Canonical::Int(i) => J::from(i),
+            Canonical::Float(f) => serde_json::Number::from_f64(f).map_or(J::Null, J::Number),
+            Canonical::String(s) => J::String(s),
+            Canonical::Array(xs) => J::Array(xs.into_iter().map(Canonical::into_json).collect()),
+            Canonical::Object(kv) => {
+                J::Object(kv.into_iter().map(|(k, v)| (k, v.into_json())).collect())
+            }
+        }
+    }
+
     /// The canonical UTF-8 bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = String::new();
