@@ -190,3 +190,34 @@ after the entry is `Accepted`.
   readable); zip's `zstd` feature (rejected: same C dependency).
 - Consequences: object sizes are about a quarter larger than zstd level 3.
   Switch to the `zstd` crate if users report storage pressure.
+
+## D-007 Ledger line format and the two ledgers
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: The ledger is the evidence that conditions were fixed before
+  results, how often a holdout was used and who changed labels. An agent can
+  rewrite files in its own environment, so evidence must live where it cannot.
+- Decision:
+  - A ledger is append-only JSONL; each line follows
+    `schema/ledger-entry.schema.json`: `seq` (from 0), `ts`, `actor`, `kind`,
+    `ledger` (`agent` or `referee`), `inputs`, `outputs`, `summary`, `tool`,
+    `prev` (the previous line's `hash`, `genesis` first) and `hash`.
+  - `hash` is the BLAKE3 reference of the canonical bytes (D-005) of the line
+    without `hash`. Verification also accepts `sha256:` lines.
+  - Summaries hold no floating-point numbers; metric values are rounded
+    strings, so no number formatting difference can change a hash.
+  - Two chains: the agent-side ledger in `.evalsig/ledger.jsonl` and the
+    referee ledger in the referee's environment. Each accepts only its kinds
+    (audit spec §4); `split`, `exclude`, `label_revision` and `adjudication`
+    occur in both (the referee's for holdout items).
+  - Appends take an exclusive OS file lock (`std::fs::File::lock`), read the
+    last line, write one line and sync, so concurrent writers serialize.
+  - A chain detects edits to inner lines; truncation and a rebuilt chain are
+    detected only against an anchor, the head hash recorded outside the
+    ledger (`ledger anchor`).
+- Alternatives: one ledger with an `actor` field (rejected: the agent could
+  rewrite the referee's lines); a database table (rejected: its bytes are not
+  stable to hash, audit spec §1).
+- Consequences: the agent-side ledger is evidence, not proof; only the
+  referee ledger and its results back a gate.

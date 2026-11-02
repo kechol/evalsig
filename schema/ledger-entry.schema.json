@@ -1,0 +1,87 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:evalsig:schema:ledger-entry:1",
+ "title": "One evalsig ledger line (ledger-entry/1)",
+ "type": "object",
+ "required": [
+  "seq",
+  "ts",
+  "actor",
+  "kind",
+  "ledger",
+  "tool",
+  "prev",
+  "hash"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "seq": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "ts": {
+   "type": "string",
+   "format": "date-time"
+  },
+  "actor": {
+   "type": "string",
+   "minLength": 1,
+   "description": "Who acted: a person, CI or an agent (for example user:alice, ci:github-actions, agent:example-agent)"
+  },
+  "kind": {
+   "enum": [
+    "import",
+    "migrate",
+    "mapping_decision",
+    "label_revision",
+    "adjudication",
+    "exclude",
+    "split",
+    "seal",
+    "preregister_draft",
+    "preregister_approve",
+    "report",
+    "compare",
+    "gate",
+    "holdout_access",
+    "purge",
+    "verify",
+    "anchor"
+   ]
+  },
+  "inputs": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "outputs": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "summary": {
+   "type": "object",
+   "description": "Human-readable summary. Holds no floating-point numbers; rounded values are strings"
+  },
+  "tool": {
+   "type": "string"
+  },
+  "prev": {
+   "type": "string",
+   "description": "The previous line's hash; genesis for the first line. The referee and agent-side ledgers are separate chains"
+  },
+  "hash": {
+   "type": "string",
+   "description": "Hash (blake3: or sha256:) of the canonical bytes of the line without hash"
+  },
+  "ledger": {
+   "enum": [
+    "agent",
+    "referee"
+   ],
+   "description": "Which ledger the line belongs to"
+  }
+ }
+}
