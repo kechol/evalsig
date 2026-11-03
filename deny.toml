@@ -23,6 +23,11 @@ allow = [
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
 
+# D-026: build-time only, on wasm32, through parquet -> ahash -> const-random.
+[[licenses.exceptions]]
+crate = "tiny-keccak"
+allow = ["CC0-1.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

@@ -664,3 +664,24 @@ after the entry is `Accepted`.
   must read).
 - Consequences: Parquet files are larger than compressed ones. Readers that
   want an Arrow schema infer it from the Parquet types.
+
+## D-026 Licence exception for `tiny-keccak`
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: `parquet` (D-025) depends on `ahash` with `compile-time-rng` when the
+  target is `wasm32`, which brings `const-random`, its proc-macro and
+  `tiny-keccak` (CC0-1.0). cargo-deny checks every target, so the licence check
+  fails. D-025 listed only the crates of the native targets; the lock file also
+  gains `const-random`, `const-random-macro`, `tiny-keccak`, `crunchy`,
+  `getrandom` and target-specific `windows-*` crates, all MIT or Apache-2.0
+  apart from `tiny-keccak`.
+- Decision: `deny.toml` allows CC0-1.0 for the crate `tiny-keccak` only, as a
+  licence exception, not in the general allow list. It runs at compile time
+  inside a proc-macro on `wasm32` and is never part of an evalsig binary;
+  CC0-1.0 places no condition on redistribution in any case.
+- Alternatives: restricting cargo-deny's graph to the shipped targets (not
+  taken: D-020 has not fixed the targets, and a narrower graph would hide other
+  wasm-only crates without saying so); dropping Parquet (not taken: the spec
+  names it for large analysis).
+- Consequences: a new CC0 crate fails the check again and needs its own entry.
