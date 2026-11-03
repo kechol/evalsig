@@ -177,7 +177,8 @@ fn exchange(
     }
     match check(&line, host.as_deref(), port, token) {
         Ok(path) => {
-            let path = path.split(['?', '#']).next().unwrap_or("");
+            // The handler gets the path and its query; a fragment never reaches a server.
+            let path = path.split('#').next().unwrap_or("");
             let page = handler(path);
             let reason = if page.status == 200 {
                 "OK"

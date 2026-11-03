@@ -86,3 +86,61 @@ fn the_dashboard_serves_its_token_and_host_only() {
         ledger
     );
 }
+
+const EXAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/records.jsonl");
+
+#[test]
+fn every_screen_renders_for_the_examples() {
+    // The synthetic triage example and the ordinal example with times.
+    let synthetic = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    let ordinal = tempfile::tempdir().unwrap();
+    evalsig(ordinal.path()).arg("init").assert().success();
+    std::fs::write(
+        ordinal.path().join(".evalsig/config.toml"),
+        "[project]\nname = \"example\"\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n[stats]\nseed = 20261029\n",
+    )
+    .unwrap();
+    evalsig(ordinal.path())
+        .arg("import")
+        .arg(EXAMPLE)
+        .assert()
+        .success();
+    for p in [synthetic.path(), ordinal.path()] {
+        let d = start(p);
+        let base = d
+            .url
+            .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
+            .to_owned();
+        let host = format!("127.0.0.1:{}", d.port);
+        let before = std::fs::read_to_string(p.join(".evalsig/ledger.jsonl")).unwrap();
+        for (screen, expect) in [
+            ("", "<h1>Overview</h1>"),
+            ("compare", "<h1>Comparison</h1>"),
+            ("trend", "<h1>Trend</h1>"),
+            ("reproducibility", "<h1>Reproducibility</h1>"),
+            ("reference", "<h1>Reference quality</h1>"),
+            ("discrimination", "<h1>Discrimination</h1>"),
+        ] {
+            let page = get(d.port, &format!("{base}{screen}"), &host);
+            assert!(page.starts_with("HTTP/1.1 200"), "{screen}: {page}");
+            assert!(
+                page.contains(expect),
+                "{screen}: {}",
+                &page[..page.len().min(2000)]
+            );
+            assert!(!page.contains("<h1>Error</h1>"), "{screen}: {page}");
+            assert!(
+                !page.contains("http://") || page.contains("xmlns=\"http://www.w3.org/2000/svg\"")
+            );
+        }
+        // The comparison shows the CLI's verdict and the overview its intervals.
+        let page = get(d.port, &format!("{base}compare"), &host);
+        assert!(page.contains("class=\"verdict\""), "{page}");
+        assert!(get(d.port, &base, &host).contains("data-value="));
+        assert_eq!(
+            std::fs::read_to_string(p.join(".evalsig/ledger.jsonl")).unwrap(),
+            before,
+            "the dashboard wrote to the ledger"
+        );
+    }
+}
