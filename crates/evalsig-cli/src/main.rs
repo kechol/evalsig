@@ -57,7 +57,6 @@ enum Command {
         #[arg(long)]
         raw: bool,
     },
-    /// Check a `records/1` JSONL file line by line.
     /// Run validity checks only: on a records file, or on the imported data.
     Validate {
         /// Check this `records/1` file instead of the project's data.
@@ -67,7 +66,7 @@ enum Command {
         #[arg(long)]
         list_checks: bool,
         #[command(flatten)]
-        checks: checks::CheckArgs,
+        checks: checks::DatasetArgs,
     },
     /// Show the tool, record-format and output-schema versions.
     Version,
@@ -86,8 +85,16 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
         Command::Validate {
             records: Some(ref records),
-            ..
-        } => commands::validate::run(records),
+            list_checks,
+            checks,
+        } => {
+            if list_checks || checks.allow_unexplained_missing || checks.fail_on_secret {
+                return Err(CliError::usage(
+                    "--records checks the file's format only; --list-checks and check flags apply to the project's data",
+                ));
+            }
+            commands::validate::run(records)
+        }
         Command::Validate {
             records: None,
             list_checks,

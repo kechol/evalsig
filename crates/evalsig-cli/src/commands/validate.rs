@@ -6,9 +6,9 @@ use std::path::Path;
 
 use serde_json::json;
 
-use evalsig_core::validity;
+use evalsig_core::{missing, validity};
 
-use crate::checks::{self, CheckArgs};
+use crate::checks::{self, ArmArgs, DatasetArgs};
 use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
@@ -20,7 +20,7 @@ use crate::validate::{Issue, RecordValidator};
 const MAX_ISSUES: usize = 1000;
 
 /// Run the dataset checks over the project's imported data.
-pub fn project(root: &Path, args: CheckArgs, list: bool) -> Result<Output, CliError> {
+pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, CliError> {
     if list {
         return Ok(Output::success(Envelope::new(
             "evalsig.validate/1",
@@ -29,13 +29,13 @@ pub fn project(root: &Path, args: CheckArgs, list: bool) -> Result<Output, CliEr
     }
     let project = Project::open(root)?;
     let data = data::load(&project)?;
-    let findings = validity::dataset(&data.records, &args.overrides());
-    let counts = checks::missing_counts(&data.records);
+    let findings = validity::dataset(&data.records, &checks::overrides(args, ArmArgs::default()));
+    let counts = missing::tally(&data.records);
     let mut envelope = Envelope::new(
         "evalsig.validate/1",
         json!({
             "records": data.records.len(),
-            "n_used": counts.n_used,
+            "values": counts.values,
             "n_missing": counts.n_missing,
             "missing_by_reason": counts.missing_by_reason,
             "checks": findings,

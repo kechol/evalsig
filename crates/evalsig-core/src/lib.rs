@@ -2,6 +2,7 @@
 
 pub mod checks;
 pub mod config;
+pub mod interval;
 pub mod labels;
 pub mod missing;
 pub mod records;

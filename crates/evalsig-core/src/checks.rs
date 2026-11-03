@@ -28,11 +28,13 @@ pub struct CheckSpec {
     pub code: &'static str,
     pub summary: &'static str,
     pub default: Action,
-    /// The command-line flag that lifts the check; `gate` never accepts it.
+    /// The command-line flag that changes the default: it turns a stop or an exclusion
+    /// into a warning, or a warning into a stop. `gate` never accepts it.
     pub override_flag: Option<&'static str>,
     /// What `gate` does instead, when it differs from the default.
     pub gate: Option<&'static str>,
-    /// The backlog task that implements the check.
+    /// The maintainers' planning task that implements the check (not published).
+    #[serde(skip)]
     pub delivered_by: &'static str,
 }
 
@@ -253,19 +255,22 @@ pub struct Finding {
 }
 
 impl Finding {
-    /// A finding with the check's default action, or `Warn` when the user passed its
-    /// override flag (overrides never apply inside `gate`).
-    pub fn new(code: &'static str, message: impl Into<String>, overridden: bool) -> Self {
+    /// A finding with the check's default action, changed by its override flag when
+    /// the user passed it: a stop or an exclusion becomes a warning, a warning becomes
+    /// a stop. Without the flag, the hint names it. `gate` passes no overrides.
+    pub fn new(code: &'static str, message: impl Into<String>, overrides: &Overrides) -> Self {
         let spec = by_code(code).unwrap_or_else(|| panic!("unknown check code {code}"));
-        let action = if overridden && spec.override_flag.is_some() {
-            Action::Warn
-        } else {
-            spec.default
+        let flag = spec.override_flag.filter(|f| overrides.has(f));
+        let action = match (flag, spec.default) {
+            (Some(_), Action::Stop | Action::Exclude) => Action::Warn,
+            (Some(_), Action::Warn) => Action::Stop,
+            _ => spec.default,
         };
-        let hint = match (action, spec.override_flag) {
-            (Action::Stop | Action::Exclude, Some(flag)) => {
-                Some(format!("pass {flag} to continue anyway"))
+        let hint = match (flag, spec.override_flag, action) {
+            (None, Some(f), Action::Stop | Action::Exclude) => {
+                Some(format!("pass {f} to continue anyway"))
             }
+            (None, Some(f), Action::Warn) => Some(format!("pass {f} to stop instead")),
             _ => None,
         };
         Finding {
@@ -287,8 +292,7 @@ impl Finding {
     }
 }
 
-/// Override flags the user passed. `gate` constructs [`Overrides::none`] and offers no
-/// way to set them.
+/// Override flags the user passed. `gate` uses the default, which passes none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Overrides {
     pub allow_unexplained_missing: bool,
@@ -298,29 +302,16 @@ pub struct Overrides {
 }
 
 impl Overrides {
-    pub const fn none() -> Self {
-        Overrides {
-            allow_unexplained_missing: false,
-            allow_mixed_grader: false,
-            allow_input_change: false,
-            fail_on_secret: false,
-        }
-    }
-
-    /// Whether the user lifted the check with its flag.
-    pub fn lifts(&self, code: &str) -> bool {
-        match code {
-            "unexplained_missing" => self.allow_unexplained_missing,
-            "mixed_grader" => self.allow_mixed_grader,
-            "input_changed" => self.allow_input_change,
+    /// Whether the flag with this name (as in [`CheckSpec::override_flag`]) was passed.
+    pub fn has(&self, flag: &str) -> bool {
+        match flag {
+            "--allow-unexplained-missing" => self.allow_unexplained_missing,
+            "--allow-mixed-grader" => self.allow_mixed_grader,
+            "--allow-input-change" => self.allow_input_change,
+            "--fail-on-secret" => self.fail_on_secret,
             _ => false,
         }
     }
-}
-
-/// The outcome of running checks: whether anything stops the command.
-pub fn stops(findings: &[Finding]) -> bool {
-    findings.iter().any(Finding::stops)
 }
 
 #[cfg(test)]
@@ -409,33 +400,45 @@ mod tests {
     }
 
     #[test]
-    fn overrides_turn_a_stop_into_a_warning_with_a_hint_otherwise() {
-        let stop = Finding::new("mixed_grader", "graders differ", false);
+    fn flags_change_the_default_and_hints_name_them() {
+        let stop = Finding::new("mixed_grader", "graders differ", &Overrides::default());
         assert!(stop.stops());
         assert_eq!(
             stop.hint.as_deref(),
             Some("pass --allow-mixed-grader to continue anyway")
         );
-        let lifted = Finding::new(
-            "mixed_grader",
-            "graders differ",
-            Overrides {
-                allow_mixed_grader: true,
-                ..Overrides::none()
-            }
-            .lifts("mixed_grader"),
+        let all = Overrides {
+            allow_unexplained_missing: true,
+            allow_mixed_grader: true,
+            allow_input_change: true,
+            fail_on_secret: true,
+        };
+        assert_eq!(Finding::new("mixed_grader", "x", &all).action, Action::Warn);
+        assert_eq!(
+            Finding::new("input_changed", "x", &all).action,
+            Action::Warn
         );
-        assert_eq!(lifted.action, Action::Warn);
-        // Checks without an override flag ignore the request.
-        assert!(Finding::new("mixed_output_type", "mixed", true).stops());
-        assert!(stops(&[stop]));
+        assert!(Finding::new("secret_in_content", "x", &all).stops());
+        let warn = Finding::new("secret_in_content", "x", &Overrides::default());
+        assert_eq!(
+            warn.hint.as_deref(),
+            Some("pass --fail-on-secret to stop instead")
+        );
+        // Checks without an override flag keep their default.
+        assert!(Finding::new("mixed_output_type", "mixed", &all).stops());
     }
 
     #[test]
-    fn gate_overrides_lift_nothing() {
-        let none = Overrides::none();
-        for c in CHECKS {
-            assert!(!none.lifts(c.code));
+    fn every_registered_flag_is_recognized_and_off_by_default() {
+        let all = Overrides {
+            allow_unexplained_missing: true,
+            allow_mixed_grader: true,
+            allow_input_change: true,
+            fail_on_secret: true,
+        };
+        for flag in CHECKS.iter().filter_map(|c| c.override_flag) {
+            assert!(all.has(flag), "{flag}");
+            assert!(!Overrides::default().has(flag), "{flag}");
         }
     }
 }

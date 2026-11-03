@@ -242,7 +242,7 @@ pub enum ValueSemantics {
     Score,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputType {
     Binary,
@@ -505,6 +505,16 @@ impl RecordError {
 }
 
 impl Record {
+    /// The missing marker of a judgment, label or preference.
+    pub fn missing(&self) -> Option<&Missing> {
+        match self {
+            Record::Judgment(j) => j.missing.as_ref(),
+            Record::Label(l) => l.missing.as_ref(),
+            Record::Preference(p) => p.missing.as_ref(),
+            Record::Item(_) | Record::Run(_) | Record::Content(_) => None,
+        }
+    }
+
     /// Parse one JSONL line and check the rules the type system does not express.
     pub fn from_json(line: &str) -> Result<Record, RecordError> {
         let record: Record = serde_json::from_str(line)?;

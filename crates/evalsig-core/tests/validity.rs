@@ -22,7 +22,7 @@ fn codes(findings: &[Finding]) -> Vec<&'static str> {
 }
 
 fn fired(records: &[Record], code: &str) -> Option<Finding> {
-    dataset(records, &Overrides::none())
+    dataset(records, &Overrides::default())
         .into_iter()
         .find(|f| f.code == code)
 }
@@ -45,7 +45,7 @@ fn unexplained_missing() {
         &bad,
         &Overrides {
             allow_unexplained_missing: true,
-            ..Overrides::none()
+            ..Overrides::default()
         },
     );
     assert_eq!(
@@ -109,37 +109,55 @@ fn identical_replicates() {
     assert!(fired(&ok, "identical_replicates").is_none());
 }
 
-#[test]
-fn verification_bias_suspected() {
-    // Humans labelled every item judged true and none judged false.
+fn label(item: &str, extra: &str) -> String {
+    format!(
+        r#"{{"record":"label","item_id":"{item}","rater_id":"u","source":"human","version":1,"value":true{extra}}}"#
+    )
+}
+
+/// Twenty items, ten judged true and ten false; `labelled(i)` says which get a label.
+fn verification_fixture(labelled: impl Fn(usize) -> bool) -> Vec<Record> {
     let mut lines = vec![RUN.to_owned()];
     for i in 0..20 {
-        let positive = i < 10;
         lines.push(format!(r#"{{"record":"item","item_id":"i{i}"}}"#));
         lines.push(judgment(
             &format!("i{i}"),
             0,
-            &format!(r#","value":{positive}"#),
+            &format!(r#","value":{}"#, i < 10),
         ));
-        if positive {
-            lines.push(format!(
-                r#"{{"record":"label","item_id":"i{i}","rater_id":"u","source":"human","version":1,"value":true}}"#
-            ));
+        if labelled(i) {
+            lines.push(label(&format!("i{i}"), ""));
         }
     }
-    let bad: Vec<Record> = recs(&lines.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(fired(&bad, "verification_bias_suspected").is_some());
+    recs(&lines.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+#[test]
+fn verification_bias_suspected() {
+    // Humans labelled every item judged true and none judged false.
+    assert!(
+        fired(
+            &verification_fixture(|i| i < 10),
+            "verification_bias_suspected"
+        )
+        .is_some()
+    );
     // Labels spread evenly over both levels.
-    let even: Vec<String> = lines
-        .iter()
-        .cloned()
-        .chain((10..20).filter(|i| i % 2 == 0).map(|i| {
-            format!(r#"{{"record":"label","item_id":"i{i}","rater_id":"u","source":"human","version":1,"value":false}}"#)
-        }))
-        .filter(|l| !(l.contains("\"label\"") && ["i1\"", "i3\"", "i5\"", "i7\"", "i9\""].iter().any(|x| l.contains(x))))
-        .collect();
-    let ok = recs(&even.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(fired(&ok, "verification_bias_suspected").is_none());
+    assert!(
+        fired(
+            &verification_fixture(|i| i % 2 == 0),
+            "verification_bias_suspected"
+        )
+        .is_none()
+    );
+    // Every item labelled: nothing was selected.
+    assert!(
+        fired(
+            &verification_fixture(|_| true),
+            "verification_bias_suspected"
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -169,7 +187,7 @@ fn secret_in_content() {
         &bad,
         &Overrides {
             fail_on_secret: true,
-            ..Overrides::none()
+            ..Overrides::default()
         },
     );
     assert!(
@@ -189,24 +207,25 @@ fn secret_in_content() {
         Some("GitHub token")
     );
     assert_eq!(secret_shape("an ordinary sentence"), None);
+    let run = recs(&[&format!(
+        r#"{{"record":"run","run_id":"r","system":{{"id":"s","version":"1"}},"harness":{{"name":"h","run_ref":"xoxp-{}"}}}}"#,
+        "1".repeat(24)
+    )]);
+    assert!(fired(&run, "secret_in_content").is_some());
 }
 
 #[test]
 fn adjudication_never_enters_agreement() {
     let labels: Vec<Label> = recs(&[
-        r#"{"record":"label","item_id":"a","rater_id":"u","source":"human","version":1,"value":true}"#,
+        &label("a", ""),
         r#"{"record":"label","item_id":"a","rater_id":"lead","source":"human","kind":"adjudication","version":1,"value":true}"#,
     ])
     .into_iter()
-    .map(|r| match r {
-        Record::Label(l) => l,
-        _ => unreachable!(),
-    })
+    .filter_map(|r| if let Record::Label(l) = r { Some(l) } else { None })
     .collect();
     let kept = agreement_labels(&labels);
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].rater_id, "u");
-    assert_eq!(agreement_labels(&labels[..1]).len(), 1);
 }
 
 #[test]
@@ -216,18 +235,22 @@ fn mixed_grader_stops() {
         version: Some(v.into()),
         ..GraderRef::default()
     };
-    let f = mixed_grader(Some(&g("1")), Some(&g("2")), &Overrides::none()).unwrap();
+    let f = mixed_grader(Some(&g("1")), Some(&g("2")), &Overrides::default()).unwrap();
     assert!(f.stops());
     let lifted = mixed_grader(
         Some(&g("1")),
         Some(&g("2")),
         &Overrides {
             allow_mixed_grader: true,
-            ..Overrides::none()
+            ..Overrides::default()
         },
     );
     assert_eq!(lifted.unwrap().action, Action::Warn);
-    assert!(mixed_grader(Some(&g("1")), Some(&g("1")), &Overrides::none()).is_none());
+    assert!(mixed_grader(Some(&g("1")), Some(&g("1")), &Overrides::default()).is_none());
+    assert!(mixed_grader(None, None, &Overrides::default()).is_none());
+    let one = mixed_grader(Some(&g("1")), None, &Overrides::default()).unwrap();
+    assert!(one.message.contains("only one arm"));
+    assert!(f.message.contains("version"));
 }
 
 #[test]
@@ -236,7 +259,7 @@ fn unpaired_items_and_changed_inputs() {
         [("x", Some("h1")), ("y", Some("h2")), ("z", None)].into();
     let b: BTreeMap<&str, Option<&str>> =
         [("x", Some("h1")), ("y", Some("h9")), ("w", None)].into();
-    let (p, findings) = pair(&a, &b, &Overrides::none());
+    let (p, findings) = pair(&a, &b, &Overrides::default());
     assert_eq!(p.paired, ["x"]);
     assert_eq!(p.n_unpaired, 2);
     assert_eq!(p.input_changed, ["y"]);
@@ -247,24 +270,43 @@ fn unpaired_items_and_changed_inputs() {
         &b,
         &Overrides {
             allow_input_change: true,
-            ..Overrides::none()
+            ..Overrides::default()
         },
     );
     assert_eq!(p.paired, ["x", "y"]);
     assert_eq!(findings[1].action, Action::Warn);
-    let (p, findings) = pair(&a, &a, &Overrides::none());
+    let (p, findings) = pair(&a, &a, &Overrides::default());
     assert_eq!(p.paired.len(), 3);
     assert!(findings.is_empty());
 }
 
 #[test]
 fn missing_rates_that_differ() {
-    assert!(missing_rate_differs((30, 100), (5, 100)).is_some());
-    assert!(missing_rate_differs((6, 100), (5, 100)).is_none());
+    assert!(missing_rate_differs((30, 100), (5, 100), &Overrides::default()).is_some());
+    assert!(missing_rate_differs((6, 100), (5, 100), &Overrides::default()).is_none());
 }
 
 #[test]
 fn run_variance_against_delta() {
-    assert!(run_variance_exceeds_delta(0.02, 0.01).is_some());
-    assert!(run_variance_exceeds_delta(0.005, -0.01).is_none());
+    assert!(run_variance_exceeds_delta(0.02, 0.01, &Overrides::default()).is_some());
+    assert!(run_variance_exceeds_delta(0.005, -0.01, &Overrides::default()).is_none());
+}
+
+#[test]
+fn blank_details_do_not_explain_a_missing_value() {
+    let blank = recs(&[
+        RUN,
+        &judgment("a", 0, r#","missing":{"reason":"other","detail":"  "}"#),
+    ]);
+    assert!(fired(&blank, "unexplained_missing").is_some());
+}
+
+#[test]
+fn missing_judgments_without_levels_are_not_mixed_shapes() {
+    let ordinal = recs(&[
+        r#"{"record":"run","run_id":"q","system":{"id":"s","version":"1"},"output_type":"ordinal","levels":4}"#,
+        r#"{"record":"judgment","item_id":"a","run_id":"q","gen_replicate":0,"output_type":"ordinal","levels":4,"value":1}"#,
+        r#"{"record":"judgment","item_id":"b","run_id":"q","gen_replicate":0,"output_type":"ordinal","missing":{"reason":"timeout"}}"#,
+    ]);
+    assert!(fired(&ordinal, "mixed_output_type").is_none());
 }

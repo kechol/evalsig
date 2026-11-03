@@ -96,7 +96,7 @@ fn clean_data_passes_and_still_reports_missing_counts() {
             .get_output()
             .stdout,
     );
-    assert_eq!(v["results"]["n_used"], 1);
+    assert_eq!(v["results"]["values"], 1);
     assert_eq!(v["results"]["n_missing"], 1);
     assert_eq!(v["warnings"], serde_json::json!([]));
 }
@@ -119,4 +119,42 @@ fn the_example_data_triggers_the_model_reference_warning() {
         .map(|w| w["code"].as_str().unwrap())
         .collect();
     assert!(codes.contains(&"model_derived_reference"), "{codes:?}");
+}
+
+#[test]
+fn records_mode_rejects_flags_it_would_ignore() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("r.jsonl");
+    std::fs::write(&f, format!("{RUN}\n")).unwrap();
+    for flag in [
+        "--list-checks",
+        "--fail-on-secret",
+        "--allow-unexplained-missing",
+    ] {
+        evalsig(dir.path())
+            .args(["validate", "--records"])
+            .arg(&f)
+            .arg(flag)
+            .assert()
+            .code(64);
+    }
+}
+
+#[test]
+fn label_missing_values_are_counted_too() {
+    let lines = format!(
+        "{RUN}\n{}\n",
+        r#"{"record":"label","item_id":"a","rater_id":"u","source":"human","version":1,"missing":{"reason":"not_run"}}"#
+    );
+    let dir = project_with(&lines);
+    let v = json(
+        &evalsig(dir.path())
+            .arg("validate")
+            .assert()
+            .success()
+            .get_output()
+            .stdout,
+    );
+    assert_eq!(v["results"]["n_missing"], 1);
+    assert_eq!(v["results"]["missing_by_reason"]["not_run"], 1);
 }

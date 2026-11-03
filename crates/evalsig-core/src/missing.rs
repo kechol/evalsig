@@ -111,6 +111,36 @@ pub struct MissingCounts {
     pub missing_by_reason: BTreeMap<MissingReason, u64>,
 }
 
+/// Values and missing markers across the judgments, labels and preferences of a
+/// dataset, before any policy applies.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Tally {
+    pub values: u64,
+    pub n_missing: u64,
+    pub missing_by_reason: BTreeMap<MissingReason, u64>,
+}
+
+pub fn tally(records: &[crate::records::Record]) -> Tally {
+    use crate::records::Record;
+    let mut t = Tally::default();
+    for r in records {
+        if !matches!(
+            r,
+            Record::Judgment(_) | Record::Label(_) | Record::Preference(_)
+        ) {
+            continue;
+        }
+        match r.missing() {
+            Some(m) => {
+                t.n_missing += 1;
+                *t.missing_by_reason.entry(m.reason).or_default() += 1;
+            }
+            None => t.values += 1,
+        }
+    }
+    t
+}
+
 /// A weighted mean under a missing policy, with Manski bounds when system-side
 /// values are missing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
