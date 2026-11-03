@@ -122,6 +122,13 @@ impl Referee {
         self.dir.join("ledger.jsonl")
     }
 
+    pub fn entries(&self) -> Result<Vec<Entry>, CliError> {
+        if !self.ledger_path().exists() {
+            return Ok(Vec::new());
+        }
+        ledger::read(&self.ledger_path()).map_err(CliError::store)
+    }
+
     /// Append a referee ledger line.
     pub fn record(
         &self,

@@ -16,10 +16,27 @@ use crate::project::{Project, io_error};
 use crate::schemas;
 
 #[derive(Debug, Clone, clap::Args)]
+#[command(args_conflicts_with_subcommands = true)]
 pub struct Args {
     /// Draft these conditions (gate.toml).
     #[arg(long, value_name = "FILE")]
-    pub draft: PathBuf,
+    pub draft: Option<PathBuf>,
+    #[command(subcommand)]
+    pub action: Option<Action>,
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum Action {
+    /// As the referee: resolve and pin a draft into approved conditions.
+    Approve(crate::commands::approve::ApproveArgs),
+    /// As the referee: print approved conditions as gate reads them.
+    Show {
+        /// The approved conditions' hash.
+        approved: String,
+        /// The referee's home (default: EVALSIG_REFEREE).
+        #[arg(long, value_name = "DIR")]
+        referee: Option<PathBuf>,
+    },
 }
 
 fn invalid(message: impl Into<String>) -> CliError {
@@ -57,8 +74,24 @@ pub fn parse(path: &Path) -> Result<Value, CliError> {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    match (&args.draft, &args.action) {
+        (_, Some(Action::Approve(a))) => crate::commands::approve::approve(root, a),
+        (_, Some(Action::Show { approved, referee })) => {
+            let r = crate::referee::Referee::open(referee.as_deref())?;
+            let doc = crate::commands::approve::load(&r, approved)?;
+            Ok(Output::success(Envelope::new(
+                "evalsig.preregister/1",
+                json!({ "approved": approved, "conditions": doc }),
+            )))
+        }
+        (Some(file), None) => draft(root, file),
+        (None, None) => Err(CliError::usage("give --draft <gate.toml>, approve or show")),
+    }
+}
+
+fn draft(root: &Path, file: &Path) -> Result<Output, CliError> {
     let project = Project::open(root)?;
-    let doc = parse(&args.draft)?;
+    let doc = parse(file)?;
     let canonical = to_canonical_bytes(&doc).map_err(CliError::store)?;
     let hash = ContentHash::blake3(&canonical);
     let dir = project.dir.join("drafts");

@@ -111,6 +111,35 @@ fn power_reproduces_the_sample_size_table() {
         .as_f64()
         .unwrap();
     assert!(pass > 0.7 && pass < 0.9, "{pass}");
+    // The example gate: one-sided at 95% with a budget of 5.
+    let example = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/gate.toml");
+    let g = json(
+        d,
+        &[
+            "power",
+            "--gate",
+            example,
+            "--delta",
+            "0.05",
+            "--discordance",
+            "0.1",
+        ],
+    );
+    let b = json(
+        d,
+        &[
+            "power",
+            "--one-sided",
+            "--budget",
+            "5",
+            "--delta",
+            "0.05",
+            "--discordance",
+            "0.1",
+        ],
+    );
+    assert_eq!(g["results"]["paired"], b["results"]["paired"]);
+    assert_eq!(g["results"]["budget"], 5);
     let mdd = json(
         d,
         &["power", "--discordance", "0.1", "--n", "246", "--one-sided"],

@@ -47,6 +47,10 @@ pub struct PowerArgs {
     /// the probability of passing.
     #[arg(long, value_name = "N")]
     pub n: Option<u64>,
+    /// Take the level, sidedness and budget from these gate conditions (gate.toml or an
+    /// approved copy): the primary condition's level and sidedness, and the holdout budget.
+    #[arg(long, value_name = "FILE")]
+    pub gate: Option<std::path::PathBuf>,
     /// Mean cluster size and intra-cluster correlation for the design effect.
     #[arg(long, value_name = "M", requires = "icc")]
     pub cluster_size: Option<f64>,
@@ -55,6 +59,31 @@ pub struct PowerArgs {
 }
 
 pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
+    let mut args = args.clone();
+    if let Some(path) = &args.gate {
+        let text = std::fs::read_to_string(path).map_err(|e| crate::project::io_error(path, &e))?;
+        let doc: toml::Table =
+            toml::from_str(&text).map_err(|e| CliError::invalid_input(path, e))?;
+        let primary = doc
+            .get("conditions")
+            .and_then(|c| c.as_array())
+            .and_then(|c| c.first());
+        let level = primary
+            .and_then(|c| c.get("level"))
+            .and_then(toml::Value::as_float)
+            .unwrap_or(0.95);
+        args.alpha = 1.0 - level;
+        args.one_sided = primary
+            .and_then(|c| c.get("sided"))
+            .and_then(toml::Value::as_str)
+            == Some("one");
+        args.budget = doc
+            .get("holdout")
+            .and_then(|h| h.get("budget"))
+            .and_then(toml::Value::as_integer)
+            .map_or(5, |b| b as u32);
+    }
+    let args = &args;
     let effect = |n: u64| match (args.cluster_size, args.icc) {
         (Some(m), Some(rho)) => power::with_design_effect(n, m, rho),
         _ => n,
