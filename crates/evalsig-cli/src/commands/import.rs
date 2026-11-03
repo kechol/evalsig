@@ -89,7 +89,7 @@ pub struct Args {
 }
 
 /// Bytes with an optional binary K, M or G suffix.
-fn parse_size(s: &str) -> Result<u64, String> {
+pub(crate) fn parse_size(s: &str) -> Result<u64, String> {
     let (digits, shift) = match s.strip_suffix(['K', 'M', 'G']) {
         Some(d) => (
             d,

@@ -57,6 +57,9 @@ enum Command {
     /// Read, verify or anchor a ledger.
     #[command(subcommand)]
     Ledger(commands::ledger::LedgerCommand),
+    /// Onboard records of an unknown shape: probe them and write a mapping.
+    #[command(subcommand)]
+    Map(commands::map::MapCommand),
     /// Rewrite snapshots in an earlier record format in the current one.
     Migrate(commands::migrate::Args),
     /// Remove a content body and the free-text fields of the items that name it.
@@ -107,6 +110,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
+        Command::Map(ref cmd) => commands::map::run(cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Rebuild => commands::rebuild::run(&cli.project),
