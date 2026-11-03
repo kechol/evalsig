@@ -1,0 +1,439 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:evalsig:schema:mapping:1",
+ "title": "evalsig mapping file (mapping.toml as JSON, mapping/1)",
+ "description": "A declaration that maps external records to the canonical format (records/1). `evalsig map draft` drafts it and people fill in each DECIDE. An import stops while any DECIDE remains. The file's hash is recorded in the snapshot provenance and pinned by gate approval.",
+ "type": "object",
+ "required": [
+  "schema",
+  "name",
+  "source",
+  "run",
+  "item",
+  "judgment"
+ ],
+ "additionalProperties": false,
+ "$defs": {
+  "path": {
+   "type": "string",
+   "pattern": "^(\\$|@)",
+   "description": "A JSONPath subset. $ is the source row (in join.path, the joined file), @ the current element. {name} inserts an explode variable and {$.x} the text of a value."
+  },
+  "decide": {
+   "const": "DECIDE",
+   "description": "Marks a choice a person still has to make"
+  },
+  "expr": {
+   "description": "How a value is obtained: a path string, or a table with at most one of path, template, arg and const (none means the current element), then value_map, default, offset and type",
+   "oneOf": [
+    {
+     "$ref": "#/$defs/path"
+    },
+    {
+     "$ref": "#/$defs/decide"
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "path": {
+       "$ref": "#/$defs/path"
+      },
+      "template": {
+       "type": "string",
+       "description": "For example {$.task}:{$.ticket_id}"
+      },
+      "arg": {
+       "type": "string",
+       "description": "A value passed with import --arg NAME=VALUE"
+      },
+      "const": {},
+      "value_map": {
+       "type": "object",
+       "description": "Source value to canonical value. A value not listed becomes missing (invalid_output). A DECIDE value leaves that value's treatment to a person"
+      },
+      "default": {
+       "description": "The value when the path is absent or the value is not in value_map. Without it, the value is missing (invalid_output)"
+      },
+      "offset": {
+       "type": "number",
+       "description": "Subtracted from numbers (for example 1 to make 1-based levels 0-based)"
+      },
+      "type": {
+       "enum": [
+        "boolean",
+        "integer",
+        "number",
+        "string"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "condition": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "path"
+   ],
+   "properties": {
+    "path": {
+     "$ref": "#/$defs/path"
+    },
+    "exists": {
+     "type": "boolean"
+    },
+    "equals": {},
+    "in": {
+     "type": "array"
+    }
+   }
+  }
+ },
+ "properties": {
+  "schema": {
+   "const": "evalsig.mapping/1"
+  },
+  "name": {
+   "type": "string"
+  },
+  "source": {
+   "type": "object",
+   "required": [
+    "format"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "format": {
+     "enum": [
+      "json",
+      "jsonl",
+      "csv"
+     ]
+    },
+    "records_path": {
+     "$ref": "#/$defs/path",
+     "description": "For json: the path of the rows (for example $.results[*])"
+    },
+    "fingerprint": {
+     "type": "string",
+     "description": "The shape fingerprint from map probe; map test warns when the shape changes"
+    },
+    "expect": {
+     "$ref": "#/$defs/condition",
+     "description": "Stops before reading records of an unknown version"
+    }
+   }
+  },
+  "run": {
+   "type": "object",
+   "required": [
+    "run_id",
+    "system",
+    "value_semantics"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "run_id": {
+     "$ref": "#/$defs/expr"
+    },
+    "system": {
+     "type": "object",
+     "required": [
+      "id",
+      "version"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/expr"
+      },
+      "version": {
+       "$ref": "#/$defs/expr"
+      }
+     }
+    },
+    "grader": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/expr"
+      },
+      "version": {
+       "$ref": "#/$defs/expr"
+      },
+      "kind": {
+       "$ref": "#/$defs/expr"
+      }
+     }
+    },
+    "value_semantics": {
+     "oneOf": [
+      {
+       "enum": [
+        "decision",
+        "score"
+       ]
+      },
+      {
+       "$ref": "#/$defs/decide"
+      }
+     ]
+    },
+    "output_type": {
+     "oneOf": [
+      {
+       "enum": [
+        "binary",
+        "ordinal",
+        "score"
+       ]
+      },
+      {
+       "$ref": "#/$defs/decide"
+      }
+     ]
+    },
+    "levels": {
+     "type": "integer",
+     "minimum": 2
+    }
+   }
+  },
+  "item": {
+   "type": "object",
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "$ref": "#/$defs/expr"
+    },
+    "cluster": {
+     "$ref": "#/$defs/expr"
+    },
+    "strata": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/expr"
+     }
+    },
+    "occurred_at": {
+     "$ref": "#/$defs/expr"
+    },
+    "input_ref": {
+     "$ref": "#/$defs/expr",
+     "description": "The system-independent input; it is stored as content and hashed at import"
+    },
+    "reference_ref": {
+     "$ref": "#/$defs/expr"
+    },
+    "weight": {
+     "$ref": "#/$defs/expr"
+    }
+   }
+  },
+  "judgment": {
+   "type": "object",
+   "required": [
+    "value"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "explode": {
+     "type": "object",
+     "additionalProperties": false,
+     "description": "Splits one row into several judgments, by keys or by path",
+     "properties": {
+      "keys": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "A fixed list of keys; their order gives the index"
+      },
+      "path": {
+       "$ref": "#/$defs/path",
+       "description": "An array or object"
+      },
+      "as": {
+       "type": "string",
+       "description": "The variable name, used as {name}"
+      },
+      "index": {
+       "oneOf": [
+        {
+         "enum": [
+          "gen_replicate",
+          "grade_replicate"
+         ]
+        },
+        {
+         "$ref": "#/$defs/decide"
+        }
+       ],
+       "description": "Which replicate the element's position becomes"
+      }
+     }
+    },
+    "gen_replicate": {
+     "$ref": "#/$defs/expr"
+    },
+    "grade_replicate": {
+     "$ref": "#/$defs/expr"
+    },
+    "task": {
+     "$ref": "#/$defs/expr"
+    },
+    "value": {
+     "$ref": "#/$defs/expr"
+    },
+    "features": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "explode",
+      "feature_id",
+      "fired"
+     ],
+     "properties": {
+      "explode": {
+       "$ref": "#/$defs/path"
+      },
+      "feature_id": {
+       "$ref": "#/$defs/expr"
+      },
+      "fired": {
+       "$ref": "#/$defs/expr"
+      },
+      "strength": {
+       "$ref": "#/$defs/expr"
+      }
+     }
+    },
+    "output_ref": {
+     "$ref": "#/$defs/expr"
+    },
+    "rationale_ref": {
+     "$ref": "#/$defs/expr"
+    },
+    "cost": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/expr"
+     }
+    },
+    "missing_if": {
+     "type": "array",
+     "description": "Checked in order; the first condition that holds makes the judgment missing with its reason. Whether a reason is system-side or measurement-side is a person's choice",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "when",
+       "reason"
+      ],
+      "properties": {
+       "when": {
+        "$ref": "#/$defs/condition"
+       },
+       "reason": {
+        "$ref": "#/$defs/expr"
+       },
+       "detail": {
+        "$ref": "#/$defs/expr"
+       }
+      }
+     }
+    }
+   }
+  },
+  "label": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "rater_id",
+    "source",
+    "value"
+   ],
+   "properties": {
+    "join": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "file",
+      "path"
+     ],
+     "description": "Joins labels from another file to the items",
+     "properties": {
+      "file": {
+       "$ref": "#/$defs/expr"
+      },
+      "format": {
+       "enum": [
+        "json",
+        "jsonl",
+        "csv"
+       ]
+      },
+      "path": {
+       "type": "string"
+      }
+     }
+    },
+    "rater_id": {
+     "$ref": "#/$defs/expr"
+    },
+    "source": {
+     "$ref": "#/$defs/expr"
+    },
+    "value": {
+     "$ref": "#/$defs/expr"
+    },
+    "version": {
+     "$ref": "#/$defs/expr"
+    },
+    "kind": {
+     "$ref": "#/$defs/expr"
+    },
+    "labeled_at": {
+     "$ref": "#/$defs/expr"
+    }
+   }
+  },
+  "decisions": {
+   "type": "array",
+   "description": "Choices written by map decide; each matches a mapping_decision ledger line",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "id",
+     "choice"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "choice": {},
+     "decided_by": {
+      "type": "string",
+      "description": "Self-reported; an audit lead"
+     },
+     "ledger_seq": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "applies_to": {
+      "enum": [
+       "mapping",
+       "config"
+      ],
+      "description": "config choices go to .evalsig/config.toml (positive definitions and decision rules)"
+     }
+    }
+   }
+  }
+ }
+}

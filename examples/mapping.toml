@@ -1,0 +1,84 @@
+# An example mapping file (evalsig.mapping/1): the mapping of
+# examples/custom-harness/convert_runlog.py, declared instead of scripted.
+# This is the state after `evalsig map draft` wrote it and people filled in each DECIDE
+# (`evalsig map decide`).
+# Usage: evalsig import --mapping examples/mapping.toml --arg run-id=triage-v1 \
+#          --arg labels=examples/custom-harness/labels.sample.json \
+#          examples/custom-harness/run-log.sample.jsonl
+schema = "evalsig.mapping/1"
+name = "triage-run"
+
+[source]
+format = "jsonl"
+expect = { path = "$.schema", equals = "triage-run/1" }   # Stop rather than read records of an unknown version
+
+[run]
+run_id = { arg = "run-id" }
+system = { id = { const = "triage-pipeline" }, version = { arg = "system-version", default = "unknown" } }
+value_semantics = "decision"           # Decision: value_semantics
+output_type = "ordinal"
+levels = 4
+
+[item]
+id = { template = "{$.task}:{$.ticket_id}" }   # Decision: item_key
+cluster = "$.ticket_id"                         # The tasks of one ticket are correlated
+strata = { task = "$.task" }
+
+[judgment]
+explode = { keys = ["a", "b"], as = "r", index = "gen_replicate" }   # Decision: replicate_kind
+value = { path = "$.runs.{r}.level", value_map = { low = 0, normal = 1, high = 2, urgent = 3, none = 0 } }   # Decision: value.none
+features = { explode = "$.runs.{r}.rules[?(@.applies)]", feature_id = "@.rule_id", fired = "@.fired" }
+
+[[judgment.missing_if]]
+when = { path = "$.missing.{r}", exists = true }
+reason = { path = "$.missing.{r}", value_map = { provider_error = "error", timeout = "timeout" }, default = "other" }   # Decision: missing.reason
+detail = { template = "run {r}: {$.missing.{r}}" }
+
+[label]
+join = { file = { arg = "labels" }, format = "json", path = "$.{$.task}.{$.ticket_id}" }
+rater_id = { const = "human:final" }
+source = { const = "human" }
+value = { type = "boolean" }
+version = { const = 1 }
+
+[[decisions]]
+id = "item_key"
+choice = "{task}:{ticket_id} (cluster = ticket_id)"
+decided_by = "user:alice"
+ledger_seq = 3
+applies_to = "mapping"
+
+[[decisions]]
+id = "value_semantics"
+choice = "decision"
+decided_by = "user:alice"
+ledger_seq = 4
+applies_to = "mapping"
+
+[[decisions]]
+id = "replicate_kind"
+choice = "gen_replicate"
+decided_by = "user:alice"
+ledger_seq = 5
+applies_to = "mapping"
+
+[[decisions]]
+id = "missing.reason"
+choice = { provider_error = "error", timeout = "timeout", other = "other" }
+decided_by = "user:alice"
+ledger_seq = 6
+applies_to = "mapping"
+
+[[decisions]]
+id = "value.none"
+choice = "low (matches the harness default)"
+decided_by = "user:alice"
+ledger_seq = 7
+applies_to = "mapping"
+
+[[decisions]]
+id = "positive"
+choice = { positive = { boolean = true }, decision = { ordinal_at_least = 2 } }
+decided_by = "user:alice"
+ledger_seq = 8
+applies_to = "config"

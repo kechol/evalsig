@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Regenerate the fixtures into a temporary directory and compare them with the committed ones.
+"""Regenerate the fixtures into a temporary directory and compare them with the committed ones,
+and check that examples/custom-harness/records.out.jsonl is the converter script's output.
 
 Canonicalization vectors must match byte for byte. Reference values must match within
 1e-12 (absolute); `generated_with` and `source` strings are allowed to differ, since they
@@ -52,6 +53,13 @@ def main():
             errors.append(f"{VECTORS.name}: bytes differ")
         compare(json.loads(REFERENCE.read_text(encoding="utf-8")),
                 json.loads((tmp / REFERENCE.name).read_text(encoding="utf-8")), REFERENCE.name, errors)
+    harness = HERE.parent / "examples" / "custom-harness"
+    converted = subprocess.run(
+        [sys.executable, "-I", str(harness / "convert_runlog.py"), str(harness / "run-log.sample.jsonl"),
+         str(harness / "labels.sample.json"), "--run-id", "triage-v1"],
+        check=True, capture_output=True).stdout
+    if converted != (harness / "records.out.jsonl").read_bytes():
+        errors.append("custom-harness/records.out.jsonl: differs from convert_runlog.py output")
     for e in errors:
         print(e)
     print("fixtures ok" if not errors else f"{len(errors)} difference(s)")

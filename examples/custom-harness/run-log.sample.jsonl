@@ -1,0 +1,3 @@
+{"schema":"triage-run/1","task":"priority","ticket_id":"t-0001","runs":{"a":{"level":"urgent","rules":[{"rule_id":"priority.R01","applies":true,"fired":true},{"rule_id":"priority.R02","applies":false,"fired":false}]},"b":{"level":"high","rules":[{"rule_id":"priority.R01","applies":true,"fired":false},{"rule_id":"priority.R02","applies":false,"fired":false}]}}}
+{"schema":"triage-run/1","task":"priority","ticket_id":"t-0002","runs":{"a":{"level":"low","rules":[{"rule_id":"priority.R01","applies":true,"fired":false}]},"b":{"level":"low","rules":[{"rule_id":"priority.R01","applies":true,"fired":false}]}}}
+{"schema":"triage-run/1","task":"refund","ticket_id":"t-0001","missing":{"b":"provider_error"},"runs":{"a":{"level":"none","rules":[]}}}

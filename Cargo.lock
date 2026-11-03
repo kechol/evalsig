@@ -418,8 +418,10 @@ name = "evalsig-adapters"
 version = "0.1.0"
 dependencies = [
  "evalsig-core",
+ "serde",
  "serde_json",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
@@ -438,6 +440,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml",
 ]
 
 [[package]]

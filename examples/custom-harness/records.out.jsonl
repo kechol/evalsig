@@ -1,0 +1,13 @@
+{"record": "run", "run_id": "triage-v1", "system": {"id": "triage-pipeline", "version": "unknown"}, "value_semantics": "decision", "output_type": "ordinal", "levels": 4}
+{"record": "item", "item_id": "priority:t-0001", "cluster": "t-0001", "strata": {"task": "priority"}}
+{"record": "label", "item_id": "priority:t-0001", "rater_id": "human:final", "source": "human", "value": true, "version": 1}
+{"record": "judgment", "item_id": "priority:t-0001", "run_id": "triage-v1", "gen_replicate": 0, "output_type": "ordinal", "levels": 4, "value": 3, "features": [{"feature_id": "priority.R01", "fired": true}]}
+{"record": "judgment", "item_id": "priority:t-0001", "run_id": "triage-v1", "gen_replicate": 1, "output_type": "ordinal", "levels": 4, "value": 2, "features": [{"feature_id": "priority.R01", "fired": false}]}
+{"record": "item", "item_id": "priority:t-0002", "cluster": "t-0002", "strata": {"task": "priority"}}
+{"record": "label", "item_id": "priority:t-0002", "rater_id": "human:final", "source": "human", "value": false, "version": 1}
+{"record": "judgment", "item_id": "priority:t-0002", "run_id": "triage-v1", "gen_replicate": 0, "output_type": "ordinal", "levels": 4, "value": 0, "features": [{"feature_id": "priority.R01", "fired": false}]}
+{"record": "judgment", "item_id": "priority:t-0002", "run_id": "triage-v1", "gen_replicate": 1, "output_type": "ordinal", "levels": 4, "value": 0, "features": [{"feature_id": "priority.R01", "fired": false}]}
+{"record": "item", "item_id": "refund:t-0001", "cluster": "t-0001", "strata": {"task": "refund"}}
+{"record": "label", "item_id": "refund:t-0001", "rater_id": "human:final", "source": "human", "value": false, "version": 1}
+{"record": "judgment", "item_id": "refund:t-0001", "run_id": "triage-v1", "gen_replicate": 0, "output_type": "ordinal", "levels": 4, "value": 0, "features": []}
+{"record": "judgment", "item_id": "refund:t-0001", "run_id": "triage-v1", "gen_replicate": 1, "output_type": "ordinal", "levels": 4, "missing": {"reason": "error", "detail": "run b: provider_error"}}

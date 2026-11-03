@@ -6,6 +6,7 @@ mod commands;
 mod data;
 mod error;
 mod exit;
+mod mapped;
 mod markdown;
 mod output;
 mod project;
@@ -66,7 +67,7 @@ enum Command {
     Report(commands::report::Args),
     /// List the imported runs.
     Runs,
-    /// Print a published JSON Schema (`records`, `ledger-entry`).
+    /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`).
     Schema {
         name: String,
         /// Print only the schema document, without the envelope.

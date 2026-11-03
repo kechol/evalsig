@@ -403,3 +403,46 @@ after the entry is `Accepted`.
   the possibility of confirming a guess. Reports computed before a purge can
   no longer be verified. Strata values replaced by hashes put the purged items
   in strata of their own.
+
+## D-011 Declarative mapping file `mapping.toml` (`mapping/1`)
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Records from custom harnesses rarely match `records/1`. A
+  declaration that a person can read, that is hashed into provenance and that
+  an approval can pin is preferable to a converter script (SPEC §5.2 ②, §5.3).
+  Users write it by hand, so its shape is a public contract.
+- Decision:
+  - `mapping.toml` is TOML with `schema = "evalsig.mapping/1"`, `name`,
+    `[source]` (`format` json, jsonl or csv; `records_path`; `expect`;
+    `fingerprint`), `[run]`, `[item]`, `[judgment]` (with `explode`,
+    `features`, `missing_if`), an optional `[label]` (with `join`) and
+    `[[decisions]]`, with the fields of
+    `crates/evalsig-cli/schema/mapping.schema.json` (`evalsig schema mapping`,
+    `$id` `urn:evalsig:schema:mapping:1`). Unknown fields are rejected.
+  - Paths are a JSONPath subset: `$` is the source row (in `join.path`, the
+    joined file), `@` the current element; `.name`, `[n]`, `[*]` and
+    `[?(@.x)]` / `[?(@.x == literal)]` segments; `{name}` inserts an
+    `explode` variable and `{$.x}` / `{@.x}` the text of a value, also inside
+    names and templates.
+  - An expression is a path, `DECIDE`, or a table with one source (`path`,
+    `template`, `arg`, `const`, or none for the current element) followed by
+    `value_map`, `default`, `offset` and `type`. A judgment or label value that
+    cannot be mapped becomes `missing` with reason `invalid_output`, never 0; a
+    key or required field that cannot be mapped stops the import.
+  - Fields that name bodies (`input_ref`, `reference_ref`, `output_ref`,
+    `rationale_ref`) take the body; the import stores it under
+    `store.content` (D-024) and writes its hash and a `content` record.
+  - `evalsig import --mapping <file> [--arg name=value]... <files>` applies a
+    mapping; `evalsig import --from <name>` applies an `[[import]]` block of
+    the configuration, read as the equivalent mapping (paths for JSON, column
+    names for CSV), with one run record per run ID and the block name as the
+    system ID. The mapping file's hash is the provenance `mapping`; joined
+    files are provenance sources. Any `DECIDE` left stops the import with
+    exit code 5 and lists where it is.
+- Alternatives: a full JSONPath or jq dependency (rejected: a larger surface
+  than the six operations SPEC §5.2 needs, and a third-party grammar would
+  become part of the public format); converter scripts only (rejected: not
+  readable or pinnable, SPEC §5.2).
+- Consequences: changing a field or the path grammar is `mapping/2`. Shapes the
+  subset cannot express still need a converter (`import --converter`).

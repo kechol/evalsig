@@ -1,5 +1,5 @@
-//! `evalsig import`: read canonical JSONL or flat CSV into one snapshot, with its
-//! provenance and an `import` line in the agent-side ledger.
+//! `evalsig import`: read canonical JSONL, flat CSV or mapped records into one
+//! snapshot, with its provenance and an `import` line in the agent-side ledger.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use crate::error::CliError;
 use crate::exit::Exit;
+use crate::mapped;
 use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 use crate::project::{Project, actor, io_error, now};
 use crate::validate::{Issue, RecordValidator};
@@ -46,11 +47,21 @@ pub enum AsArg {
 #[derive(Debug, clap::Args)]
 pub struct Args {
     /// Files to import into one snapshot.
-    #[arg(required = true)]
+    #[arg(required_unless_present = "from")]
     pub files: Vec<PathBuf>,
     /// Adapter; by default chosen from the file extension (.jsonl/.json, .csv).
     #[arg(long, value_enum)]
     pub adapter: Option<AdapterArg>,
+    /// Map the files with a mapping file (`mapping/1`).
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["adapter", "from", "converter"])]
+    pub mapping: Option<PathBuf>,
+    /// A value a mapping reads with `{ arg = "NAME" }`; repeat for several.
+    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    pub args: Vec<String>,
+    /// Apply the `[[import]]` block of this name in the configuration; its `path`
+    /// names the files unless files are given.
+    #[arg(long, value_name = "NAME", conflicts_with_all = ["adapter", "converter"])]
+    pub from: Option<String>,
     /// What each CSV row is.
     #[arg(long = "as", value_enum, default_value_t = AsArg::Judgment)]
     pub row: AsArg,
@@ -131,19 +142,42 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .then(|| content::Redactor::new(&config.store.redact_patterns))
         .transpose()
         .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))?;
+    let via = mapped::resolve(root, &config, args.mapping.as_deref(), args.from.as_deref())?;
+    let store = project.objects();
+    let mut bodies = mapped::Bodies::new(&args.args, (!args.dry_run).then_some(&store), &config)?;
+    let files = match &via {
+        Some(v) if args.files.is_empty() => v.files.clone(),
+        _ => args.files.clone(),
+    };
     let validator = RecordValidator::new();
     let mut records = Vec::new();
     let mut issues: Vec<(String, Issue)> = Vec::new();
     let mut sources = Vec::new();
     let mut adapters = std::collections::BTreeSet::new();
-    for path in &args.files {
-        let adapter = adapter_for(path, args.adapter)?;
-        adapters.insert(adapter);
+    for path in &files {
+        let adapter = match via {
+            Some(_) => None,
+            None => Some(adapter_for(path, args.adapter)?),
+        };
         let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
         sources.push(SourceFile {
             path: path.display().to_string(),
             hash: ContentHash::blake3(&bytes),
         });
+        if let Some(v) = &via {
+            let (mapped, found) = mapped::apply(v, path, &bytes, &mut bodies)?;
+            let file = path.display().to_string();
+            issues.extend(found.into_iter().map(|i| (file.clone(), i)));
+            for (row, value) in mapped {
+                match validator.check_value(row, value) {
+                    Ok(r) => records.push(r),
+                    Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
+                }
+            }
+            continue;
+        }
+        let adapter = adapter.expect("chosen above when there is no mapping");
+        adapters.insert(adapter);
         let text =
             String::from_utf8(bytes).map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
         for (line, candidate) in candidates(adapter, &text, path, args.row)? {
@@ -159,6 +193,13 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             }
         }
     }
+    for value in std::mem::take(&mut bodies.contents) {
+        match validator.check_value(0, value) {
+            Ok(r) => records.push(r),
+            Err(found) => issues.extend(found.into_iter().map(|i| ("<content>".into(), i))),
+        }
+    }
+    sources.append(&mut bodies.joined);
     let mut warnings = Vec::new();
     apply_overrides(
         &mut records,
@@ -204,23 +245,27 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let tool = crate::tool_version();
     let imported_at = now();
     let who = actor();
-    let adapter = adapters
-        .iter()
-        .map(|a| a.name())
-        .collect::<Vec<_>>()
-        .join("+");
-    let written = snapshot::write(&project.objects(), &mut records, |snapshot| Provenance {
+    let adapter = match &via {
+        Some(v) => v.adapter.clone(),
+        None => adapters
+            .iter()
+            .map(|a| a.name())
+            .collect::<Vec<_>>()
+            .join("+"),
+    };
+    let mapping = via.as_ref().map(|v| v.hash).or(converter);
+    let written = snapshot::write(&store, &mut records, |snapshot| Provenance {
         schema: PROVENANCE_SCHEMA.into(),
         snapshot,
         sources: sources.clone(),
         adapter: adapter.clone(),
         adapter_version: None,
-        mapping: converter,
+        mapping,
         mapping_decisions: vec![],
         tool: tool.clone(),
         imported_at: imported_at.clone(),
         actor: who.clone(),
-        redactions: vec![],
+        redactions: bodies.redactions.clone(),
     })
     .map_err(CliError::store)?;
     let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
@@ -257,7 +302,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             inputs: sources
                 .iter()
                 .map(|s| s.hash.to_string())
-                .chain(converter.map(|c| c.to_string()))
+                .chain(mapping.map(|c| c.to_string()))
                 .collect(),
             outputs: vec![written.snapshot.to_string(), written.provenance.to_string()],
             summary,
