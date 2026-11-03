@@ -240,4 +240,18 @@ mod tests {
         let (lo, hi) = clopper_pearson(3.5, 20.25, 0.95);
         assert!(0.0 < lo && lo < 3.5 / 20.25 && 3.5 / 20.25 < hi && hi < 1.0);
     }
+
+    proptest::proptest! {
+        /// Scaling every count by s keeps the raw rate and narrows the interval.
+        #[test]
+        fn intervals_narrow_when_counts_scale(k in 1u32..50, extra in 1u32..50, s in 2u32..10) {
+            let (k, n, s) = (f64::from(k), f64::from(k + extra), f64::from(s));
+            let width = |(lo, hi): (f64, f64)| hi - lo;
+            proptest::prop_assert!((k / n - (k * s) / (n * s)).abs() < 1e-15);
+            proptest::prop_assert!(width(wilson(k * s, n * s, Z95)) < width(wilson(k, n, Z95)));
+            proptest::prop_assert!(
+                width(clopper_pearson(k * s, n * s, 0.95)) < width(clopper_pearson(k, n, 0.95))
+            );
+        }
+    }
 }
