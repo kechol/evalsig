@@ -27,5 +27,6 @@ pub mod rules;
 pub mod score;
 pub mod sdt;
 pub mod sequential;
+pub mod split;
 pub mod time;
 pub mod validity;

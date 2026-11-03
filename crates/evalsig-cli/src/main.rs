@@ -76,6 +76,10 @@ enum Command {
     Report(commands::report::Args),
     /// List the imported runs.
     Runs,
+    /// Split the items into dev and validation by cluster, and record the split.
+    Split(commands::split::Args),
+    /// List the recorded dev / validation splits.
+    Splits,
     /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`).
     Schema {
         name: String,
@@ -132,6 +136,8 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),
+        Command::Split(ref args) => commands::split::run(&cli.project, args),
+        Command::Splits => commands::split::list(&cli.project),
         Command::Recipes(ref cmd) => commands::recipes::run(cmd),
         Command::Validate {
             records: Some(ref records),

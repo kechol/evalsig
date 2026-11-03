@@ -49,6 +49,11 @@ impl Project {
         self.dir.join("cache").join("evalsig.db")
     }
 
+    /// Agent-side splits, named by the hash of their validation items.
+    pub fn splits_dir(&self) -> PathBuf {
+        self.dir.join("splits")
+    }
+
     /// Saved results, named by their output hash.
     pub fn reports_dir(&self) -> PathBuf {
         self.dir.join("reports")

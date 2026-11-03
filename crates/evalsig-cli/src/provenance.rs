@@ -39,6 +39,15 @@ pub fn output_hash(results: &Value) -> Result<ContentHash, CliError> {
     ))
 }
 
+/// The name of an item set (a split, the items a comparison evaluates): the BLAKE3
+/// reference of the canonical JSON array of its sorted item IDs (D-022).
+pub fn item_set_hash<'a>(items: impl Iterator<Item = &'a String>) -> Result<String, CliError> {
+    let mut ids: Vec<&String> = items.collect();
+    ids.sort();
+    let bytes = to_canonical_bytes(&serde_json::json!(ids)).map_err(CliError::store)?;
+    Ok(ContentHash::blake3(&bytes).to_string())
+}
+
 /// Fill the provenance with what the result was computed from; returns the output
 /// hash.
 pub fn fill(

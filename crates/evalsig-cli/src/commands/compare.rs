@@ -11,14 +11,14 @@ use evalsig_core::paired::Verdict;
 use evalsig_core::preference;
 use evalsig_core::records::{Item, Label, Preference, Record, Run};
 use evalsig_core::report::{self, Prepared};
+use evalsig_core::split::Part;
 use evalsig_core::validity;
-use evalsig_store::canonical::to_canonical_bytes;
-use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Entry, Kind};
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
 use crate::checks::{self, ArmArgs, DatasetArgs};
+use crate::commands::split::{self, Scope};
 use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
@@ -26,7 +26,26 @@ use crate::output::{
     Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
 use crate::project::Project;
-use crate::provenance::{self, Request};
+use crate::provenance::{self, Request, item_set_hash};
+
+/// A part of an agent-side split.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitPart {
+    Dev,
+    Validation,
+}
+
+impl SplitPart {
+    pub fn part(self) -> Part {
+        match self {
+            SplitPart::Dev => Part::Dev,
+            SplitPart::Validation => Part::Validation,
+        }
+    }
+}
 
 #[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct Args {
@@ -56,6 +75,10 @@ pub struct Args {
     #[arg(long)]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sequential: bool,
+    /// Compare only the items of this part of the latest `evalsig split`.
+    #[arg(long, value_enum)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split: Option<SplitPart>,
     #[command(flatten)]
     pub dataset: DatasetArgs,
     #[command(flatten)]
@@ -176,14 +199,6 @@ fn preference_json(
     }))
 }
 
-/// The hash of the item set a comparison evaluates (the baseline's judged items):
-/// the canonical JSON array of the sorted item IDs, as a BLAKE3 reference.
-fn split_hash<'a>(items: impl Iterator<Item = &'a String>) -> Result<String, CliError> {
-    let ids: Vec<&String> = items.collect();
-    let bytes = to_canonical_bytes(&json!(ids)).map_err(CliError::store)?;
-    Ok(ContentHash::blake3(&bytes).to_string())
-}
-
 /// How many recorded comparisons used this split, counting the one being made
 /// (metrics spec §7.2). `entries` are the ledger lines before it.
 pub fn validation_uses(entries: &[Entry], split: &str) -> u64 {
@@ -221,7 +236,13 @@ pub struct Computed {
     pub seed: u64,
 }
 
-pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliError> {
+/// `scope` is the split part that `--split` resolved to; items outside it are left out.
+pub fn compute(
+    d: &Data,
+    config: &Config,
+    args: &Args,
+    scope: Option<&Scope>,
+) -> Result<Computed, CliError> {
     let items = d.items();
     let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = labels.iter().collect();
@@ -268,12 +289,21 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
             changed_inputs(&items, &base, &cand, &overrides)
         };
         findings.extend(input_findings);
+        let mut left_out = excluded.clone();
+        if let Some(s) = scope {
+            left_out.extend(
+                base.judged()
+                    .into_keys()
+                    .chain(cand.judged().into_keys())
+                    .filter(|i| !s.items.contains(i)),
+            );
+        }
         let options = Options {
             level: settings.level,
             bootstrap: settings.bootstrap,
             seed: settings.seed,
             min_effect: config.compare.min_effect.clone(),
-            excluded: excluded.clone(),
+            excluded: left_out,
         };
         let c = if args.unpaired {
             compare::unpaired(&base, &cand, &options)
@@ -361,7 +391,10 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
         })
         .collect();
     let common = json!({
-        "split": split_hash(base.judged().keys())?,
+        "split": match scope {
+            Some(s) => s.hash.clone(),
+            None => item_set_hash(base.judged().keys())?,
+        },
         "value_semantics": base.semantics(),
         "positive": base.positive(),
         "decision": base.rule(),
@@ -383,6 +416,9 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
         })
     };
     merge(&mut results, &common);
+    if let Some(p) = args.split {
+        results["split_part"] = json!(p);
+    }
     let verdict = chosen.and_then(|i| {
         comparisons[i]
             .2
@@ -422,7 +458,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let mut c = compute(&d, &config, args)?;
+    let scope = args
+        .split
+        .map(|p| split::scope(&project, p.part(), None))
+        .transpose()?;
+    let mut c = compute(&d, &config, args, scope.as_ref())?;
     let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
     count_uses(
         &mut c.results,

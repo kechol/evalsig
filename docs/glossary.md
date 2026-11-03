@@ -115,6 +115,8 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | Term | Identifier | Meaning |
 |---|---|---|
 | dev / validation / holdout | `dev`, `validation`, `holdout` | Splits for looking at while fixing, for deciding adoption, and for the final check |
+| split | `split`, `split_part` | An assignment of whole clusters to dev and validation, named by the hash of each part's item set. `split_part` names the part a comparison used |
+| remaining items | `remaining.json`, `holdout_excluded` | The item IDs the referee leaves to the agent after cutting the holdout; a split made within them has `holdout_excluded` true |
 | seal | `seal` | Encrypting holdout reference labels so only the referee holding the key can use them in `gate`. The labels never enter the agent's environment |
 | conditions | `conditions` | The rules a gate requires. Pass means all hold |
 | check | `check` | An absolute-threshold check with intervals, without preregistration or holdout |

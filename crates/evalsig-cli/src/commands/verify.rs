@@ -83,7 +83,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let recomputed = match &request {
         Request::Report(a) => report::compute(&d, &config, a)?.results,
         Request::Compare(a) => {
-            let mut c = compare::compute(&d, &config, a)?;
+            // A comparison on a split names that part by hash; resolve the same one.
+            let scope = a
+                .split
+                .map(|p| {
+                    crate::commands::split::scope(
+                        &project,
+                        p.part(),
+                        saved["results"]["split"].as_str(),
+                    )
+                })
+                .transpose()?;
+            let mut c = compare::compute(&d, &config, a, scope.as_ref())?;
             // The use count comes from the ledger lines before the one naming this
             // output. A comparison made with --scratch is in no line, so its count
             // cannot be recounted and is taken as saved.
