@@ -10,59 +10,43 @@
     "level": 0.95,
     "metrics": [
       {
-        "ci": [
-          0.75,
-          0.75
-        ],
-        "interval": "bootstrap",
+        "ci": null,
+        "interval": "too_few_units",
         "metric": "accuracy",
         "missing_bounds": [
           0.75,
           1.0
         ],
         "n": 2.0,
-        "resamples": 2000,
         "value": 0.75
       },
       {
-        "ci": [
-          1.0,
-          1.0
-        ],
-        "interval": "bootstrap",
+        "ci": null,
+        "interval": "too_few_units",
         "metric": "hit_rate",
         "missing_bounds": [
           1.0,
           1.0
         ],
         "n": 1.0,
-        "resamples": 2000,
         "value": 1.0
       },
       {
-        "ci": [
-          0.5,
-          0.5
-        ],
-        "interval": "bootstrap",
+        "ci": null,
+        "interval": "too_few_units",
         "metric": "false_alarm_rate",
         "missing_bounds": [
           0.0,
           0.5
         ],
         "n": 1.0,
-        "resamples": 2000,
         "value": 0.5
       },
       {
-        "ci": [
-          1.0,
-          1.0
-        ],
-        "interval": "bootstrap",
+        "ci": null,
+        "interval": "too_few_units",
         "metric": "precision",
         "n": 1.0,
-        "resamples": 2000,
         "value": 1.0
       }
     ],

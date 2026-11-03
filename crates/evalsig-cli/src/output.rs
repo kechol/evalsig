@@ -16,6 +16,8 @@ pub enum Format {
     Junit,
     #[default]
     Text,
+    /// One JSON object per line: the per-item rows of `compare --items` (D-023).
+    Jsonl,
 }
 
 /// The conclusion of an output. The set is fixed within a schema version; agents
@@ -193,6 +195,10 @@ pub fn render(output: &Output, format: Format) -> String {
         Format::Md => markdown(e),
         Format::Junit => junit(e, output.exit),
         Format::Text => text(e),
+        Format::Jsonl => e.results["items"]
+            .as_array()
+            .map(|rows| rows.iter().map(|r| format!("{r}\n")).collect())
+            .unwrap_or_default(),
     }
 }
 

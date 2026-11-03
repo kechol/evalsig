@@ -38,6 +38,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Compare a baseline run with one or more candidates on their common items.
+    Compare(commands::compare::Args),
     /// Create `.evalsig/` and a commented configuration template.
     Init {
         /// Replace an existing configuration file with the template.
@@ -79,8 +81,14 @@ pub(crate) fn tool_version() -> String {
 }
 
 fn run(cli: &Cli) -> Result<Output, CliError> {
+    if cli.format == Format::Jsonl && !matches!(&cli.command, Command::Compare(a) if a.items) {
+        return Err(CliError::usage(
+            "--format jsonl prints per-item rows and needs `compare --items`",
+        ));
+    }
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
+        Command::Compare(ref args) => commands::compare::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Report(ref args) => commands::report::run(&cli.project, args),

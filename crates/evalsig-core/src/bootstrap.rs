@@ -10,6 +10,11 @@ use crate::numeric::Rng;
 /// Default number of resamples.
 pub const DEFAULT_B: u32 = 2000;
 
+/// Fewest resampling units (clusters, else items) for a bootstrap interval. With
+/// four units there are only 35 distinct resamples, too few for a percentile
+/// interval to cover at 95%; below this the interval is not reported.
+pub const MIN_UNITS: usize = 5;
+
 /// Resamples a gate needs at one-sided level `alpha`: B ≥ 50 / α.
 pub fn required_resamples(alpha: f64) -> u32 {
     (50.0 / alpha).ceil() as u32

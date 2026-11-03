@@ -1,0 +1,149 @@
+{
+  "schema": "evalsig.compare/1",
+  "ok": true,
+  "verdict": {
+    "code": "improved",
+    "text": "accuracy: difference +0.0533 (better is positive; 95% interval +0.0133 to +0.0933), so the candidate improved."
+  },
+  "results": {
+    "arms": {
+      "baseline": "triage-v1",
+      "candidate": "triage-v2"
+    },
+    "decision": {
+      "equals": true
+    },
+    "estimand": "single_shot",
+    "metrics": [
+      {
+        "baseline": 0.7583333333,
+        "candidate": 0.8116666667,
+        "ci": [
+          0.0133333333,
+          0.0933333333
+        ],
+        "delta": 0.0533333333,
+        "direction": "higher_is_better",
+        "interval": "bootstrap",
+        "metric": "accuracy",
+        "min_effect": 0.02,
+        "missing_bounds": [
+          0.0333333333,
+          0.0533333333
+        ],
+        "p_method": "bootstrap",
+        "p_value": 0.0104947526,
+        "resamples": 2000,
+        "verdict": "improved"
+      },
+      {
+        "baseline": 0.7267759563,
+        "candidate": 0.7540983607,
+        "ci": [
+          -0.0479411547,
+          0.104057027
+        ],
+        "delta": 0.0273224044,
+        "direction": "higher_is_better",
+        "interval": "bootstrap",
+        "metric": "hit_rate",
+        "min_effect": 0.0,
+        "missing_bounds": [
+          -0.0163934426,
+          0.0273224044
+        ],
+        "p_method": "bootstrap",
+        "p_value": 0.5252373813,
+        "resamples": 2000,
+        "verdict": "indistinguishable"
+      },
+      {
+        "baseline": 0.2278177458,
+        "candidate": 0.1630695444,
+        "ci": [
+          0.0194623637,
+          0.1138029511
+        ],
+        "delta": 0.0647482014,
+        "direction": "lower_is_better",
+        "interval": "bootstrap",
+        "metric": "false_alarm_rate",
+        "min_effect": 0.0,
+        "missing_bounds": [
+          0.0551558753,
+          0.0647482014
+        ],
+        "p_method": "bootstrap",
+        "p_value": 0.0129935032,
+        "resamples": 2000,
+        "verdict": "improved"
+      },
+      {
+        "baseline": 0.59375,
+        "candidate": 0.6699029126,
+        "ci": [
+          0.0177399904,
+          0.1385719624
+        ],
+        "delta": 0.0761529126,
+        "direction": "higher_is_better",
+        "interval": "bootstrap",
+        "metric": "precision",
+        "min_effect": 0.0,
+        "p_method": "bootstrap",
+        "p_value": 0.0124937531,
+        "resamples": 2000,
+        "verdict": "improved"
+      }
+    ],
+    "missing_policy": {
+      "error": "worst",
+      "excluded": "drop",
+      "grader_failed": "drop",
+      "invalid_output": "worst",
+      "invalidated": "drop",
+      "limit": "worst",
+      "not_run": "drop",
+      "other": "drop",
+      "refused": "worst",
+      "timeout": "worst"
+    },
+    "n_input_changed": 0,
+    "n_missing": 6,
+    "n_unpaired": 0,
+    "n_used": 300,
+    "positive": {
+      "equals": true
+    },
+    "primary_metric": "accuracy",
+    "reference": {
+      "mode": "soft",
+      "raters": 2
+    },
+    "transition": {
+      "cleared_false_alarms": 18.5,
+      "lost_hits": 6.5,
+      "new_false_alarms": 7.0,
+      "new_hits": 9.0
+    },
+    "value_semantics": "decision"
+  },
+  "warnings": [
+    {
+      "code": "missing_rate_differs",
+      "message": "system-side missing rates differ: 6/300 vs 0/300 (95% interval of the difference 0.003 to 0.043)"
+    }
+  ],
+  "next": [],
+  "provenance": {
+    "snapshots": [
+      "blake3:7a025a46d8b0d31297e952413814ebdf88065dd63db290146d3324b7738055e9"
+    ],
+    "config": "blake3:35df6c9b1761f59e71df1f15c21fd15d0ccfff20f8edc7aa9de2dac17c5837d1",
+    "seed": 20261103,
+    "tool": "evalsig <VERSION>",
+    "ledger": "agent",
+    "ledger_seq": 1
+  },
+  "truncated": null
+}

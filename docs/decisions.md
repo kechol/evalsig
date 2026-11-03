@@ -316,3 +316,21 @@ after the entry is `Accepted`.
   tolerance and is widely used).
 - Consequences: upgrading `statrs` or `rand_chacha` requires the reference
   and pinned tests to pass unchanged.
+
+## D-023 Per-item rows as JSON Lines
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Python and notebook users take per-item comparison results into
+  their own tools (SPEC §12.2: `compare --items --format jsonl`). The envelope
+  formats of D-008 put all rows inside one JSON document.
+- Decision:
+  - `--format jsonl` is added to the formats of D-008. It prints the per-item
+    rows of a command's `results.items`, one JSON object per line, and nothing
+    else. In v1 only `compare --items` produces such rows; other commands
+    reject `--format jsonl` as a usage error.
+  - The four envelope formats of D-008 are unchanged; this is an addition
+    under D-008's compatibility rule.
+- Alternatives: a separate `export` command for item rows (kept for Parquet and
+  CSV in a later version; a format flag is what scripts expect today).
+- Consequences: commands that later gain `--items` may support `jsonl` too.

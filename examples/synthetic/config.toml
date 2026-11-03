@@ -1,0 +1,9 @@
+# Configuration for the synthetic triage example (examples/synthetic/records.jsonl).
+[project]
+name = "synthetic-triage"
+
+[stats]
+seed = 20261103
+
+[compare]
+min_effect = { accuracy = 0.02 }

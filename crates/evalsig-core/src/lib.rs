@@ -2,6 +2,7 @@
 
 pub mod bootstrap;
 pub mod checks;
+pub mod compare;
 pub mod config;
 pub mod interval;
 pub mod labels;

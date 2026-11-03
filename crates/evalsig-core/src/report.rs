@@ -210,14 +210,31 @@ fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) ->
     }
 }
 
-/// Build the report of one run from its records.
-pub fn build(
+/// One run's items ready for metrics: replicates grouped per item, references built,
+/// and the rule that turns judgments into decisions.
+pub struct Prepared<'a> {
+    settings: &'a Settings,
+    run_id: String,
+    semantics: ValueSemantics,
+    output_type: OutputType,
+    rule: Option<Rule>,
+    positive: Option<Rule>,
+    units: Vec<Unit>,
+    missing_by_reason: BTreeMap<MissingReason, u64>,
+    raters: usize,
+    n_judgments: usize,
+    at_least: Option<f64>,
+    score_range: (f64, f64),
+}
+
+/// Group a run's judgments into items and build their references.
+pub fn prepare<'a>(
     run: &Run,
     judgments: &[&Judgment],
     items: &BTreeMap<&str, &Item>,
     labels: &[&Label],
-    s: &Settings,
-) -> Result<Report, ReportError> {
+    s: &'a Settings,
+) -> Result<Prepared<'a>, ReportError> {
     if s.reference == ReferenceMode::Latent {
         return Err(ReportError::UnsupportedReference("latent"));
     }
@@ -365,9 +382,17 @@ pub fn build(
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
             (a.min(x), b.max(x))
         });
-    let calc = Calc {
+    Ok(Prepared {
         settings: s,
-        binary: rule.is_some(),
+        run_id: run.run_id.clone(),
+        semantics,
+        output_type,
+        rule,
+        positive,
+        units,
+        missing_by_reason,
+        raters: raters.len(),
+        n_judgments: judgments.len(),
         at_least,
         score_range: (
             if score_min.is_finite() {
@@ -381,8 +406,22 @@ pub fn build(
                 1.0
             },
         ),
-    };
-    let metrics = calc.metrics(&units, semantics);
+    })
+}
+
+/// Build the report of one run from its records.
+pub fn build(
+    run: &Run,
+    judgments: &[&Judgment],
+    items: &BTreeMap<&str, &Item>,
+    labels: &[&Label],
+    s: &Settings,
+) -> Result<Report, ReportError> {
+    let p = prepare(run, judgments, items, labels, s)?;
+    let calc = p.calc();
+    let units = &p.units;
+    let semantics = p.semantics;
+    let metrics = calc.metrics(units, semantics);
     let mut by = BTreeMap::new();
     if s.by.is_some() {
         let strata: BTreeSet<&str> = units.iter().filter_map(|u| u.stratum.as_deref()).collect();
@@ -431,9 +470,9 @@ pub fn build(
             .filter(|u| u.replicates.len() < k as usize)
             .count(),
     };
-    let reference = positive.map(|_| ReferenceInfo {
+    let reference = p.positive.map(|_| ReferenceInfo {
         mode: s.reference,
-        raters: raters.len(),
+        raters: p.raters,
         items_with_reference: units.iter().filter(|u| u.reference.is_some()).count(),
         model_derived_items: units.iter().filter(|u| u.model_reference).count(),
     });
@@ -452,18 +491,18 @@ pub fn build(
         Vec::new()
     };
     Ok(Report {
-        run: run.run_id.clone(),
+        run: p.run_id.clone(),
         task: s.task.clone(),
         value_semantics: semantics,
-        output_type,
-        positive,
-        decision: rule,
+        output_type: p.output_type,
+        positive: p.positive,
+        decision: p.rule,
         estimand: s.estimand.to_string(),
         reference,
         n_items: units.len(),
-        n_judgments: judgments.len(),
-        n_missing: missing_by_reason.values().sum(),
-        missing_by_reason,
+        n_judgments: p.n_judgments,
+        n_missing: p.missing_by_reason.values().sum(),
+        missing_by_reason: p.missing_by_reason.clone(),
         missing_policy: s.missing.table(),
         n_insufficient_replicates,
         level: s.level,
@@ -473,6 +512,17 @@ pub fn build(
         by,
         items: item_rows,
     })
+}
+
+impl Prepared<'_> {
+    fn calc(&self) -> Calc<'_> {
+        Calc {
+            settings: self.settings,
+            binary: self.rule.is_some(),
+            at_least: self.at_least,
+            score_range: self.score_range,
+        }
+    }
 }
 
 fn repro_row(d: Disagreement, n_eff: f64, level: f64) -> ReproducibilityRow {
@@ -497,6 +547,69 @@ struct Calc<'a> {
     binary: bool,
     at_least: Option<f64>,
     score_range: (f64, f64),
+}
+
+/// A metric of the default tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricId {
+    Accuracy,
+    HitRate,
+    FalseAlarmRate,
+    Precision,
+    PassRate,
+    MeanScore,
+    RateAtLeast,
+}
+
+impl MetricId {
+    pub fn name(self) -> &'static str {
+        match self {
+            MetricId::Accuracy => "accuracy",
+            MetricId::HitRate => "hit_rate",
+            MetricId::FalseAlarmRate => "false_alarm_rate",
+            MetricId::Precision => "precision",
+            MetricId::PassRate => "pass_rate",
+            MetricId::MeanScore => "mean_score",
+            MetricId::RateAtLeast => "rate_at_least",
+        }
+    }
+
+    /// Whether larger values are better (false alarms are better when fewer).
+    pub fn higher_is_better(self) -> bool {
+        self != MetricId::FalseAlarmRate
+    }
+
+    fn needs_reference(self) -> bool {
+        matches!(
+            self,
+            MetricId::Accuracy | MetricId::HitRate | MetricId::FalseAlarmRate | MetricId::Precision
+        )
+    }
+
+    /// A rate whose two arms share one denominator, so paired-proportion methods apply.
+    pub fn is_paired_proportion(self) -> bool {
+        matches!(
+            self,
+            MetricId::Accuracy
+                | MetricId::HitRate
+                | MetricId::FalseAlarmRate
+                | MetricId::PassRate
+                | MetricId::RateAtLeast
+        )
+    }
+}
+
+/// The worst replicate value of a unit for a metric (`None`: no missing bounds).
+type WorstFn<'a> = Box<dyn Fn(&Unit) -> Option<f64> + 'a>;
+/// A unit's (numerator, denominator) for its item value.
+type PartFn<'a> = Box<dyn Fn(&Unit, f64) -> Part + 'a>;
+
+/// How a metric fills missing replicates and what each item contributes.
+struct Definition<'a> {
+    worst: WorstFn<'a>,
+    part: PartFn<'a>,
+    values: Values,
 }
 
 /// Which replicate values a metric reads.
@@ -565,92 +678,133 @@ impl Calc<'_> {
         Some((v, system_missing))
     }
 
-    fn metrics(&self, units: &[Unit], semantics: ValueSemantics) -> Vec<Metric> {
-        let mut out = Vec::new();
-        if semantics == ValueSemantics::Decision {
-            let with_ref: Vec<&Unit> = units.iter().filter(|u| u.reference.is_some()).collect();
-            let s = |u: &Unit| u.reference.expect("filtered to items with a reference");
-            // Accuracy: worst is the judgment opposite to the reference majority.
-            out.push(self.ratio(
-                "accuracy",
-                &with_ref,
-                &|u| Some(if s(u) >= 0.5 { 0.0 } else { 1.0 }),
-                &|u, v| {
+    /// How a metric fills and counts items.
+    fn definition(&self, id: MetricId) -> Definition<'_> {
+        let s = |u: &Unit| u.reference.unwrap_or(0.0);
+        let lo = self.score_range.0;
+        match id {
+            // Accuracy: the worst judgment is the one opposite to the reference majority.
+            MetricId::Accuracy => Definition {
+                worst: Box::new(move |u| Some(if s(u) >= 0.5 { 0.0 } else { 1.0 })),
+                part: Box::new(move |u, v| {
                     let r = s(u);
                     (u.weight * (v * r + (1.0 - v) * (1.0 - r)), u.weight)
-                },
-            ));
-            out.push(self.ratio("hit_rate", &with_ref, &|_| Some(0.0), &|u, v| {
-                (u.weight * s(u) * v, u.weight * s(u))
-            }));
-            out.push(
-                self.ratio("false_alarm_rate", &with_ref, &|_| Some(1.0), &|u, v| {
-                    (u.weight * (1.0 - s(u)) * v, u.weight * (1.0 - s(u)))
                 }),
-            );
-            let precision = self.ratio("precision", &with_ref, &|_| None, &|u, v| {
-                (u.weight * s(u) * v, u.weight * v)
+                values: Values::Judged,
+            },
+            MetricId::HitRate => Definition {
+                worst: Box::new(|_| Some(0.0)),
+                part: Box::new(move |u, v| (u.weight * s(u) * v, u.weight * s(u))),
+                values: Values::Judged,
+            },
+            MetricId::FalseAlarmRate => Definition {
+                worst: Box::new(|_| Some(1.0)),
+                part: Box::new(move |u, v| (u.weight * (1.0 - s(u)) * v, u.weight * (1.0 - s(u)))),
+                values: Values::Judged,
+            },
+            MetricId::Precision => Definition {
+                worst: Box::new(|_| None),
+                part: Box::new(move |u, v| (u.weight * s(u) * v, u.weight * v)),
+                values: Values::Judged,
+            },
+            MetricId::PassRate => Definition {
+                worst: Box::new(|_| Some(0.0)),
+                part: Box::new(|u, v| (u.weight * v, u.weight)),
+                values: Values::Judged,
+            },
+            MetricId::MeanScore => Definition {
+                worst: Box::new(move |_| Some(lo)),
+                part: Box::new(|u, v| (u.weight * v, u.weight)),
+                values: Values::Judged,
+            },
+            MetricId::RateAtLeast => Definition {
+                worst: Box::new(|_| Some(0.0)),
+                part: Box::new(|u, v| (u.weight * v, u.weight)),
+                values: Values::AtLeast,
+            },
+        }
+    }
+
+    /// The metrics a run supports, in report order.
+    fn ids(&self, semantics: ValueSemantics) -> Vec<MetricId> {
+        match semantics {
+            ValueSemantics::Decision => vec![
+                MetricId::Accuracy,
+                MetricId::HitRate,
+                MetricId::FalseAlarmRate,
+                MetricId::Precision,
+            ],
+            ValueSemantics::Score if self.binary => vec![MetricId::PassRate],
+            ValueSemantics::Score if self.at_least.is_some() => {
+                vec![MetricId::MeanScore, MetricId::RateAtLeast]
+            }
+            ValueSemantics::Score => vec![MetricId::MeanScore],
+        }
+    }
+
+    /// The units a metric counts: items with a reference for decision metrics.
+    fn eligible<'u>(&self, id: MetricId, units: &'u [Unit]) -> Vec<&'u Unit> {
+        units
+            .iter()
+            .filter(|u| !id.needs_reference() || u.reference.is_some())
+            .collect()
+    }
+
+    fn metrics(&self, units: &[Unit], semantics: ValueSemantics) -> Vec<Metric> {
+        let mut out: Vec<Metric> = self
+            .ids(semantics)
+            .into_iter()
+            .map(|id| {
+                let d = self.definition(id);
+                self.ratio_of(
+                    id.name(),
+                    &self.eligible(id, units),
+                    &*d.worst,
+                    &*d.part,
+                    d.values,
+                )
+            })
+            .collect();
+        if semantics == ValueSemantics::Decision
+            && let Some(pi) = self.settings.prevalence
+        {
+            let (h, f) = (out[1].value, out[2].value);
+            let converted = match (h, f) {
+                (Some(h), Some(f)) if pi * h + (1.0 - pi) * f > 0.0 => {
+                    Some(pi * h / (pi * h + (1.0 - pi) * f))
+                }
+                _ => None,
+            };
+            let n = out[1].n + out[2].n;
+            out.push(Metric {
+                metric: "precision_at_prevalence",
+                value: converted,
+                ci: None,
+                interval: "none",
+                resamples: None,
+                missing_bounds: None,
+                n,
             });
-            if let Some(pi) = self.settings.prevalence {
-                let h = out[1].value;
-                let f = out[2].value;
-                let converted = match (h, f) {
-                    (Some(h), Some(f)) if pi * h + (1.0 - pi) * f > 0.0 => {
-                        Some(pi * h / (pi * h + (1.0 - pi) * f))
-                    }
-                    _ => None,
-                };
-                out.push(precision);
-                out.push(Metric {
-                    metric: "precision_at_prevalence",
-                    value: converted,
-                    ci: None,
-                    interval: "none",
-                    resamples: None,
-                    missing_bounds: None,
-                    n: out[1].n + out[2].n,
-                });
-            } else {
-                out.push(precision);
-            }
-        } else {
-            let all: Vec<&Unit> = units.iter().collect();
-            if self.binary {
-                out.push(self.ratio("pass_rate", &all, &|_| Some(0.0), &|u, v| {
-                    (u.weight * v, u.weight)
-                }));
-            } else {
-                let lo = self.score_range.0;
-                out.push(self.ratio("mean_score", &all, &move |_| Some(lo), &|u, v| {
-                    (u.weight * v, u.weight)
-                }));
-            }
-            if self.at_least.is_some() {
-                out.push(self.ratio_of(
-                    "rate_at_least",
-                    &all,
-                    &|_| Some(0.0),
-                    &|u, v| (u.weight * v, u.weight),
-                    Values::AtLeast,
-                ));
-            }
         }
         out
+    }
+
+    /// Each unit's (numerator, denominator) for a metric, filling system-side missing
+    /// replicates as `bound` says; `None` for units with no value.
+    fn parts(&self, id: MetricId, units: &[&Unit], bound: Bound) -> Vec<Option<Part>> {
+        let d = self.definition(id);
+        units
+            .iter()
+            .map(|u| {
+                self.item_value_bound(u, &*d.worst, bound, d.values)
+                    .map(|(v, _)| (d.part)(u, v))
+            })
+            .collect()
     }
 
     /// A ratio metric Σ numerator / Σ denominator over units, with its interval and
     /// missing bounds. `part(u, v)` gives a unit's numerator and denominator for its
     /// item value v.
-    fn ratio(
-        &self,
-        metric: &'static str,
-        units: &[&Unit],
-        worst: &dyn Fn(&Unit) -> Option<f64>,
-        part: &dyn Fn(&Unit, f64) -> Part,
-    ) -> Metric {
-        self.ratio_of(metric, units, worst, part, Values::Judged)
-    }
-
     fn ratio_of(
         &self,
         metric: &'static str,
@@ -713,6 +867,17 @@ impl Calc<'_> {
                 clusters.entry(u.cluster.as_str()).or_default().push(i);
             }
             let groups: Vec<Vec<usize>> = clusters.into_values().collect();
+            if groups.len() < bootstrap::MIN_UNITS {
+                return Metric {
+                    metric,
+                    value,
+                    ci: None,
+                    interval: "too_few_units",
+                    resamples: None,
+                    missing_bounds,
+                    n,
+                };
+            }
             let mut rng = Rng::new(self.settings.seed);
             let (reps, _) = bootstrap::replicates(
                 groups.len(),
@@ -747,5 +912,116 @@ impl Calc<'_> {
             missing_bounds,
             n,
         }
+    }
+}
+
+/// Which way system-side missing replicates are filled when reading item values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fill {
+    /// The missing policy.
+    Policy,
+    /// The worst judgment for the metric.
+    Worst,
+    /// The best judgment for the metric.
+    Best,
+}
+
+/// One item's contribution to a metric.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemValue {
+    pub cluster: String,
+    pub numerator: f64,
+    pub denominator: f64,
+}
+
+impl Prepared<'_> {
+    pub fn semantics(&self) -> ValueSemantics {
+        self.semantics
+    }
+
+    pub fn output_type(&self) -> OutputType {
+        self.output_type
+    }
+
+    pub fn rule(&self) -> Option<Rule> {
+        self.rule
+    }
+
+    pub fn positive(&self) -> Option<Rule> {
+        self.positive
+    }
+
+    pub fn raters(&self) -> usize {
+        self.raters
+    }
+
+    pub fn missing_by_reason(&self) -> &BTreeMap<MissingReason, u64> {
+        &self.missing_by_reason
+    }
+
+    /// System-side missing judgments and judged items, for the missing-rate check.
+    pub fn system_missing(&self) -> (u64, u64) {
+        let missing = self
+            .missing_by_reason
+            .iter()
+            .filter(|(r, _)| r.side() == Side::System)
+            .map(|(_, n)| n)
+            .sum();
+        (missing, self.n_judgments as u64)
+    }
+
+    /// The metrics this run supports, in report order.
+    pub fn metric_ids(&self) -> Vec<MetricId> {
+        self.calc().ids(self.semantics)
+    }
+
+    /// Whether every item is its own unit with weight 1, one replicate and a reference
+    /// that is all or nothing, so counts are integral and independent.
+    pub fn independent(&self) -> bool {
+        self.units.iter().all(|u| {
+            u.weight == 1.0
+                && u.cluster == u.item_id
+                && u.replicates.len() <= 1
+                && u.reference.is_none_or(|r| r == 0.0 || r == 1.0)
+        })
+    }
+
+    /// Each eligible item's contribution to a metric.
+    pub fn item_values(&self, id: MetricId, fill: Fill) -> BTreeMap<String, ItemValue> {
+        let calc = self.calc();
+        let units = calc.eligible(id, &self.units);
+        let bound = match fill {
+            Fill::Policy => Bound::Policy,
+            Fill::Worst => Bound::Worst,
+            Fill::Best => Bound::Best,
+        };
+        units
+            .iter()
+            .zip(calc.parts(id, &units, bound))
+            .filter_map(|(u, p)| {
+                p.map(|(numerator, denominator)| {
+                    (
+                        u.item_id.clone(),
+                        ItemValue {
+                            cluster: u.cluster.clone(),
+                            numerator,
+                            denominator,
+                        },
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// Each item's judged value under the missing policy and its reference share.
+    pub fn judged(&self) -> BTreeMap<String, (f64, Option<f64>)> {
+        let calc = self.calc();
+        self.units
+            .iter()
+            .filter_map(|u| {
+                calc.item_value(u, |_| None)
+                    .map(|(v, _)| (u.item_id.clone(), (v, u.reference)))
+            })
+            .collect()
     }
 }
