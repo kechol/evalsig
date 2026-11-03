@@ -444,7 +444,7 @@ pub fn missing_rate_differs(
     b: (u64, u64),
     overrides: &Overrides,
 ) -> Option<Finding> {
-    let (lo, hi) = newcombe(a.0, a.1, b.0, b.1, Z95);
+    let (lo, hi) = newcombe(a.0 as f64, a.1 as f64, b.0 as f64, b.1 as f64, Z95);
     (lo > 0.0 || hi < 0.0).then(|| {
         Finding::new(
             "missing_rate_differs",
