@@ -489,6 +489,50 @@ def obuchowski_cases():
     }]
 
 
+def gate_rule_cases():
+    """Each gate rule passing and failing (SPEC §8.3): bounds come from intervals, delta
+    rules also need the point difference to move by min_effect in the rule's direction."""
+    def judge(rule, value, min_effect, e):
+        m = min_effect or 0.0
+        if rule == "lower_bound_at_least":
+            return e["lo"] >= value
+        if rule == "upper_bound_at_most":
+            return e["hi"] <= value
+        if rule == "delta_lower_bound_at_least":
+            return e["lo"] >= value and e["point"] >= m
+        if rule == "delta_upper_bound_at_most":
+            return e["hi"] <= value and e["point"] <= -m
+        if rule == "not_worse_than":
+            return e["lo"] >= value
+        if rule == "pass":
+            return e["verdict"]
+    rows = [
+        ("lower_bound_at_least", 0.7, None, {"kind": "value", "point": 0.8, "lo": 0.72, "hi": 0.88}),
+        ("lower_bound_at_least", 0.7, None, {"kind": "value", "point": 0.8, "lo": 0.68, "hi": 0.9}),
+        ("upper_bound_at_most", 0.05, None, {"kind": "value", "point": 0.02, "lo": 0.0, "hi": 0.04}),
+        ("upper_bound_at_most", 0.05, None, {"kind": "value", "point": 0.03, "lo": 0.0, "hi": 0.06}),
+        ("delta_lower_bound_at_least", 0.0, 0.02, {"kind": "delta", "point": 0.05, "lo": 0.01, "hi": 0.09}),
+        ("delta_lower_bound_at_least", 0.0, 0.02, {"kind": "delta", "point": 0.015, "lo": 0.001, "hi": 0.03}),
+        ("delta_lower_bound_at_least", 0.0, None, {"kind": "delta", "point": 0.04, "lo": -0.01, "hi": 0.09}),
+        ("delta_upper_bound_at_most", 0.0, 0.02, {"kind": "delta", "point": -0.05, "lo": -0.09, "hi": -0.01}),
+        ("delta_upper_bound_at_most", 0.0, 0.02, {"kind": "delta", "point": -0.01, "lo": -0.02, "hi": -0.001}),
+        ("not_worse_than", -0.05, None, {"kind": "delta", "point": 0.0, "lo": -0.03, "hi": 0.03}),
+        ("not_worse_than", -0.05, None, {"kind": "delta", "point": -0.02, "lo": -0.07, "hi": 0.03}),
+        ("pass", 0.0, None, {"kind": "verdict", "verdict": True}),
+        ("pass", 0.0, None, {"kind": "verdict", "verdict": False}),
+    ]
+    out = []
+    for rule, value, me, e in rows:
+        out.append({"input": {"rule": rule, "value": value, "min_effect": me, "evidence": e},
+                    "source": "closed (SPEC §8.3 rule definitions)", "expected": {"passed": judge(rule, value, me, e)}})
+    # Missing rate: 6 of 300 judgments, one-sided at 1 - 0.05/5 (exact upper bound).
+    k, n, level = 6, 300, 1 - 0.05 / 5
+    out.append({"input": {"missing_rate": {"missing": k, "judgments": n, "one_sided_level": level}},
+                "source": f"scipy {scipy.__version__} beta.ppf (Clopper-Pearson upper bound)",
+                "expected": {"upper": r(stats.beta.ppf(level, k + 1, n - k))}})
+    return out
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -792,6 +836,7 @@ def main():
             "bradley_terry": bradley_terry_cases(),
             "confidence_sequence": confidence_sequence_cases(),
             "auc_clustered": obuchowski_cases(),
+            "gate_rules": gate_rule_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

@@ -9,6 +9,7 @@ pub mod config;
 pub mod cost;
 pub mod criteria;
 pub mod features;
+pub mod gate;
 pub mod interval;
 pub mod kcurve;
 pub mod labels;

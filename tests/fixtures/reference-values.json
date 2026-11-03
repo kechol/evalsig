@@ -4120,6 +4120,238 @@
     }
    }
   ],
+  "gate_rules": [
+   {
+    "input": {
+     "rule": "lower_bound_at_least",
+     "value": 0.7,
+     "min_effect": null,
+     "evidence": {
+      "kind": "value",
+      "point": 0.8,
+      "lo": 0.72,
+      "hi": 0.88
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "lower_bound_at_least",
+     "value": 0.7,
+     "min_effect": null,
+     "evidence": {
+      "kind": "value",
+      "point": 0.8,
+      "lo": 0.68,
+      "hi": 0.9
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "upper_bound_at_most",
+     "value": 0.05,
+     "min_effect": null,
+     "evidence": {
+      "kind": "value",
+      "point": 0.02,
+      "lo": 0.0,
+      "hi": 0.04
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "upper_bound_at_most",
+     "value": 0.05,
+     "min_effect": null,
+     "evidence": {
+      "kind": "value",
+      "point": 0.03,
+      "lo": 0.0,
+      "hi": 0.06
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "delta_lower_bound_at_least",
+     "value": 0.0,
+     "min_effect": 0.02,
+     "evidence": {
+      "kind": "delta",
+      "point": 0.05,
+      "lo": 0.01,
+      "hi": 0.09
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "delta_lower_bound_at_least",
+     "value": 0.0,
+     "min_effect": 0.02,
+     "evidence": {
+      "kind": "delta",
+      "point": 0.015,
+      "lo": 0.001,
+      "hi": 0.03
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "delta_lower_bound_at_least",
+     "value": 0.0,
+     "min_effect": null,
+     "evidence": {
+      "kind": "delta",
+      "point": 0.04,
+      "lo": -0.01,
+      "hi": 0.09
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "delta_upper_bound_at_most",
+     "value": 0.0,
+     "min_effect": 0.02,
+     "evidence": {
+      "kind": "delta",
+      "point": -0.05,
+      "lo": -0.09,
+      "hi": -0.01
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "delta_upper_bound_at_most",
+     "value": 0.0,
+     "min_effect": 0.02,
+     "evidence": {
+      "kind": "delta",
+      "point": -0.01,
+      "lo": -0.02,
+      "hi": -0.001
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "not_worse_than",
+     "value": -0.05,
+     "min_effect": null,
+     "evidence": {
+      "kind": "delta",
+      "point": 0.0,
+      "lo": -0.03,
+      "hi": 0.03
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "not_worse_than",
+     "value": -0.05,
+     "min_effect": null,
+     "evidence": {
+      "kind": "delta",
+      "point": -0.02,
+      "lo": -0.07,
+      "hi": 0.03
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "rule": "pass",
+     "value": 0.0,
+     "min_effect": null,
+     "evidence": {
+      "kind": "verdict",
+      "verdict": true
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": true
+    }
+   },
+   {
+    "input": {
+     "rule": "pass",
+     "value": 0.0,
+     "min_effect": null,
+     "evidence": {
+      "kind": "verdict",
+      "verdict": false
+     }
+    },
+    "source": "closed (SPEC §8.3 rule definitions)",
+    "expected": {
+     "passed": false
+    }
+   },
+   {
+    "input": {
+     "missing_rate": {
+      "missing": 6,
+      "judgments": 300,
+      "one_sided_level": 0.99
+     }
+    },
+    "source": "scipy 1.18.1 beta.ppf (Clopper-Pearson upper bound)",
+    "expected": {
+     "upper": 0.04787834299506864
+    }
+   }
+  ],
   "estimand_at_k": [
    {
     "input": {
