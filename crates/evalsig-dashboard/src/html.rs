@@ -43,6 +43,16 @@ pub fn page(title: &str, nav: &[(&str, &str)], warnings: &[String], body: &str) 
     s
 }
 
+/// A verdict line: its code (kept in `data-code`) and its text.
+pub fn verdict(code: &str, text: &str) -> String {
+    format!(
+        "<p class=\"verdict\" data-code=\"{}\"><strong>{}</strong>: {}</p>",
+        esc(code),
+        esc(code),
+        esc(text)
+    )
+}
+
 /// A table from header cells and rows of cells; numbers align right.
 pub fn table(head: &[&str], rows: &[Vec<String>]) -> String {
     let mut s = String::from("<table><thead><tr>");

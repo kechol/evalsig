@@ -273,12 +273,7 @@ pub fn render(output: &Output, format: Format) -> String {
         Format::Md => crate::markdown::render(e).unwrap_or_else(|| markdown(e)),
         Format::Junit => junit(e, output.exit),
         Format::Html => {
-            let data = serde_json::to_string(e).expect("envelope serializes");
-            evalsig_dashboard::static_report(
-                e.schema.as_str(),
-                &data,
-                &serde_json::to_value(e).expect("envelope serializes"),
-            )
+            evalsig_dashboard::static_report(&serde_json::to_value(e).expect("envelope serializes"))
         }
         Format::Text => text(e),
         Format::Jsonl => {

@@ -50,6 +50,8 @@ pub fn start(project: &std::path::Path) -> Dashboard {
 
 pub fn get(port: u16, path: &str, host: &str) -> String {
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(60)))
+        .unwrap();
     write!(
         s,
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
@@ -143,4 +145,32 @@ fn every_screen_renders_for_the_examples() {
             "the dashboard wrote to the ledger"
         );
     }
+}
+
+#[test]
+fn queries_name_known_runs_only_and_decode_safely() {
+    let p = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    let d = start(p.path());
+    let base = d
+        .url
+        .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
+        .to_owned();
+    let host = format!("localhost:{}", d.port);
+    // Non-ASCII after a percent sign, a value posing as a flag, an unknown run.
+    for q in [
+        "trend?run=%a\u{e9}",
+        "compare?baseline=--items",
+        "discrimination?run=nope",
+        "trend?run=%2Bx",
+    ] {
+        let page = get(d.port, &format!("{base}{q}"), &host);
+        assert!(page.starts_with("HTTP/1.1 200"), "{q}: {page}");
+        assert!(!page.contains("<h1>Error</h1>"), "{q}");
+    }
+    // A known run is taken from the query.
+    let page = get(d.port, &format!("{base}trend?run=triage-v2"), &host);
+    assert!(
+        page.contains("<option selected>triage-v2</option>"),
+        "{page}"
+    );
 }

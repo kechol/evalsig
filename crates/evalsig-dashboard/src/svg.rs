@@ -18,7 +18,8 @@ fn num(v: &Value) -> String {
     match v {
         Value::Number(n) => n.to_string(),
         Value::Null => "null".into(),
-        other => other.to_string(),
+        // Not expected, but never markup: whatever else arrives is escaped.
+        other => esc(&other.to_string()),
     }
 }
 
@@ -31,6 +32,21 @@ pub struct Row<'a> {
     pub label: String,
     pub point: &'a Value,
     pub ci: &'a Value,
+}
+
+/// The rows of a results `metrics` array: each metric's `point` field (`value` or
+/// `delta`) and its `ci`.
+pub fn metric_rows<'a>(metrics: &'a Value, point: &str) -> Vec<Row<'a>> {
+    metrics
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| Row {
+            label: m["metric"].as_str().unwrap_or_default().to_owned(),
+            point: &m[point],
+            ci: &m["ci"],
+        })
+        .collect()
 }
 
 /// Points with their intervals on one axis; `zero` draws the line at 0 (differences).
@@ -98,11 +114,34 @@ pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
     s
 }
 
-/// A curve on the unit square, such as an ROC or reliability curve: `points` are
-/// `[x, y]` pairs; `diagonal` draws the chance or perfect-calibration line.
+/// A point of a curve: where it is drawn on the unit square, and the values it reports
+/// in its attributes, written as the JSON writes them.
+pub struct Pt {
+    pub x: f64,
+    pub y: f64,
+    pub shown: (String, String),
+}
+
+fn pts(points: &[(&Value, &Value)]) -> Vec<Pt> {
+    points
+        .iter()
+        .filter_map(|(a, b)| {
+            Some(Pt {
+                x: f(a)?,
+                y: f(b)?,
+                shown: (num(a), num(b)),
+            })
+        })
+        .collect()
+}
+
+/// A curve on the unit square, such as an ROC or reliability curve; `attrs` names the
+/// two attributes that carry each point's reported values, and `diagonal` draws the
+/// chance or perfect-calibration line.
 pub fn curve(
     class: &str,
-    points: &[(&Value, &Value)],
+    points: &[Pt],
+    attrs: (&str, &str),
     diagonal: bool,
     axes: (&str, &str),
 ) -> String {
@@ -135,26 +174,23 @@ pub fn curve(
     );
     let coords: Vec<String> = points
         .iter()
-        .filter_map(|(a, b)| Some(format!("{:.1},{:.1}", px(f(a)?), py(f(b)?))))
+        .map(|p| format!("{:.1},{:.1}", px(p.x), py(p.y)))
         .collect();
     let _ = write!(
         s,
         "<polyline points=\"{}\" fill=\"none\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
         coords.join(" ")
     );
-    for (a, b) in points {
-        if let (Some(x), Some(y)) = (f(a), f(b)) {
-            let _ = write!(
-                s,
-                "<circle class=\"pt\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"2.5\" fill=\"#3b6ea5\" data-x=\"{}\" data-y=\"{}\"><title>{}, {}</title></circle>",
-                px(x),
-                py(y),
-                num(a),
-                num(b),
-                num(a),
-                num(b)
-            );
-        }
+    for p in points {
+        let (a, b) = &p.shown;
+        let _ = write!(
+            s,
+            "<circle class=\"pt\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"2.5\" fill=\"#3b6ea5\" {}=\"{a}\" {}=\"{b}\"><title>{a}, {b}</title></circle>",
+            px(p.x),
+            py(p.y),
+            attrs.0,
+            attrs.1
+        );
     }
     s.push_str("</svg>");
     s
@@ -162,67 +198,70 @@ pub fn curve(
 
 /// The empirical ROC of a report's `roc` detail.
 pub fn roc(roc: &Value) -> String {
-    let pts: Vec<(&Value, &Value)> = roc["points"]
+    let p: Vec<(&Value, &Value)> = roc["points"]
         .as_array()
         .into_iter()
         .flatten()
         .map(|p| (&p[0], &p[1]))
         .collect();
-    curve("roc", &pts, true, ("false alarm rate", "hit rate"))
+    curve(
+        "roc",
+        &pts(&p),
+        ("data-x", "data-y"),
+        true,
+        ("false alarm rate", "hit rate"),
+    )
 }
 
 /// The z-ROC (probit of both rates), whose straightness checks the equal-variance model.
+/// Drawn on the unit square after scaling; the attributes keep the reported z values.
 pub fn zroc(roc: &Value) -> String {
     let Some(z) = roc["zroc"].as_array() else {
         return String::new();
     };
-    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-    for p in z {
-        for v in [f(&p[0]), f(&p[1])].into_iter().flatten() {
-            lo = lo.min(v);
-            hi = hi.max(v);
-        }
-    }
+    let reported = pts(&z.iter().map(|p| (&p[0], &p[1])).collect::<Vec<_>>());
+    let (lo, hi) = reported
+        .iter()
+        .flat_map(|p| [p.x, p.y])
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| {
+            (l.min(v), h.max(v))
+        });
     if !lo.is_finite() {
         return String::new();
     }
-    // Drawn on the unit square after scaling; the data attributes keep the z values.
     let span = (hi - lo).max(1e-9);
-    let scaled: Vec<(Value, Value)> = z
-        .iter()
-        .map(|p| {
-            (
-                Value::from(f(&p[0]).map_or(0.0, |v| (v - lo) / span)),
-                Value::from(f(&p[1]).map_or(0.0, |v| (v - lo) / span)),
-            )
+    let drawn: Vec<Pt> = reported
+        .into_iter()
+        .map(|p| Pt {
+            x: (p.x - lo) / span,
+            y: (p.y - lo) / span,
+            shown: p.shown,
         })
         .collect();
-    let mut s = curve(
+    curve(
         "zroc",
-        &scaled.iter().map(|(a, b)| (a, b)).collect::<Vec<_>>(),
+        &drawn,
+        ("data-zx", "data-zy"),
         true,
         ("z(false alarm rate)", "z(hit rate)"),
-    );
-    // Replace the scaled coordinates in the attributes with the reported z values.
-    for (p, (a, b)) in z.iter().zip(&scaled) {
-        s = s.replacen(
-            &format!("data-x=\"{}\" data-y=\"{}\"", num(a), num(b)),
-            &format!("data-zx=\"{}\" data-zy=\"{}\"", num(&p[0]), num(&p[1])),
-            1,
-        );
-    }
-    s
+    )
 }
 
 /// A reliability diagram from a report's `calibration` detail.
 pub fn reliability(calibration: &Value) -> String {
-    let pts: Vec<(&Value, &Value)> = calibration["bins"]
+    let p: Vec<(&Value, &Value)> = calibration["bins"]
         .as_array()
         .into_iter()
         .flatten()
         .map(|b| (&b["mean_score"], &b["positive_share"]))
         .collect();
-    curve("reliability", &pts, true, ("mean score", "share positive"))
+    curve(
+        "reliability",
+        &pts(&p),
+        ("data-x", "data-y"),
+        true,
+        ("mean score", "share positive"),
+    )
 }
 
 /// The four cells of a comparison's transition table, as an HTML table.
@@ -267,16 +306,7 @@ mod tests {
     fn drawn_values_are_the_json_values() {
         let metrics =
             json!([{"metric": "accuracy", "value": 0.7583333333, "ci": [0.7133333333, 0.805]}]);
-        let rows: Vec<Row<'_>> = metrics
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|m| Row {
-                label: m["metric"].as_str().unwrap().into(),
-                point: &m["value"],
-                ci: &m["ci"],
-            })
-            .collect();
+        let rows = metric_rows(&metrics, "value");
         let s = intervals(&rows, false);
         assert!(
             s.contains("data-value=\"0.7583333333\" data-lo=\"0.7133333333\" data-hi=\"0.805\"")

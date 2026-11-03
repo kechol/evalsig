@@ -69,11 +69,11 @@ pub enum Refusal {
 }
 
 impl Refusal {
-    fn status(&self) -> (u16, &'static str) {
+    fn status(&self) -> u16 {
         match self {
-            Refusal::Method => (405, "Method Not Allowed"),
-            Refusal::Host => (421, "Misdirected Request"),
-            Refusal::Token => (403, "Forbidden"),
+            Refusal::Method => 405,
+            Refusal::Host => 421,
+            Refusal::Token => 403,
         }
     }
 }
@@ -113,12 +113,25 @@ impl Drop for Slot {
     }
 }
 
-fn reply(out: &mut TcpStream, status: u16, reason: &str, content_type: &str, body: &str) {
-    let _ = write!(
-        out,
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        421 => "Misdirected Request",
+        _ => "Error",
+    }
+}
+
+/// The head and body in one write.
+fn reply(out: &mut TcpStream, status: u16, content_type: &str, body: &str) {
+    let message = format!(
+        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: {CSP}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
+        reason(status),
         body.len()
     );
+    let _ = out.write_all(message.as_bytes());
 }
 
 /// A stream whose every read gets only the time left before one deadline, so a client
@@ -163,8 +176,10 @@ fn exchange(
     let mut host = None;
     loop {
         let mut h = String::new();
-        if reader.read_line(&mut h).unwrap_or(0) == 0 {
-            break;
+        // A head cut off by the deadline, the size budget or bad bytes gets no page.
+        match reader.read_line(&mut h) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
         }
         if h == "\r\n" || h == "\n" {
             break;
@@ -180,23 +195,9 @@ fn exchange(
             // The handler gets the path and its query; a fragment never reaches a server.
             let path = path.split('#').next().unwrap_or("");
             let page = handler(path);
-            let reason = if page.status == 200 {
-                "OK"
-            } else {
-                "Not Found"
-            };
-            reply(
-                &mut stream,
-                page.status,
-                reason,
-                page.content_type,
-                &page.body,
-            );
+            reply(&mut stream, page.status, page.content_type, &page.body);
         }
-        Err(r) => {
-            let (status, reason) = r.status();
-            reply(&mut stream, status, reason, "text/plain; charset=utf-8", "");
-        }
+        Err(r) => reply(&mut stream, r.status(), "text/plain; charset=utf-8", ""),
     }
 }
 
@@ -215,14 +216,20 @@ impl Server {
         let handler = Arc::new(handler);
         let token = Arc::new(self.token);
         let active = Arc::new(AtomicUsize::new(0));
-        for stream in self.listener.incoming().flatten() {
+        for stream in self.listener.incoming() {
+            let Ok(stream) = stream else {
+                // Out of descriptors and the like: wait instead of spinning.
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            };
             if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
                 active.fetch_sub(1, Ordering::SeqCst);
                 continue;
             }
             let slot = Slot(active.clone());
             let (handler, token, port) = (handler.clone(), token.clone(), self.port);
-            std::thread::spawn(move || {
+            // A thread that cannot start drops this connection, not the server.
+            let _ = std::thread::Builder::new().spawn(move || {
                 let _slot = slot;
                 exchange(stream, port, &token, &*handler);
             });

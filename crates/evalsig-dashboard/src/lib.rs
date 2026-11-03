@@ -10,15 +10,14 @@ use serde_json::Value;
 /// One self-contained page for a result (`--format html`): the verdict, warnings,
 /// the charts its results allow, and the envelope itself as
 /// `<script type="application/json">`. It loads nothing from anywhere.
-pub fn static_report(schema: &str, data: &str, e: &Value) -> String {
+pub fn static_report(e: &Value) -> String {
+    let schema = e["schema"].as_str().unwrap_or_default();
     let r = &e["results"];
     let mut body = String::new();
     if let Some(code) = e["verdict"]["code"].as_str() {
-        body.push_str(&format!(
-            "<p class=\"verdict\" data-code=\"{}\"><strong>{}</strong>: {}</p>",
-            html::esc(code),
-            html::esc(code),
-            html::esc(e["verdict"]["text"].as_str().unwrap_or_default())
+        body.push_str(&html::verdict(
+            code,
+            e["verdict"]["text"].as_str().unwrap_or_default(),
         ));
     }
     let point = if schema == "evalsig.compare/1" {
@@ -26,19 +25,25 @@ pub fn static_report(schema: &str, data: &str, e: &Value) -> String {
     } else {
         "value"
     };
-    if let Some(metrics) = r["metrics"].as_array() {
-        let rows: Vec<svg::Row<'_>> = metrics
-            .iter()
-            .map(|m| svg::Row {
-                label: m["metric"].as_str().unwrap_or_default().to_owned(),
-                point: &m[point],
-                ci: &m["ci"],
-            })
-            .collect();
-        body.push_str(&svg::intervals(&rows, point == "delta"));
-    }
-    if r["transition"].is_object() {
-        body.push_str(&svg::transition(&r["transition"]));
+    // Several candidates each carry their own comparison.
+    let parts: Vec<&Value> = match r["comparisons"].as_array() {
+        Some(c) => c.iter().collect(),
+        None => vec![r],
+    };
+    for part in parts {
+        if let Some(name) = part["arms"]["candidate"]
+            .as_str()
+            .filter(|_| r["comparisons"].is_array())
+        {
+            body.push_str(&format!("<h2>{}</h2>", html::esc(name)));
+        }
+        body.push_str(&svg::intervals(
+            &svg::metric_rows(&part["metrics"], point),
+            point == "delta",
+        ));
+        if part["transition"].is_object() {
+            body.push_str(&svg::transition(&part["transition"]));
+        }
     }
     if r["roc"].is_object() {
         body.push_str(&svg::roc(&r["roc"]));
@@ -48,7 +53,7 @@ pub fn static_report(schema: &str, data: &str, e: &Value) -> String {
     }
     // No `<` inside the element at all, so nothing can end or re-open it; in JSON a
     // `<` occurs only within strings, where `\u003c` means the same.
-    let data = data.replace('<', "\\u003c");
+    let data = e.to_string().replace('<', "\\u003c");
     body.push_str(&format!(
         "<script type=\"application/json\" id=\"evalsig-data\">{data}</script>"
     ));

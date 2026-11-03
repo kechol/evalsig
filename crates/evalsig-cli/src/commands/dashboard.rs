@@ -20,7 +20,7 @@ use crate::project::Project;
 #[derive(Debug, Clone, clap::Args)]
 pub struct Args {
     /// The port on 127.0.0.1 (0 picks a free one).
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 7777)]
     pub port: u16,
 }
 
@@ -65,12 +65,18 @@ fn decode(s: &str) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                Ok(b) => {
+            // Hex digits are ASCII, so they are read as bytes, never as a slice of the
+            // string that could split a character.
+            b'%' if i + 2 < bytes.len() => match std::str::from_utf8(&bytes[i + 1..i + 3])
+                .ok()
+                .filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                Some(b) => {
                     out.push(b);
                     i += 2;
                 }
-                Err(_) => out.push(b'%'),
+                None => out.push(b'%'),
             },
             b => out.push(b),
         }
@@ -81,6 +87,14 @@ fn decode(s: &str) -> String {
 
 fn get<'a>(q: &'a [(String, String)], k: &str) -> Option<&'a str> {
     q.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str())
+}
+
+/// The run a query names, if it is one of the project's runs; otherwise `default`.
+/// Only known run IDs reach a command's parser, so a value cannot pose as a flag.
+fn chosen<'a>(q: &[(String, String)], k: &str, runs: &'a [String], default: &'a str) -> &'a str {
+    get(q, k)
+        .and_then(|v| runs.iter().find(|r| r.as_str() == v))
+        .map_or(default, String::as_str)
 }
 
 fn cell(v: &Value) -> String {
@@ -148,19 +162,6 @@ fn warnings_of(v: &[crate::output::Warning]) -> Vec<String> {
         .collect()
 }
 
-fn metric_rows<'a>(metrics: &'a Value, point: &str) -> Vec<svg::Row<'a>> {
-    metrics
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|m| svg::Row {
-            label: m["metric"].as_str().unwrap_or_default().to_owned(),
-            point: &m[point],
-            ci: &m["ci"],
-        })
-        .collect()
-}
-
 fn metric_names(metrics: &Value) -> Vec<String> {
     metrics
         .as_array()
@@ -218,12 +219,30 @@ fn overview(root: &Path) -> Result<Screen, CliError> {
     );
     let mut warnings = warnings_of(&runs.warnings);
     let mut names = Vec::new();
-    for id in run_ids(root)? {
-        let c = computed_report(root, &[&id])?;
+    // The project is read once for every run's report.
+    let project = Project::open(root)?;
+    let config = project.config()?;
+    let d = data::load(&project)?;
+    let ids = runs.results["runs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["run_id"].as_str());
+    for id in ids {
+        // One run that cannot be reported shows its error; the others still render.
+        let c = match parse::<report::Args>(&["--", id])
+            .and_then(|a| report::compute(&d, &config, &a))
+        {
+            Ok(c) => c,
+            Err(e) => {
+                body.push_str(&format!("<h2>{}</h2><p>{}</p>", esc(id), esc(&e.message)));
+                continue;
+            }
+        };
         warnings.extend(warnings_of(&c.warnings));
-        body.push_str(&format!("<h2>{}</h2>", esc(&id)));
+        body.push_str(&format!("<h2>{}</h2>", esc(id)));
         body.push_str(&svg::intervals(
-            &metric_rows(&c.results["metrics"], "value"),
+            &svg::metric_rows(&c.results["metrics"], "value"),
             false,
         ));
         names.extend(metric_names(&c.results["metrics"]));
@@ -249,12 +268,12 @@ fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
             body: "<p>A comparison needs two runs.</p>".into(),
         });
     }
-    let base = get(q, "baseline").unwrap_or(&runs[0]).to_owned();
-    let cand = get(q, "candidate").unwrap_or(&runs[1]).to_owned();
+    let base = chosen(q, "baseline", &runs, &runs[0]).to_owned();
+    let cand = chosen(q, "candidate", &runs, &runs[1]).to_owned();
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let args = parse::<compare::Args>(&[&base, &cand, "--items"])?;
+    let args = parse::<compare::Args>(&["--items", "--", &base, &cand])?;
     let c = compare::compute(&d, &config, &args, None)?;
     let r = &c.results;
     let mut body = picker(
@@ -263,49 +282,37 @@ fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
         &[("baseline", &base), ("candidate", &cand)],
     );
     if let Some(v) = &c.verdict {
-        body.push_str(&format!(
-            "<p class=\"verdict\" data-code=\"{}\"><strong>{}</strong>: {}</p>",
-            v.code.as_str(),
-            v.code.as_str(),
-            esc(&v.text)
-        ));
+        body.push_str(&html::verdict(v.code.as_str(), &v.text));
     }
-    body.push_str(&svg::intervals(&metric_rows(&r["metrics"], "delta"), true));
+    body.push_str(&svg::intervals(
+        &svg::metric_rows(&r["metrics"], "delta"),
+        true,
+    ));
     if r["transition"].is_object() {
         body.push_str("<h2>Transitions</h2>");
         body.push_str(&svg::transition(&r["transition"]));
     }
-    // Item drill-down: each paired item's judgments in both arms.
-    let items: Vec<Vec<String>> = r["arms"]
+    // Item drill-down: each paired item's values in both arms.
+    let items: Vec<Vec<String>> = r["items"]
         .as_array()
-        .and_then(|a| a.last())
-        .and_then(|a| a["items"].as_array())
-        .or_else(|| r["items"].as_array())
         .into_iter()
         .flatten()
         .map(|i| {
-            let mut row = vec![cell(&i["item_id"])];
-            if let Some(o) = i.as_object() {
-                row.extend(
-                    o.iter()
-                        .filter(|(k, _)| k.as_str() != "item_id")
-                        .map(|(k, v)| format!("{k}={}", cell(v))),
-                );
-            }
-            row
+            let values: Vec<String> = i
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter(|(k, _)| k.as_str() != "item_id")
+                .map(|(k, v)| format!("{k}={}", cell(v)))
+                .collect();
+            vec![cell(&i["item_id"]), values.join(", ")]
         })
         .collect();
     if !items.is_empty() {
         body.push_str(&format!(
             "<details><summary>Items ({})</summary>{}</details>",
             items.len(),
-            html::table(
-                &["Item", "Values"],
-                &items
-                    .iter()
-                    .map(|r| vec![r[0].clone(), r[1..].join(", ")])
-                    .collect::<Vec<_>>()
-            )
+            html::table(&["Item", "Values"], &items)
         ));
     }
     let names = metric_names(&r["metrics"]);
@@ -328,17 +335,13 @@ fn trend_screen(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError>
             body: "<p>No runs.</p>".into(),
         });
     };
-    let run = get(q, "run").unwrap_or(first).to_owned();
+    let run = chosen(q, "run", &runs, first).to_owned();
     let mut body = picker("trend", &runs, &[("run", &run)]);
-    match trend::run(root, &parse::<trend::Args>(&[&run])?) {
+    match trend::run(root, &parse::<trend::Args>(&["--", &run])?) {
         Ok(out) => {
             let r = &out.envelope.results;
             if let Some(v) = &out.envelope.verdict {
-                body.push_str(&format!(
-                    "<p class=\"verdict\" data-code=\"{}\">{}</p>",
-                    v.code.as_str(),
-                    esc(&v.text)
-                ));
+                body.push_str(&html::verdict(v.code.as_str(), &v.text));
             }
             let primary = r["primary_metric"].as_str().unwrap_or_default();
             body.push_str(&svg::trend(&r["periods"], primary));
@@ -369,8 +372,8 @@ fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErr
             body: "<p>No runs.</p>".into(),
         });
     };
-    let run = get(q, "run").unwrap_or(first).to_owned();
-    let c = computed_report(root, &[&run, "--k-curve"])?;
+    let run = chosen(q, "run", &runs, first).to_owned();
+    let c = computed_report(root, &["--k-curve", "--", &run])?;
     let mut body = picker("reproducibility", &runs, &[("run", &run)]);
     let rep = &c.results["reproducibility"];
     let rows: Vec<Vec<String>> = rep
@@ -451,14 +454,17 @@ fn discrimination(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErro
             body: "<p>No runs.</p>".into(),
         });
     };
-    let run = get(q, "run").unwrap_or(first).to_owned();
-    let c = computed_report(root, &[&run])?;
+    let run = chosen(q, "run", &runs, first).to_owned();
+    let c = computed_report(root, &["--", &run])?;
     let r = &c.results;
     let mut body = picker("discrimination", &runs, &[("run", &run)]);
     if r["roc"].is_object() {
         body.push_str(&format!(
             "<p>AUC <span data-auc=\"{}\">{}</span> [{}, {}]</p>",
-            r["roc"]["auc"], r["roc"]["auc"], r["roc"]["ci"][0], r["roc"]["ci"][1]
+            esc(&r["roc"]["auc"].to_string()),
+            esc(&r["roc"]["auc"].to_string()),
+            esc(&r["roc"]["ci"][0].to_string()),
+            esc(&r["roc"]["ci"][1].to_string())
         ));
         body.push_str(&svg::roc(&r["roc"]));
         body.push_str(&svg::zroc(&r["roc"]));
@@ -499,9 +505,10 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let token = evalsig_store::seal::random_token();
     let srv = server::bind(args.port, token)
         .map_err(|e| CliError::usage(format!("cannot listen on 127.0.0.1:{}: {e}", args.port)))?;
-    println!("{}", json!({ "url": srv.url() }));
     use std::io::Write as _;
-    let _ = std::io::stdout().flush();
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", json!({ "url": srv.url() }));
+    let _ = out.flush();
     let root: PathBuf = root.to_path_buf();
     srv.serve(move |path| route(&root, path));
     Err(CliError::usage("the dashboard stopped"))
