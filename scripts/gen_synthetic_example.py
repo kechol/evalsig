@@ -56,7 +56,8 @@ def main():
                 lines.append({"record": "judgment", "item_id": item, "run_id": run, "gen_replicate": 0,
                               "output_type": "binary", "value": value})
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text("".join(json.dumps(x, separators=(",", ":")) + "\n" for x in lines), encoding="utf-8")
+    with args.out.open("w", encoding="utf-8", newline="\n") as f:
+        f.writelines(json.dumps(x, separators=(",", ":")) + "\n" for x in lines)
     print(f"wrote {args.out} ({len(lines)} records)")
 
 

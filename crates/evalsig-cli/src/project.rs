@@ -52,6 +52,35 @@ impl Project {
         ObjectStore::new(self.dir.join("objects"))
     }
 
+    /// Append an agent-side ledger line for a command's output and note it in the
+    /// envelope's provenance.
+    pub fn record(
+        &self,
+        envelope: &mut crate::output::Envelope,
+        kind: evalsig_store::ledger::Kind,
+        inputs: Vec<String>,
+        outputs: Vec<String>,
+        summary: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), CliError> {
+        let entry = evalsig_store::ledger::append(
+            &self.ledger_path(),
+            evalsig_store::ledger::LedgerSide::Agent,
+            kind,
+            evalsig_store::ledger::NewEntry {
+                ts: now(),
+                actor: actor(),
+                inputs,
+                outputs,
+                summary,
+                tool: crate::tool_version(),
+            },
+        )
+        .map_err(CliError::store)?;
+        envelope.provenance.ledger = Some("agent".into());
+        envelope.provenance.ledger_seq = Some(entry.seq);
+        Ok(())
+    }
+
     pub fn config(&self) -> Result<Config, CliError> {
         let path = self.config_path();
         let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, &e))?;

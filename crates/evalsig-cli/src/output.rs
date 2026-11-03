@@ -184,6 +184,28 @@ impl Output {
     }
 }
 
+/// The hash of the configuration with every default filled in (D-004).
+pub fn config_hash(config: &evalsig_core::config::Config) -> evalsig_store::hash::ContentHash {
+    let bytes = evalsig_store::canonical::to_canonical_bytes(&config.to_json())
+        .expect("configuration JSON is canonical");
+    evalsig_store::hash::ContentHash::blake3(&bytes)
+}
+
+/// Round every number to 10 decimal places (metrics spec §0).
+pub fn round_numbers(v: Json) -> Json {
+    match v {
+        Json::Number(n) if n.is_f64() => {
+            let x = evalsig_store::canonical::round_output(n.as_f64().expect("f64 number"));
+            serde_json::Number::from_f64(x).map_or(Json::Null, Json::Number)
+        }
+        Json::Array(xs) => Json::Array(xs.into_iter().map(round_numbers).collect()),
+        Json::Object(m) => {
+            Json::Object(m.into_iter().map(|(k, v)| (k, round_numbers(v))).collect())
+        }
+        other => other,
+    }
+}
+
 pub fn render(output: &Output, format: Format) -> String {
     let e = &output.envelope;
     match format {
@@ -195,10 +217,21 @@ pub fn render(output: &Output, format: Format) -> String {
         Format::Md => crate::markdown::render(e).unwrap_or_else(|| markdown(e)),
         Format::Junit => junit(e, output.exit),
         Format::Text => text(e),
-        Format::Jsonl => e.results["items"]
-            .as_array()
-            .map(|rows| rows.iter().map(|r| format!("{r}\n")).collect())
-            .unwrap_or_default(),
+        Format::Jsonl => {
+            // Rows sit in `results.items`, or in each comparison's `items` when several
+            // candidates were compared.
+            let nested = e.results["comparisons"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|c| &c["items"]);
+            std::iter::once(&e.results["items"])
+                .chain(nested)
+                .filter_map(Json::as_array)
+                .flatten()
+                .map(|r| format!("{r}\n"))
+                .collect()
+        }
     }
 }
 
@@ -268,9 +301,7 @@ fn table_columns(v: &Json) -> Option<Vec<String>> {
 /// span whose fence is longer than any backtick run inside.
 fn md_cell(v: &Json) -> String {
     let cell = if v.is_object() || v.is_array() {
-        let text = v.to_string();
-        let fence = if text.contains('`') { "``" } else { "`" };
-        format!("{fence}{text}{fence}")
+        crate::markdown::code(&v.to_string())
     } else {
         scalar(v)
     };

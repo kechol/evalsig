@@ -12,7 +12,7 @@ use crate::bootstrap::{self, Strata};
 use crate::config::{Estimand, ReferenceMode};
 use crate::interval::wilson_two_sided;
 use crate::missing::{MissingPolicy, Policy, Side};
-use crate::numeric::{Rng, sum};
+use crate::numeric::{Rng, mean, sum};
 use crate::records::{
     Item, Judgment, Label, LabelKind, MissingReason, OutputType, Run, Source, Value, ValueSemantics,
 };
@@ -51,6 +51,8 @@ pub enum ReportError {
     NoPositiveDefinition(&'static str),
     #[error("the {0} estimand needs pass or fail judgments; score runs need --threshold")]
     EstimandNeedsBinary(String),
+    #[error("--threshold applies to score outputs; this run's judgments are binary")]
+    ThresholdOnBinary,
 }
 
 /// One interval-bearing metric.
@@ -143,15 +145,6 @@ struct Unit {
     /// Share of raters calling the item positive.
     reference: Option<f64>,
     model_reference: bool,
-}
-
-/// The value a missing replicate takes under a policy; `None` drops it.
-fn fill(policy: Policy, worst: f64, best: f64) -> Option<f64> {
-    match policy {
-        Policy::Worst => Some(worst),
-        Policy::Best => Some(best),
-        Policy::Drop => None,
-    }
 }
 
 /// Positive share over the latest labels of one item under the reference mode.
@@ -264,6 +257,13 @@ pub fn prepare<'a>(
         .filter(|_| semantics == ValueSemantics::Score && output_type != OutputType::Binary);
     // A decision run needs a rule unless its output is binary; a score run uses its
     // scores directly unless a threshold turns them into pass or fail.
+    if s.threshold.is_some() && output_type == OutputType::Binary {
+        return Err(ReportError::ThresholdOnBinary);
+    }
+    // A project-wide decision rule written for ordinal or score runs does not read
+    // booleans; binary runs then use their own value.
+    let decision = decision
+        .filter(|r| output_type != OutputType::Binary || matches!(r, Rule::Equals(Value::Bool(_))));
     let rule = match (semantics, output_type, decision) {
         (_, _, Some(r)) => Some(r),
         (ValueSemantics::Decision, OutputType::Binary, None) => {
@@ -335,7 +335,9 @@ pub fn prepare<'a>(
             }
             match (values.is_empty(), reason) {
                 (false, _) => {
-                    replicates.push(Ok(sum(values.iter().copied()) / values.len() as f64));
+                    replicates.push(Ok(
+                        mean(values.iter().copied()).expect("values is not empty")
+                    ));
                     if let Some(t) = at_least {
                         let hits = values.iter().filter(|v| **v >= t).count() as f64;
                         at_least_reps.push(Ok(hits / values.len() as f64));
@@ -421,15 +423,15 @@ pub fn build(
     let calc = p.calc();
     let units = &p.units;
     let semantics = p.semantics;
-    let metrics = calc.metrics(units, semantics);
+    let all: Vec<&Unit> = units.iter().collect();
+    let metrics = calc.metrics(&all, semantics);
     let mut by = BTreeMap::new();
     if s.by.is_some() {
         let strata: BTreeSet<&str> = units.iter().filter_map(|u| u.stratum.as_deref()).collect();
         for st in strata {
-            let sub: Vec<Unit> = units
+            let sub: Vec<&Unit> = units
                 .iter()
                 .filter(|u| u.stratum.as_deref() == Some(st))
-                .cloned()
                 .collect();
             by.insert(st.to_owned(), calc.metrics(&sub, semantics));
         }
@@ -534,14 +536,6 @@ fn repro_row(d: Disagreement, n_eff: f64, level: f64) -> ReproducibilityRow {
     }
 }
 
-/// Which way the system-side missing values are filled.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Bound {
-    Policy,
-    Worst,
-    Best,
-}
-
 struct Calc<'a> {
     settings: &'a Settings,
     binary: bool,
@@ -550,7 +544,7 @@ struct Calc<'a> {
 }
 
 /// A metric of the default tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricId {
     Accuracy,
@@ -629,14 +623,14 @@ impl Calc<'_> {
     /// whose worst replicate value is `worst(unit)`; also whether a system-side
     /// replicate was missing.
     fn item_value(&self, u: &Unit, worst: impl Fn(&Unit) -> Option<f64>) -> Option<(f64, bool)> {
-        self.item_value_bound(u, &worst, Bound::Policy, Values::Judged)
+        self.item_value_bound(u, &worst, Fill::Policy, Values::Judged)
     }
 
     fn item_value_bound(
         &self,
         u: &Unit,
         worst: &dyn Fn(&Unit) -> Option<f64>,
-        bound: Bound,
+        bound: Fill,
         which: Values,
     ) -> Option<(f64, bool)> {
         let binary = self.binary || which == Values::AtLeast;
@@ -656,11 +650,11 @@ impl Calc<'_> {
                     let system = reason.side() == Side::System;
                     system_missing |= system;
                     let policy = match (bound, system) {
-                        (Bound::Worst, true) => Policy::Worst,
-                        (Bound::Best, true) => Policy::Best,
+                        (Fill::Worst, true) => Policy::Worst,
+                        (Fill::Best, true) => Policy::Best,
                         _ => self.settings.missing.policy(*reason),
                     };
-                    values.extend(fill(policy, w, b));
+                    values.extend(policy.fill(w, b));
                 }
             }
         }
@@ -673,7 +667,7 @@ impl Calc<'_> {
             let c = values.iter().filter(|v| **v >= 0.5).count() as u64;
             item_value(c, values.len() as u64, self.settings.estimand)?
         } else {
-            sum(values.iter().copied()) / values.len() as f64
+            mean(values.iter().copied())?
         };
         Some((v, system_missing))
     }
@@ -743,14 +737,15 @@ impl Calc<'_> {
     }
 
     /// The units a metric counts: items with a reference for decision metrics.
-    fn eligible<'u>(&self, id: MetricId, units: &'u [Unit]) -> Vec<&'u Unit> {
+    fn eligible<'u>(&self, id: MetricId, units: &[&'u Unit]) -> Vec<&'u Unit> {
         units
             .iter()
+            .copied()
             .filter(|u| !id.needs_reference() || u.reference.is_some())
             .collect()
     }
 
-    fn metrics(&self, units: &[Unit], semantics: ValueSemantics) -> Vec<Metric> {
+    fn metrics(&self, units: &[&Unit], semantics: ValueSemantics) -> Vec<Metric> {
         let mut out: Vec<Metric> = self
             .ids(semantics)
             .into_iter()
@@ -791,7 +786,7 @@ impl Calc<'_> {
 
     /// Each unit's (numerator, denominator) for a metric, filling system-side missing
     /// replicates as `bound` says; `None` for units with no value.
-    fn parts(&self, id: MetricId, units: &[&Unit], bound: Bound) -> Vec<Option<Part>> {
+    fn parts(&self, id: MetricId, units: &[&Unit], bound: Fill) -> Vec<Option<Part>> {
         let d = self.definition(id);
         units
             .iter()
@@ -813,7 +808,7 @@ impl Calc<'_> {
         part: &dyn Fn(&Unit, f64) -> Part,
         which: Values,
     ) -> Metric {
-        let parts = |bound: Bound| -> (Vec<Option<Part>>, bool) {
+        let parts = |bound: Fill| -> (Vec<Option<Part>>, bool) {
             let mut any_system = false;
             let p = units
                 .iter()
@@ -832,11 +827,11 @@ impl Calc<'_> {
             let den = sum(p.iter().flatten().map(|x| x.1));
             (den > 0.0).then(|| num / den)
         };
-        let (point_parts, system_missing) = parts(Bound::Policy);
+        let (point_parts, system_missing) = parts(Fill::Policy);
         let value = total(&point_parts);
         let n = sum(point_parts.iter().flatten().map(|x| x.1));
         let missing_bounds = if system_missing && worst(units[0]).is_some() {
-            match (total(&parts(Bound::Worst).0), total(&parts(Bound::Best).0)) {
+            match (total(&parts(Fill::Worst).0), total(&parts(Fill::Best).0)) {
                 (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
                 _ => None,
             }
@@ -959,6 +954,10 @@ impl Prepared<'_> {
         &self.missing_by_reason
     }
 
+    pub fn n_missing(&self) -> u64 {
+        self.missing_by_reason.values().sum()
+    }
+
     /// System-side missing judgments and judged items, for the missing-rate check.
     pub fn system_missing(&self) -> (u64, u64) {
         let missing = self
@@ -989,12 +988,9 @@ impl Prepared<'_> {
     /// Each eligible item's contribution to a metric.
     pub fn item_values(&self, id: MetricId, fill: Fill) -> BTreeMap<String, ItemValue> {
         let calc = self.calc();
-        let units = calc.eligible(id, &self.units);
-        let bound = match fill {
-            Fill::Policy => Bound::Policy,
-            Fill::Worst => Bound::Worst,
-            Fill::Best => Bound::Best,
-        };
+        let all: Vec<&Unit> = self.units.iter().collect();
+        let units = calc.eligible(id, &all);
+        let bound = fill;
         units
             .iter()
             .zip(calc.parts(id, &units, bound))

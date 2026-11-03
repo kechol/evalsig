@@ -1,26 +1,29 @@
 //! `evalsig compare <baseline> <candidate>...`: paired comparison and verdict.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
-use evalsig_core::compare::{self, Comparison, Options};
-use evalsig_core::config::Estimand;
-use evalsig_core::paired::{self, Verdict};
-use evalsig_core::records::{DEFAULT_TASK, Item, Judgment, Record, Run};
-use evalsig_core::report::{self, Prepared, Settings};
+use std::collections::{BTreeMap, BTreeSet};
+
+use evalsig_core::checks::{Finding, Overrides};
+use evalsig_core::compare::{self, Baseline, Comparison, Options};
+use evalsig_core::paired::Verdict;
+use evalsig_core::records::{Item, Label, Run};
+use evalsig_core::report::{self, Prepared};
 use evalsig_core::validity;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind, LedgerSide, NewEntry};
+use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
+use crate::analysis::{self, AnalysisArgs};
 use crate::checks::{self, ArmArgs, DatasetArgs};
-use crate::commands::report::{ReferenceArg, config_hash, round_numbers, select_labels};
 use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
-use crate::output::{Envelope, Next, Output, Verdict as EnvelopeVerdict, VerdictCode};
-use crate::project::{Project, actor, now};
+use crate::output::{
+    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, config_hash, round_numbers,
+};
+use crate::project::Project;
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -29,24 +32,11 @@ pub struct Args {
     /// One or more candidate runs.
     #[arg(required = true)]
     pub candidates: Vec<String>,
-    /// The judgment task.
-    #[arg(long, default_value = DEFAULT_TASK)]
-    pub task: String,
     /// The metric that decides the verdict (default: the first the runs support).
     #[arg(long)]
     pub metric: Option<String>,
-    /// The estimand: single_shot, majority@k, any@k or all@k (default from the configuration).
-    #[arg(long)]
-    pub estimand: Option<Estimand>,
-    /// Decision threshold for score outputs; for score runs, also compares the share at or above it.
-    #[arg(long)]
-    pub threshold: Option<f64>,
-    /// Use the labels as they were at this RFC 3339 time.
-    #[arg(long, value_name = "TIME")]
-    pub labels_as_of: Option<String>,
-    /// How several raters' labels become the reference (default from the configuration).
-    #[arg(long, value_enum)]
-    pub reference: Option<ReferenceArg>,
+    #[command(flatten)]
+    pub analysis: AnalysisArgs,
     /// Include one row per paired item (`--format jsonl` prints only these rows).
     #[arg(long)]
     pub items: bool,
@@ -57,29 +47,6 @@ pub struct Args {
     pub dataset: DatasetArgs,
     #[command(flatten)]
     pub arms: ArmArgs,
-}
-
-fn find_run<'a>(records: &'a [Record], id: &str) -> Result<&'a Run, CliError> {
-    records
-        .iter()
-        .find_map(|r| match r {
-            Record::Run(run) if run.run_id == id => Some(run),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            CliError::usage(format!("no run named {id:?}"))
-                .with_hint("list runs with `evalsig runs`")
-        })
-}
-
-fn judgments_of<'a>(records: &'a [Record], id: &str) -> Vec<&'a Judgment> {
-    records
-        .iter()
-        .filter_map(|r| match r {
-            Record::Judgment(j) if j.run_id == id => Some(j),
-            _ => None,
-        })
-        .collect()
 }
 
 fn verdict_text(metric: &str, d: &compare::MetricDelta, level: f64) -> String {
@@ -101,75 +68,94 @@ fn verdict_text(metric: &str, d: &compare::MetricDelta, level: f64) -> String {
     }
 }
 
-fn comparison_json(baseline: &str, candidate: &str, c: &Comparison, primary: &str) -> Value {
+fn comparison_json(
+    baseline: &str,
+    candidate: &str,
+    c: &Comparison,
+    primary: &str,
+    n_input_changed: usize,
+) -> Value {
     json!({
         "arms": { "baseline": baseline, "candidate": candidate },
         "primary_metric": primary,
         "n_used": c.n_used,
         "n_unpaired": c.n_unpaired,
-        "n_input_changed": 0,
+        "n_input_changed": n_input_changed,
         "metrics": c.metrics,
         "transition": c.transition,
     })
+}
+
+/// Items present in both arms whose input differs, by `input_ref` of the item records
+/// each arm reads.
+fn changed_inputs(
+    items: &BTreeMap<&str, &Item>,
+    base: &Prepared<'_>,
+    cand: &Prepared<'_>,
+    overrides: &Overrides,
+) -> (BTreeSet<String>, Vec<Finding>) {
+    let inputs = |p: &Prepared<'_>| -> BTreeMap<String, Option<String>> {
+        p.judged()
+            .into_keys()
+            .map(|k| {
+                let input = items.get(k.as_str()).and_then(|i| i.input_ref.clone());
+                (k, input)
+            })
+            .collect()
+    };
+    let (a, b) = (inputs(base), inputs(cand));
+    let a_ref: BTreeMap<&str, Option<&str>> =
+        a.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
+    let b_ref: BTreeMap<&str, Option<&str>> =
+        b.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
+    let (pairing, findings) = validity::pair(&a_ref, &b_ref, overrides);
+    let excluded = if overrides.allow_input_change {
+        BTreeSet::new()
+    } else {
+        pairing
+            .input_changed
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect()
+    };
+    // unpaired_items is reported by compare itself; keep only the input finding.
+    (
+        excluded,
+        findings
+            .into_iter()
+            .filter(|f| f.code == "input_changed")
+            .collect(),
+    )
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let items: BTreeMap<&str, &Item> = d
-        .records
-        .iter()
-        .filter_map(|r| match r {
-            Record::Item(i) => Some((i.item_id.as_str(), i)),
-            _ => None,
-        })
-        .collect();
-    let (labels, _) = select_labels(&d.records, args.labels_as_of.as_deref())?;
-    let settings = Settings {
-        task: args.task.clone(),
-        positive: config.positive().for_task(&args.task).copied(),
-        decision: config.decision().for_task(&args.task).copied(),
-        threshold: args.threshold,
-        estimand: args.estimand.unwrap_or(config.stats.estimand),
-        missing: config.missing_policy(),
-        reference: args.reference.map_or(config.reference.mode, Into::into),
-        level: config.stats.level,
-        bootstrap: config.stats.bootstrap,
-        seed: config.stats.seed.unwrap_or(0),
-        prevalence: None,
-        by: None,
-        items: false,
-    };
+    let items = d.items();
+    let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
+    let labels: Vec<&Label> = labels.iter().collect();
+    let settings = analysis::settings(&config, &args.analysis);
     let prepare = |id: &str| -> Result<(&Run, Prepared<'_>), CliError> {
-        let run = find_run(&d.records, id)?;
-        let p = report::prepare(
-            run,
-            &judgments_of(&d.records, id),
-            &items,
-            &labels,
-            &settings,
-        )
-        .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
+        let run = d.run(id)?;
+        let p = report::prepare(run, &d.judgments(id), &items, &labels, &settings)
+            .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
         Ok((run, p))
     };
     let (base_run, base) = prepare(&args.baseline)?;
+    let baseline = Baseline::new(&base);
     let overrides = checks::overrides(args.dataset, args.arms);
     let mut findings = validity::dataset(&d.records, &overrides);
-    let options = Options {
-        level: settings.level,
-        bootstrap: settings.bootstrap,
-        seed: settings.seed,
-        min_effect: config.compare.min_effect.clone(),
-    };
     let mut comparisons = Vec::new();
     for cand_id in &args.candidates {
         let (cand_run, cand) = prepare(cand_id)?;
-        if cand.semantics() != base.semantics() {
+        if (cand.semantics(), cand.output_type(), cand.rule())
+            != (base.semantics(), base.output_type(), base.rule())
+        {
             return Err(CliError::new(
                 "incomparable",
                 format!(
-                    "{} and {cand_id} have different value semantics",
+                    "{} and {cand_id} differ in value semantics, output type or decision rule",
                     args.baseline
                 ),
                 Exit::Rejected,
@@ -185,10 +171,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             cand.system_missing(),
             &overrides,
         ));
-        let c = compare::compare(&base, &cand, &options);
+        let (excluded, input_findings) = changed_inputs(&items, &base, &cand, &overrides);
+        findings.extend(input_findings);
+        let options = Options {
+            level: settings.level,
+            bootstrap: settings.bootstrap,
+            seed: settings.seed,
+            min_effect: config.compare.min_effect.clone(),
+            excluded: excluded.clone(),
+        };
+        let c = compare::compare(&baseline, &cand, &options);
         if c.n_unpaired > 0 {
             findings.push(
-                evalsig_core::checks::Finding::new(
+                Finding::new(
                     "unpaired_items",
                     format!(
                         "{} items are in only one arm; compared on the {} common items",
@@ -199,156 +194,121 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
                 .with_count(c.n_unpaired),
             );
         }
-        comparisons.push((cand_id.clone(), cand, c));
+        comparisons.push((cand_id.clone(), cand, c, excluded.len()));
     }
-    let primary = match &args.metric {
-        Some(m) => {
-            let known: Vec<&str> = comparisons[0].2.metrics.iter().map(|x| x.metric).collect();
-            if !known.contains(&m.as_str()) {
-                return Err(CliError::usage(format!(
-                    "metric {m:?} is not available for these runs"
-                ))
-                .with_hint(format!("available: {}", known.join(", "))));
+    let all: Vec<Comparison> = comparisons.iter().map(|(_, _, c, _)| c.clone()).collect();
+    let multi = compare::summarize(&all, args.metric.as_deref()).map_err(|available| {
+        CliError::usage(format!(
+            "metric {:?} is not available for these runs",
+            args.metric.as_deref().unwrap_or("")
+        ))
+        .with_hint(format!("available: {}", available.join(", ")))
+    })?;
+    let primary = multi.primary;
+    let base_judged = base.judged();
+    let list: Vec<Value> = comparisons
+        .iter()
+        .map(|(id, cand, c, changed)| {
+            let mut v = comparison_json(&args.baseline, id, c, primary, *changed);
+            if args.items {
+                let jb = cand.judged();
+                let rows: Vec<Value> = base_judged
+                    .iter()
+                    .filter_map(|(item, (va, s))| {
+                        jb.get(item).map(|(vb, _)| {
+                            json!({"item_id": item, "candidate_run": id, "reference": s, "baseline": va, "candidate": vb})
+                        })
+                    })
+                    .collect();
+                v["items"] = Value::Array(rows);
             }
-            m.clone()
-        }
-        None => comparisons[0]
-            .2
-            .metrics
-            .first()
-            .map(|x| x.metric.to_owned())
-            .unwrap_or_default(),
-    };
-    let pick = |c: &Comparison| c.metrics.iter().find(|m| m.metric == primary).cloned();
-    let item_rows = |cand: &Prepared<'_>| -> Vec<Value> {
-        let (ja, jb) = (base.judged(), cand.judged());
-        ja.iter()
-            .filter_map(|(item, (va, s))| {
-                jb.get(item).map(|(vb, _)| json!({"item_id": item, "reference": s, "baseline": va, "candidate": vb}))
-            })
-            .collect()
-    };
+            v
+        })
+        .collect();
     let common = json!({
         "value_semantics": base.semantics(),
         "positive": base.positive(),
         "decision": base.rule(),
         "estimand": settings.estimand.to_string(),
         "reference": base.positive().map(|_| json!({"mode": settings.reference, "raters": base.raters()})),
-        "n_missing": base.missing_by_reason().values().sum::<u64>()
-            + comparisons.iter().map(|(_, p, _)| p.missing_by_reason().values().sum::<u64>()).sum::<u64>(),
+        "n_missing": base.n_missing() + comparisons.iter().map(|(_, p, _, _)| p.n_missing()).sum::<u64>(),
         "missing_policy": settings.missing.table(),
     });
-    let (mut results, verdict) = if comparisons.len() == 1 {
-        let (cand_id, cand, c) = &comparisons[0];
-        let mut r = comparison_json(&args.baseline, cand_id, c, &primary);
-        merge(&mut r, &common);
-        if args.items {
-            r["items"] = Value::Array(item_rows(cand));
-        }
-        (r, pick(c))
+    let chosen = if list.len() == 1 { Some(0) } else { multi.best };
+    let mut results = if list.len() == 1 {
+        list.into_iter().next().expect("one comparison")
     } else {
-        let ps: Vec<f64> = comparisons
-            .iter()
-            .filter_map(|(_, _, c)| pick(c).and_then(|m| m.p_value))
-            .collect();
-        let adjusted = (ps.len() == comparisons.len())
-            .then(|| paired::holm(&ps))
-            .flatten();
-        let list: Vec<Value> = comparisons
-            .iter()
-            .map(|(id, cand, c)| {
-                let mut v = comparison_json(&args.baseline, id, c, &primary);
-                if args.items {
-                    v["items"] = Value::Array(item_rows(cand));
-                }
-                v
-            })
-            .collect();
-        let mut r = json!({
+        json!({
             "arms": { "baseline": args.baseline, "candidates": args.candidates },
             "primary_metric": primary,
             "comparisons": list,
-            "holm": { "metric": primary, "adjusted_p": adjusted },
+            "holm": { "metric": primary, "adjusted_p": multi.holm },
             "selected_after_comparison": true,
-        });
-        merge(&mut r, &common);
-        // The overall verdict is the best candidate's on the primary metric.
-        let best = comparisons
-            .iter()
-            .filter_map(|(_, _, c)| pick(c))
-            .max_by(|x, y| {
-                x.delta
-                    .unwrap_or(f64::NEG_INFINITY)
-                    .total_cmp(&y.delta.unwrap_or(f64::NEG_INFINITY))
-            });
-        (r, best)
+        })
     };
-    results = round_numbers(results);
+    merge(&mut results, &common);
+    let verdict = chosen.and_then(|i| {
+        comparisons[i]
+            .2
+            .metrics
+            .iter()
+            .find(|m| m.metric == primary)
+            .cloned()
+    });
+    let results = round_numbers(results);
     let output_hash = ContentHash::blake3(&to_canonical_bytes(&results).map_err(CliError::store)?);
     let cfg = config_hash(&config);
     let mut envelope = Envelope::new("evalsig.compare/1", results);
     if let Some(m) = &verdict {
         envelope.verdict = Some(EnvelopeVerdict {
             code: VerdictCode::from(m.verdict),
-            text: verdict_text(&primary, m, settings.level),
+            text: verdict_text(primary, m, settings.level),
         });
-        if matches!(
-            m.verdict,
-            Verdict::Indistinguishable | Verdict::InsufficientData
-        ) {
-            envelope.next.push(Next {
-                command: format!("evalsig power --metric {primary} --paired"),
-                why: "estimate how many items it takes to detect the minimum effect".into(),
-            });
-        }
     }
     if comparisons.len() > 1 {
-        envelope.warnings.push(crate::output::Warning {
+        envelope.warnings.push(Warning {
             code: "selected_after_comparison".into(),
             message:
                 "the best of several candidates is biased upwards; confirm it on another split"
                     .into(),
         });
     }
+    if undated_skipped > 0 {
+        envelope.warnings.push(Warning {
+            code: "undated_label_revisions".into(),
+            message: format!("{undated_skipped} labels have newer undated revisions that --labels-as-of cannot place in time"),
+        });
+    }
     envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
     envelope.provenance.config = Some(cfg.to_string());
     envelope.provenance.seed = Some(settings.seed);
     if !args.scratch {
-        let mut summary = serde_json::Map::new();
-        summary.insert("baseline".into(), json!(args.baseline));
-        summary.insert("candidates".into(), json!(args.candidates));
-        summary.insert("metric".into(), json!(primary));
-        summary.insert("verdict".into(), json!(verdict.as_ref().map(|m| m.verdict)));
-        let entry = ledger::append(
-            &project.ledger_path(),
-            LedgerSide::Agent,
+        let summary = json!({
+            "baseline": args.baseline,
+            "candidates": args.candidates,
+            "metric": primary,
+            "verdict": verdict.as_ref().map(|m| m.verdict),
+        });
+        let inputs = envelope
+            .provenance
+            .snapshots
+            .iter()
+            .cloned()
+            .chain([cfg.to_string()])
+            .collect();
+        project.record(
+            &mut envelope,
             Kind::Compare,
-            NewEntry {
-                ts: now(),
-                actor: actor(),
-                inputs: envelope
-                    .provenance
-                    .snapshots
-                    .iter()
-                    .cloned()
-                    .chain([cfg.to_string()])
-                    .collect(),
-                outputs: vec![output_hash.to_string()],
-                summary,
-                tool: crate::tool_version(),
-            },
-        )
-        .map_err(CliError::store)?;
-        envelope.provenance.ledger = Some("agent".into());
-        envelope.provenance.ledger_seq = Some(entry.seq);
+            inputs,
+            vec![output_hash.to_string()],
+            summary.as_object().expect("object").clone(),
+        )?;
     }
     Ok(checks::apply(envelope, &findings))
 }
 
 fn merge(target: &mut Value, extra: &Value) {
-    if let (Value::Object(t), Value::Object(e)) = (target, extra) {
-        for (k, v) in e {
-            t.insert(k.clone(), v.clone());
-        }
+    if let (Some(t), Some(e)) = (target.as_object_mut(), extra.as_object()) {
+        t.extend(e.clone());
     }
 }

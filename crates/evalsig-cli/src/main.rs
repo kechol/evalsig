@@ -1,5 +1,6 @@
 //! The `evalsig` command-line interface.
 
+mod analysis;
 mod checks;
 mod commands;
 mod data;

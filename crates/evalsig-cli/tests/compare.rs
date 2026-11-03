@@ -148,10 +148,53 @@ fn too_few_units_give_insufficient_data() {
     let v = json(evalsig(dir.path()).args(["compare", "r-base", "r-cand"]));
     assert_eq!(v["verdict"]["code"], "insufficient_data");
     assert_eq!(v["results"]["metrics"][0]["interval"], "too_few_units");
-    assert!(
-        v["next"][0]["command"]
-            .as_str()
-            .unwrap()
-            .starts_with("evalsig power")
-    );
+    assert_eq!(v["next"], serde_json::json!([]));
+}
+
+#[test]
+fn jsonl_rows_cover_every_candidate() {
+    let dir = project();
+    let out = evalsig(dir.path())
+        .args([
+            "--format",
+            "jsonl",
+            "compare",
+            "triage-v1",
+            "triage-v2",
+            "triage-v2",
+            "--items",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(String::from_utf8(out).unwrap().lines().count(), 600);
+}
+
+#[test]
+fn arms_with_different_output_types_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    std::fs::write(
+        dir.path().join(".evalsig/config.toml"),
+        "[project]\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n",
+    )
+    .unwrap();
+    evalsig(dir.path())
+        .args([
+            "import",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/records.jsonl"),
+        ])
+        .assert()
+        .success();
+    let out = evalsig(dir.path())
+        .args(["--format", "json", "compare", "r-base", "r-judge-score"])
+        .assert()
+        .code(3)
+        .get_output()
+        .stderr
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["error"]["code"], "incomparable");
 }

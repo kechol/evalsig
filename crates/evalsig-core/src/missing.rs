@@ -57,6 +57,17 @@ pub enum Policy {
     Drop,
 }
 
+impl Policy {
+    /// The value a missing observation takes; `None` removes it from the denominator.
+    pub fn fill(self, worst: f64, best: f64) -> Option<f64> {
+        match self {
+            Policy::Worst => Some(worst),
+            Policy::Best => Some(best),
+            Policy::Drop => None,
+        }
+    }
+}
+
 /// The policy in force for each reason.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MissingPolicy {
@@ -178,11 +189,7 @@ pub fn mean_with_missing(
             Err(reason) => {
                 counts.n_missing += 1;
                 *counts.missing_by_reason.entry(reason).or_default() += 1;
-                let filled = match policy.policy(reason) {
-                    Policy::Worst => Some(worst),
-                    Policy::Best => Some(best),
-                    Policy::Drop => None,
-                };
+                let filled = policy.policy(reason).fill(worst, best);
                 if let Some(v) = filled {
                     counts.n_used += 1;
                     point.add(v, w);
