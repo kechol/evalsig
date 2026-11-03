@@ -18,6 +18,7 @@ uv run --project scripts scripts/<script>.py
 | `verify_store.py` | Checks a `.evalsig/` directory or ledger file without evalsig: ledger chains, object names and canonical form, saved report hashes |
 | `cross_verify.sh` | Builds stores with the Rust binary, checks them with `verify_store.py` and confirms it rejects tampered copies (CI job `cross-verify`) |
 | `smoke_test.sh` | End-to-end smoke test of the binary over the examples |
+| `sim_latent_reference.py` | Simulates the bias and interval coverage of the `soft` and `latent` references (D-016) |
 
 ## Regenerating the fixtures
 

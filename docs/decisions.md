@@ -501,3 +501,55 @@ after the entry is `Accepted`.
   small label sets return `insufficient_data` rather than a weak verdict.
   Changing ε changes the verdict, so it is part of what a report records.
   Agreement for ordinal labels uses the RMSE score, not weighted κ.
+
+## D-016 Whether the `latent` reference ships in v1
+
+- Status: Proposed
+- Date: 2026-11-03
+- Context: `latent` replaces the raters' positive share with a Dawid-Skene
+  posterior, estimating each rater's sensitivity and specificity by EM
+  (metrics spec §9.2). The spec recommends shipping it with three or more
+  raters per item and asks for a simulation of bias and interval coverage
+  against `soft` first (SPEC §15). `scripts/sim_latent_reference.py`
+  (seeded; 200 datasets × 200 bootstrap resamples, the EM re-estimated in
+  each) labels 300 items with a crossed panel of rater accuracy 0.85, varies
+  raters per item (3, 5), rater bias (sensitivity and specificity ± 0, ± 0.1)
+  and the share of hard items on which every rater says positive with
+  probability ½ (0, 0.2), and measures the system's H and F (true 0.8 and
+  0.1) against the true class. Result (mean bias; coverage of the 95%
+  bootstrap interval):
+
+  | raters | bias | hard | H bias soft / latent | H cover soft / latent | F cover soft / latent |
+  |---:|---:|---:|---|---|---|
+  | 3 | 0 | 0 | −0.20 / −0.11 | 0.00 / 0.42 | 0.28 / 0.46 |
+  | 3 | 0.1 | 0 | −0.23 / −0.10 | 0.00 / 0.43 | 0.54 / 0.54 |
+  | 3 | 0 | 0.2 | −0.28 / −0.22 | 0.00 / 0.01 | 0.01 / 0.09 |
+  | 5 | 0 | 0 | −0.21 / −0.05 | 0.00 / 0.92 | 0.16 / 0.97 |
+  | 5 | 0.1 | 0 | −0.22 / −0.04 | 0.00 / 0.97 | 0.35 / 0.99 |
+  | 5 | 0.1 | 0.2 | −0.29 / −0.17 | 0.00 / 0.07 | 0.00 / 0.34 |
+
+  `soft` estimates performance against one rater drawn at random, a
+  different estimand, so its gap to the true class is expected; the question
+  is whether `latent` delivers the true-class value it claims.
+- Decision (proposed): `latent` does not ship in v1. `--reference latent`
+  and `reference.mode = "latent"` stay recognised and are refused with the
+  existing "not available in this version" error, and `soft` remains the
+  default with its estimand stated in the output. With three raters per
+  item, the minimum the spec names, the latent intervals cover the
+  true-class H in fewer than half of the datasets, and with a fifth of the
+  items hard for everyone in under a tenth; only five raters and no
+  difficulty-driven splits give near-nominal coverage. Shipping it would
+  print confident true-class numbers that are wrong more often than not for
+  the label sets most users have.
+- Alternatives: ship with the spec's three-rater minimum and the
+  overconfidence note (not taken: the note cannot fix intervals that miss
+  more than half the time); ship with a five-rater minimum and a warning
+  when split items are common (not taken for v1: hard items cannot be told
+  apart from rater noise in the data, so the warning would not catch the
+  failing case; a candidate for v2 together with per-rater error rates in
+  `agree`).
+- Consequences: the `latent_reference_unidentified` check and the EM code
+  are not built in v1. Users who need true-class estimates rather than
+  agreement with a random rater have no built-in method; the report's
+  estimand line says what `soft` measures. Per-rater sensitivity and
+  specificity, which `latent` would also have given, are not reported.
