@@ -26,7 +26,7 @@ deploy it. The tests named below live in `crates/evalsig-cli/tests/referee_paths
 | Protection | How | Task | Test |
 |---|---|---|---|
 | Holdout labels never enter the agent's environment | The referee cuts the holdout and seals its labels; the agent receives item IDs only; `seal` refuses when agent-side snapshots already hold holdout labels | T-129, T-084 | `referee_split.rs`: `the_remaining_ids_carry_no_labels_and_resplitting_makes_a_new_holdout`; `seal.rs`: `sealing_refuses_when_the_agent_holds_holdout_labels` |
-| Passing by leaving items out of the candidate's records | Coverage of the holdout item set is checked before labels are read; absent items are filled with the system's worst judgment | T-125 | `referee_item_omission` |
+| Passing by leaving items out of the candidate's records | Coverage of the holdout item set is checked before labels are read; a candidate that leaves any holdout item out is refused (exit 3) without spending budget, so no absent item is ever scored | T-125 | `referee_item_omission` |
 | Passing by marking judgments missing | Every missing judgment counts as the worst, whatever its reason | T-125 | `referee_missing_reason_manipulation` |
 | Passing by rewriting item attributes (weight, cluster, strata, inclusion probability, input) | Approval pins the holdout items' attributes by hash | T-086 | `referee_attribute_rewrite` |
 | Passing by rewriting the configuration (positive definition, missing handling, level, seed) | Approval resolves every setting; `gate` reads nothing from `config.toml` | T-086 | `referee_config_rewrite`, `gate_reads_no_project_config` |

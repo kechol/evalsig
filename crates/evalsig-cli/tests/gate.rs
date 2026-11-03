@@ -397,3 +397,83 @@ fn verdict_and_uncomputed_metrics_are_refused_rather_than_left_undecided() {
     );
     assert_eq!(json(&out)["error"]["code"], "metric_not_computed");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_readable_identity_voids_the_seal_and_says_so() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = world(&gate_toml(10, 3), None);
+    // The agent's user could read the key: the referee runs with the agent's privileges.
+    std::fs::set_permissions(
+        w.home.path().join("identity.txt"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    let out = submit(&w, &variant(w.referee.path(), 1));
+    assert_eq!(code(&out), Some(0));
+    let v = json(&out);
+    assert!(
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["code"] == "seal_void"),
+        "{v}"
+    );
+    let gate = referee_ledger(&w)
+        .into_iter()
+        .rfind(|e| e["kind"] == "gate")
+        .unwrap();
+    assert_eq!(gate["summary"]["seal_void"], true);
+}
+
+#[test]
+fn a_referee_home_inside_the_project_voids_the_seal() {
+    let w = world(&gate_toml(10, 3), None);
+    let inside = w.referee.path().join("referee-home");
+    copy_dir(w.home.path(), &inside);
+    let out = evalsig(w.referee.path())
+        .args([
+            "--format",
+            "json",
+            "gate",
+            "--approved",
+            &w.approved,
+            "--candidate",
+            "triage-v2",
+            "--records",
+        ])
+        .arg(variant(w.referee.path(), 2))
+        .arg("--referee")
+        .arg(&inside)
+        .output()
+        .unwrap();
+    assert_eq!(
+        code(&out),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let ledger = std::fs::read_to_string(inside.join("ledger.jsonl")).unwrap();
+    let gate: Value = serde_json::from_str(
+        ledger
+            .lines()
+            .rfind(|l| l.contains("\"kind\":\"gate\""))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(gate["summary"]["seal_void"], true);
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        let target = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &target);
+        } else {
+            std::fs::copy(e.path(), &target).unwrap();
+        }
+    }
+}
