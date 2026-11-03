@@ -296,6 +296,84 @@ def score_cases():
     return out
 
 
+def tango_interval(b, c, n, z=Z95):
+    """Tango (1998) score interval for p1 - p2 of paired proportions, where b counts
+    pairs positive only in arm 1 and c only in arm 2. The constrained maximum-likelihood
+    estimate of the (0, 1) cell is found numerically here (a root of the score function),
+    independently of the closed form used by the Rust implementation."""
+    from scipy.optimize import brentq
+
+    rest = n - b - c
+
+    def q21(delta):
+        # The log-likelihood is concave in q on (max(0, -delta), (1 - delta) / 2): find
+        # where its derivative crosses zero, or take the boundary it points to.
+        lo = max(0.0, -delta)
+        hi = (1.0 - delta) / 2.0
+
+        w = hi - lo
+
+        # Parametrised by t = q - lo in (0, w), so that q + delta, q and hi - q keep
+        # their precision near either end.
+        def score(t):
+            v = 0.0
+            if b:
+                v += b / (t + max(delta, 0.0))
+            if c:
+                v += c / (lo + t)
+            if rest:
+                v -= rest / (w - t)
+            return v
+
+        a, z_ = w * 1e-13, w * (1.0 - 1e-13)
+        if score(a) <= 0.0:
+            return lo
+        if score(z_) >= 0.0:
+            return hi
+        return lo + brentq(score, a, z_, xtol=1e-300, rtol=4 * np.finfo(float).eps, maxiter=500)
+
+    def stat(delta):
+        q = q21(delta)
+        var = n * (2.0 * q + delta * (1.0 - delta))
+        return (b - c - n * delta) / math.sqrt(var)
+
+    eps = 1e-12
+    lower = -1.0 if stat(-1.0 + eps) <= z else brentq(lambda d: stat(d) - z, -1.0 + eps, (b - c) / n, xtol=1e-15)
+    upper = 1.0 if stat(1.0 - eps) >= -z else brentq(lambda d: stat(d) + z, (b - c) / n, 1.0 - eps, xtol=1e-15)
+    return lower, upper
+
+
+def paired_cases():
+    out = []
+    for b, c, n in [(5, 15, 100), (10, 12, 60), (0, 9, 40), (3, 0, 25), (40, 60, 1000)]:
+        lo, hi = tango_interval(b, c, n)
+        out.append({"input": {"b": b, "c": c, "n": n},
+                    "source": f"scipy {scipy.__version__} (Tango 1998 score interval; constrained MLE as a numerical root)",
+                    "expected": {"difference": r((b - c) / n), "tango95": [r(lo), r(hi)]}})
+    return out
+
+
+def newcombe_cases():
+    """Newcombe (1998) method 10 for the difference of two independent proportions."""
+    out = []
+    for k1, n1, k2, n2 in [(56, 70, 48, 80), (9, 10, 3, 10), (6, 7, 2, 7), (5, 56, 0, 29), (0, 10, 0, 20)]:
+        p1, p2 = k1 / n1, k2 / n2
+        l1, u1 = wilson(k1, n1, Z95)
+        l2, u2 = wilson(k2, n2, Z95)
+        d = p1 - p2
+        lo = d - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2)
+        hi = d + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)
+        case = {"input": {"k1": k1, "n1": n1, "k2": k2, "n2": n2},
+                "source": "closed (Newcombe 1998 method 10 from Wilson intervals)",
+                "expected": {"newcombe95": [r(lo), r(hi)]}}
+        if (k1, n1, k2, n2) == (56, 70, 48, 80):
+            case["source"] = "literature (Newcombe 1998, Table II example (a): 0.0524 to 0.3339)"
+            case["expected"]["literature_4dp"] = [0.0524, 0.3339]
+            assert round(lo, 4) == 0.0524 and round(hi, 4) == 0.3339, (lo, hi)
+        out.append(case)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=OUT)
@@ -315,6 +393,8 @@ def main():
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),
+            "paired_difference": paired_cases(),
+            "unpaired_difference": newcombe_cases(),
         },
     }
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

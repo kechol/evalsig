@@ -7,6 +7,7 @@ pub mod interval;
 pub mod labels;
 pub mod missing;
 pub mod numeric;
+pub mod paired;
 pub mod records;
 pub mod replicates;
 pub mod rules;
