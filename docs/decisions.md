@@ -359,3 +359,45 @@ after the entry is `Accepted`.
   every request).
 - Consequences: the bundled SQLite is C code compiled into the binary, the one
   exception to keeping C out (D-010); `cargo-deny` accepts its licences.
+
+## D-024 Content storage modes and purge
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Inputs, outputs and grader rationales can hold personal data or
+  secrets, and records name them by hash so the text can go without breaking
+  snapshots or ledgers (SPEC §9 "Content"). The free-text fields of records
+  (`item.attrs`, `label.reason`, `missing.detail`, strata values) live inside
+  immutable snapshots, so removing text from them needs a new snapshot.
+- Decision:
+  - A record's `*_ref` is always the hash of the original body, whatever
+    `store.content` is, so a snapshot's ID does not depend on how bodies are
+    kept. `full` stores the body under that name; `hash` stores nothing;
+    `redact` stores the body with every match of `store.redact_patterns`
+    replaced by `[redacted]`, under the redacted bytes' own name, and the
+    snapshot's provenance keeps the pair (original, stored). Under `redact`,
+    imports also replace matches in `item.attrs` strings, strata values,
+    `label.reason` and `missing.detail`.
+  - `evalsig purge <ref> --reason <text> --yes` finds the items whose records
+    name the body, replaces those items' free-text fields in every current
+    snapshot with the BLAKE3 reference of the value, writes the new
+    snapshots, and appends a `purge` line whose summary lists each
+    replacement (`replaced: [{from, to}]`). It then deletes the body, its
+    redacted copy, the superseded snapshots and the saved reports that name
+    them, and rebuilds the working copy if one exists. Superseded snapshots
+    remain only as hashes in the ledger. Purge is the one operation that
+    removes objects (D-010).
+  - Data loading follows `purge` lines: a replaced snapshot takes the place of
+    the one it supersedes.
+  - `regex` (MIT OR Apache-2.0, already in the tree through `jsonschema`) is a
+    direct dependency of `evalsig-store` for the patterns.
+- Alternatives: naming records after the redacted body (rejected: the
+  snapshot ID and input-change detection would depend on the storage mode);
+  a new `content` field for the stored name (rejected: `records/1` is a
+  public format, D-003); purging only the body (rejected: the same text often
+  appears in attrs, reasons and details).
+- Consequences: hashes of short or guessable values (a stratum such as
+  `chat`, a name) can be recovered by guessing; purge removes the text, not
+  the possibility of confirming a guess. Reports computed before a purge can
+  no longer be verified. Strata values replaced by hashes put the purged items
+  in strata of their own.

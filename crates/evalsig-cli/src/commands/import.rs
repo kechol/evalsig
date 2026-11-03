@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
 use evalsig_adapters::{csv, table};
+use evalsig_core::config::ContentMode;
 use evalsig_core::records::{GraderRef, Record};
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Kind, LedgerSide, NewEntry};
-use evalsig_store::rows;
 use evalsig_store::snapshot::{self, PROVENANCE_SCHEMA, Provenance, SourceFile};
+use evalsig_store::{content, rows};
 use serde_json::{Value, json};
 
 use crate::error::CliError;
@@ -125,7 +126,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         return Err(CliError::usage("--system-version cannot be empty"));
     }
     let project = Project::open(root)?;
-    project.config()?;
+    let config = project.config()?;
+    let redactor = (config.store.content == ContentMode::Redact)
+        .then(|| content::Redactor::new(&config.store.redact_patterns))
+        .transpose()
+        .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))?;
     let validator = RecordValidator::new();
     let mut records = Vec::new();
     let mut issues: Vec<(String, Issue)> = Vec::new();
@@ -161,6 +166,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         grader.as_ref(),
         &mut warnings,
     );
+    let redacted = redactor
+        .as_ref()
+        .map(|r| content::redact_records(&mut records, r));
     for key in rows::dedup_and_conflicts(&mut records) {
         issues.push((
             "<snapshot>".into(),
@@ -212,10 +220,14 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         tool: tool.clone(),
         imported_at: imported_at.clone(),
         actor: who.clone(),
+        redactions: vec![],
     })
     .map_err(CliError::store)?;
     let mut summary = serde_json::Map::new();
     summary.insert("adapter".into(), json!(adapter));
+    if let Some(n) = redacted {
+        summary.insert("redacted".into(), json!(n));
+    }
     for (k, v) in &counts {
         summary.insert((*k).to_owned(), json!(v));
     }
@@ -244,6 +256,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         "records": counts,
         "sources": sources,
     });
+    if let Some(n) = redacted {
+        envelope.results["redacted"] = json!(n);
+    }
     envelope.provenance.snapshots = vec![written.snapshot.to_string()];
     envelope.provenance.ledger = Some("agent".into());
     envelope.provenance.ledger_seq = Some(entry.seq);

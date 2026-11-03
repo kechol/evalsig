@@ -31,6 +31,7 @@ statrs = { version = "0.19", default-features = false, features = ["std"] }
 rand_chacha = { version = "0.10", default-features = false }
 rusqlite = { version = "0.41", features = ["bundled"] }
 jsonschema = { version = "0.60", default-features = false }
+regex = "1.13"
 
 assert_cmd = "2"
 predicates = "3"

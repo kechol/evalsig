@@ -122,6 +122,16 @@ impl ObjectStore {
         Ok(out)
     }
 
+    /// Delete an object; `false` if it was not stored. Only `purge` removes objects
+    /// (D-024).
+    pub fn remove(&self, hash: &ContentHash) -> Result<bool, ObjectError> {
+        match fs::remove_file(self.path(hash)?) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Every stored object name.
     pub fn list(&self) -> Result<Vec<ContentHash>, ObjectError> {
         let mut out = Vec::new();

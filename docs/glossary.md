@@ -126,6 +126,8 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | snapshot | `snapshot` | An immutable copy of imported data. Identified by its content hash |
 | ledger | `ledger` | An append-only record of imports, revisions, splits, gates and other operations. Each line carries the hash of the previous one. There is a referee ledger and an agent-side ledger; only the referee ledger is evidence |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
+| content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
+| purge | `purge` | Removing a content body and the free-text fields of the items that name it, through a replacement snapshot and a ledger line; the superseded snapshot remains only as a hash |
 | validity checks | `checks` | Checks that stop measurement errors: missing denominators, mixed versions, double-counted replicates |
 
 ## Agent interface

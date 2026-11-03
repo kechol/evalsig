@@ -8,6 +8,7 @@ use evalsig_core::records::Record;
 use serde::{Deserialize, Serialize};
 
 use crate::canonical::{CanonicalError, to_canonical_bytes};
+use crate::content::Redaction;
 use crate::hash::ContentHash;
 use crate::objects::{ObjectError, ObjectStore};
 use crate::rows;
@@ -36,6 +37,9 @@ pub struct Provenance {
     pub tool: String,
     pub imported_at: String,
     pub actor: String,
+    /// Bodies stored redacted (`store.content = "redact"`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub redactions: Vec<Redaction>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -141,6 +145,7 @@ mod tests {
             tool: "evalsig 0.1.0".into(),
             imported_at: "2026-11-03T00:00:00Z".into(),
             actor: "user:test".into(),
+            redactions: vec![],
         }
     }
 

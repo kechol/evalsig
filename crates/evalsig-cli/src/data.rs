@@ -1,5 +1,6 @@
-//! The project's imported data: the snapshots named by `import` ledger lines,
-//! layered in import order so a later import of the same primary key wins.
+//! The project's imported data: the snapshots named by `import` ledger lines (as
+//! replaced by `purge` lines), layered in import order so a later import of the same
+//! primary key wins.
 
 use std::collections::BTreeMap;
 
@@ -21,21 +22,43 @@ pub struct Data {
 
 pub fn load(project: &Project) -> Result<Data, CliError> {
     let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
-    let snapshots = imported(&entries)?;
+    let snapshots = current(&entries)?.into_iter().map(|(s, _)| s).collect();
     load_snapshots(project, snapshots)
 }
 
-/// The snapshots named by `import` lines, in import order, each once (its last import).
-fn imported(entries: &[ledger::Entry]) -> Result<Vec<ContentHash>, CliError> {
-    let mut snapshots: Vec<ContentHash> = Vec::new();
-    for e in entries.iter().filter(|e| e.kind == Kind::Import) {
-        let h: ContentHash = e
-            .outputs
-            .first()
-            .and_then(|o| o.parse().ok())
-            .ok_or_else(|| CliError::store(format!("import line {} names no snapshot", e.seq)))?;
-        snapshots.retain(|s| *s != h);
-        snapshots.push(h);
+fn hash(v: Option<&str>, e: &ledger::Entry) -> Result<ContentHash, CliError> {
+    v.and_then(|o| o.parse().ok())
+        .ok_or_else(|| CliError::store(format!("ledger line {} names no snapshot", e.seq)))
+}
+
+/// The snapshots in force with their provenance objects: those named by `import`
+/// lines in import order, each once (its last import), and in place of each one a
+/// `purge` line replaced, the replacement.
+pub fn current(
+    entries: &[ledger::Entry],
+) -> Result<Vec<(ContentHash, Option<ContentHash>)>, CliError> {
+    let mut snapshots: Vec<(ContentHash, Option<ContentHash>)> = Vec::new();
+    for e in entries {
+        match e.kind {
+            Kind::Import => {
+                let s = hash(e.outputs.first().map(String::as_str), e)?;
+                let p = e.outputs.get(1).and_then(|o| o.parse().ok());
+                snapshots.retain(|(x, _)| *x != s);
+                snapshots.push((s, p));
+            }
+            Kind::Purge => {
+                let replaced = e.summary.get("replaced").and_then(|v| v.as_array());
+                for r in replaced.into_iter().flatten() {
+                    let from = hash(r["from"].as_str(), e)?;
+                    let to = hash(r["to"].as_str(), e)?;
+                    let p = r["provenance"].as_str().and_then(|o| o.parse().ok());
+                    for slot in snapshots.iter_mut().filter(|(x, _)| *x == from) {
+                        *slot = (to, p);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
     Ok(snapshots)
 }
