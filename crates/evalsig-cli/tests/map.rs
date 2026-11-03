@@ -435,3 +435,35 @@ fn deciding_again_keeps_earlier_choices_consistent() {
     assert!(!text.contains("levels"), "{text}");
     assert!(!text.contains("gen_replicate"), "{text}");
 }
+
+#[test]
+fn a_mapping_draft_is_never_written_into_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut init = assert_cmd::Command::cargo_bin("evalsig").unwrap();
+    init.arg("--project")
+        .arg(dir.path())
+        .arg("init")
+        .assert()
+        .success();
+    let config = dir.path().join(".evalsig/config.toml");
+    let before = std::fs::read_to_string(&config).unwrap();
+    let src = dir.path().join("rows.jsonl");
+    std::fs::write(
+        &src,
+        "{\"id\": 1, \"ok\": true}\n{\"id\": 2, \"ok\": false}\n",
+    )
+    .unwrap();
+    for target in [config.clone(), dir.path().join(".evalsig/ledger.jsonl")] {
+        let out = assert_cmd::Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["map", "draft"])
+            .arg(&src)
+            .arg("--out")
+            .arg(&target)
+            .arg("--force")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(64), "{}", target.display());
+    }
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
+}

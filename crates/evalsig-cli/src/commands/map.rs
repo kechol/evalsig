@@ -119,7 +119,29 @@ fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output,
     Ok(Output::success(envelope))
 }
 
+/// Whether `path` lies in a `.evalsig` directory, following symbolic links of the
+/// parts that exist: the store, the ledger and the configuration are never a mapping's
+/// destination.
+fn inside_store(path: &Path) -> bool {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let real = abs
+        .parent()
+        .and_then(|p| p.canonicalize().ok())
+        .map(|p| p.join(abs.file_name().unwrap_or_default()));
+    [Some(abs), real]
+        .into_iter()
+        .flatten()
+        .any(|p| p.components().any(|c| c.as_os_str() == ".evalsig"))
+}
+
 fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result<Output, CliError> {
+    if inside_store(out) {
+        return Err(CliError::usage(format!(
+            "{} is inside .evalsig/, which holds the store, the ledger and the configuration",
+            out.display()
+        ))
+        .with_hint("write the mapping next to the records, for example --out mapping.toml"));
+    }
     if out.exists() && !force {
         return Err(CliError::usage(format!("{} exists", out.display()))
             .with_hint("pass --force to replace it"));
