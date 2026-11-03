@@ -272,6 +272,30 @@ def agreement_extra_cases():
     return out
 
 
+def score_cases():
+    """Score-type metrics (value_semantics = score): the weighted mean of per-item
+    scores, the weighted share at or above t, and pass@k from c passing replicates
+    out of n (the unbiased estimator 1 - C(n-c, k) / C(n, k))."""
+    out = []
+    for scores, weights, t in [
+        ([0.9, 0.4, 0.75, 0.2, 1.0], [1, 1, 1, 1, 1], 0.5),
+        ([0.9, 0.4, 0.75, 0.2, 1.0], [2, 1, 1, 3, 1], 0.75),
+        ([0.0, 0.0, 1.0], [1, 1, 1], 1.0),
+    ]:
+        w = np.array(weights, dtype=float)
+        x = np.array(scores, dtype=float)
+        out.append({"input": {"scores": scores, "weights": weights, "t": t},
+                    "source": "closed (weighted mean and weighted share at or above t)",
+                    "expected": {"mean_score": r(float(np.sum(w * x) / np.sum(w))),
+                                 "rate_at_least": r(float(np.sum(w * (x >= t)) / np.sum(w)))}})
+    for c, n, k in [(0, 10, 1), (3, 10, 1), (3, 10, 5), (10, 10, 3), (1, 20, 10)]:
+        exact = 1 - math.comb(n - c, k) / math.comb(n, k)
+        out.append({"input": {"passing": c, "replicates": n, "k": k},
+                    "source": "closed (Chen et al. 2021 unbiased pass@k)",
+                    "expected": {"pass_at_k": r(exact)}})
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=OUT)
@@ -290,6 +314,7 @@ def main():
             "agreement_prevalence_robust": agreement_extra_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
+            "score": score_cases(),
         },
     }
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
