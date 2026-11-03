@@ -56,8 +56,9 @@ const fn spec(
     }
 }
 
-/// Every check of SPEC §7, in table order.
-pub const CHECKS: [CheckSpec; 22] = [
+/// Every check of SPEC §7 in table order, then `comparison_graph_disconnected` from
+/// metrics spec §10.
+pub const CHECKS: [CheckSpec; 23] = [
     spec(
         "missing_counted",
         "missing values are counted by reason and n_missing is in every output",
@@ -165,6 +166,14 @@ pub const CHECKS: [CheckSpec; 22] = [
     spec(
         "no_swapped_pairs",
         "pairwise comparisons have no position-swapped counterpart",
+        Action::Warn,
+        None,
+        None,
+        "T-058",
+    ),
+    spec(
+        "comparison_graph_disconnected",
+        "the arms of a pairwise ranking do not form one connected comparison graph",
         Action::Warn,
         None,
         None,
@@ -318,8 +327,9 @@ impl Overrides {
 mod tests {
     use super::*;
 
-    /// SPEC §7, row by row: code, default action, override flag, delivering task.
-    const EXPECTED: [(&str, Action, Option<&str>, &str); 22] = [
+    /// SPEC §7 row by row, then metrics spec §10: code, default action, override flag,
+    /// delivering task.
+    const EXPECTED: [(&str, Action, Option<&str>, &str); 23] = [
         ("missing_counted", Action::Always, None, "T-038"),
         (
             "unexplained_missing",
@@ -354,6 +364,7 @@ mod tests {
         ("verification_bias_suspected", Action::Warn, None, "T-039"),
         ("position_bias", Action::Warn, None, "T-058"),
         ("no_swapped_pairs", Action::Warn, None, "T-058"),
+        ("comparison_graph_disconnected", Action::Warn, None, "T-058"),
         ("latent_reference_unidentified", Action::Warn, None, "T-055"),
         (
             "adjudication_in_agreement",

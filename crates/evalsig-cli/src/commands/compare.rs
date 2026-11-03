@@ -8,7 +8,8 @@ use evalsig_core::checks::{Finding, Overrides};
 use evalsig_core::compare::{self, Baseline, Comparison, Options};
 use evalsig_core::config::Config;
 use evalsig_core::paired::Verdict;
-use evalsig_core::records::{Item, Label, Run};
+use evalsig_core::preference;
+use evalsig_core::records::{Item, Label, Preference, Record, Run};
 use evalsig_core::report::{self, Prepared};
 use evalsig_core::validity;
 use serde_json::{Value, json};
@@ -127,6 +128,35 @@ fn changed_inputs(
     )
 }
 
+/// Pairwise preferences between the baseline and a candidate, for the task: the
+/// candidate's win rate, the position effects and the raters whose judgments count.
+/// `None` when no preference record compares the two runs.
+fn preference_json(
+    preferences: &[&Preference],
+    baseline: &str,
+    candidate: &str,
+    settings: &report::Settings,
+    overrides: &Overrides,
+    findings: &mut Vec<Finding>,
+) -> Option<Value> {
+    let judged = preference::normalise(preferences.iter().copied(), baseline, candidate);
+    let win = preference::win_rate(&judged, settings.level, settings.bootstrap, settings.seed)?;
+    let bias = preference::position_bias(&judged, settings.level);
+    findings.extend(preference::checks(&bias, overrides));
+    let raters: BTreeSet<&str> = judged.iter().map(|j| j.rater_id).collect();
+    let sources: BTreeSet<String> = preferences
+        .iter()
+        .filter(|p| raters.contains(p.rater_id.as_str()))
+        .filter_map(|p| json!(p.source).as_str().map(str::to_owned))
+        .collect();
+    Some(json!({
+        "win_rate": win,
+        "position_bias": bias,
+        "raters": raters,
+        "sources": sources,
+    }))
+}
+
 /// What a comparison computes from data and configuration alone; `verify` repeats it.
 pub struct Computed {
     pub results: Value,
@@ -210,11 +240,36 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
         .with_hint(format!("available: {}", available.join(", ")))
     })?;
     let primary = multi.primary;
+    let preferences: Vec<&Preference> = d
+        .records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Preference(p) if p.task() == settings.task => Some(p),
+            _ => None,
+        })
+        .collect();
+    let pref: BTreeMap<&str, Value> = comparisons
+        .iter()
+        .filter_map(|(id, _, _, _)| {
+            preference_json(
+                &preferences,
+                &args.baseline,
+                id,
+                &settings,
+                &overrides,
+                &mut findings,
+            )
+            .map(|v| (id.as_str(), v))
+        })
+        .collect();
     let base_judged = base.judged();
     let list: Vec<Value> = comparisons
         .iter()
         .map(|(id, cand, c, changed)| {
             let mut v = comparison_json(&args.baseline, id, c, primary, *changed);
+            if let Some(p) = pref.get(id.as_str()) {
+                v["preference"] = p.clone();
+            }
             if args.items {
                 let jb = cand.judged();
                 let rows: Vec<Value> = base_judged

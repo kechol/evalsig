@@ -39,7 +39,7 @@ fn list_checks_publishes_the_registry() {
             .stdout,
     );
     let checks = v["results"]["checks"].as_array().unwrap();
-    assert_eq!(checks.len(), 22);
+    assert_eq!(checks.len(), 23);
     let mixed = checks.iter().find(|c| c["code"] == "mixed_grader").unwrap();
     assert_eq!(mixed["default"], "stop");
     assert_eq!(mixed["override_flag"], "--allow-mixed-grader");

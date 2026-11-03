@@ -339,6 +339,80 @@ def ppi_cases():
     return out
 
 
+def bt_loglik(x, comparisons, arms, ties):
+    """Davidson-Bradley-Terry log-likelihood with theta_0 = 0; x = (theta_1..theta_{m-1}[, log nu])."""
+    theta = np.concatenate([[0.0], x[:arms - 1]])
+    total = 0.0
+    for i, j, s in comparisons:
+        logits = [theta[i], theta[j]]
+        if ties:
+            logits.append(x[-1] + (theta[i] + theta[j]) / 2)
+        lse = np.logaddexp.reduce(logits)
+        o = 2 if s == 0.5 else (1 if s == 1 else 0)
+        total += logits[o] - lse
+    return total
+
+
+def bt_newton(comparisons, arms):
+    ties = any(s == 0.5 for _, _, s in comparisons)
+    dim = arms - 1 + int(ties)
+
+    def coef(a):
+        v = np.zeros(dim)
+        if a > 0:
+            v[a - 1] = 1.0
+        return v
+
+    x = np.zeros(dim)
+    for _ in range(200):
+        g = np.zeros(dim)
+        h = np.zeros((dim, dim))
+        for i, j, s in comparisons:
+            vs = [coef(i), coef(j)]
+            if ties:
+                vt = (coef(i) + coef(j)) / 2
+                vt[-1] = 1.0
+                vs.append(vt)
+            logits = np.array([v @ x for v in vs])
+            p = np.exp(logits - np.logaddexp.reduce(logits))
+            o = 2 if s == 0.5 else (1 if s == 1 else 0)
+            mu = sum(pk * v for pk, v in zip(p, vs))
+            g += vs[o] - mu
+            h += sum(pk * np.outer(v, v) for pk, v in zip(p, vs)) - np.outer(mu, mu)
+        step = np.linalg.solve(h, g)
+        x = x + step
+        if np.max(np.abs(step)) < 1e-13:
+            break
+    theta = np.concatenate([[0.0], x[:arms - 1]])
+    return theta - theta.mean(), (math.exp(x[-1]) if ties else None), x, ties
+
+
+def bradley_terry_cases():
+    """Davidson-Bradley-Terry by Newton's method; checked against scipy BFGS on the same likelihood."""
+    from scipy.optimize import minimize
+    rng = np.random.default_rng(20261104)
+    true = np.array([0.0, 0.4, 0.9, -0.5])
+    out = []
+    for with_ties in (True, False):
+        comparisons = []
+        for _ in range(120):
+            i, j = rng.choice(4, 2, replace=False)
+            a, b = math.exp(true[i]), math.exp(true[j])
+            c = 0.6 * math.sqrt(a * b) if with_ties else 0.0
+            u = rng.random() * (a + b + c)
+            s = 0.0 if u < a else (1.0 if u < a + b else 0.5)
+            comparisons.append((int(i), int(j), s))
+        strength, nu, x, ties = bt_newton(comparisons, 4)
+        alt = minimize(lambda z: -bt_loglik(z, comparisons, 4, ties), np.zeros_like(x), method="BFGS", options={"gtol": 1e-10})
+        assert np.max(np.abs(alt.x - x)) < 1e-5, (alt.x, x)
+        out.append({
+            "input": {"arms": 4, "comparisons": [[i, j, s] for i, j, s in comparisons]},
+            "source": "closed (Davidson-Bradley-Terry MLE by Newton's method; agrees with scipy BFGS within 1e-5)",
+            "expected": {"log_strength": [r(v) for v in strength], "tie": None if nu is None else r(nu)},
+        })
+    return out
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -639,6 +713,7 @@ def main():
             "agreement_prevalence_robust": agreement_extra_cases(),
             "agreement_ordinal": agreement_ordinal_cases(),
             "ppi_mean": ppi_cases(),
+            "bradley_terry": bradley_terry_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

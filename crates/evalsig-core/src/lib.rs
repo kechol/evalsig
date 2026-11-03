@@ -16,6 +16,7 @@ pub mod missing;
 pub mod numeric;
 pub mod paired;
 pub mod ppi;
+pub mod preference;
 pub mod records;
 pub mod reference;
 pub mod replicates;

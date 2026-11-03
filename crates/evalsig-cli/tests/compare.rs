@@ -198,3 +198,65 @@ fn arms_with_different_output_types_are_refused() {
     let v: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(v["error"]["code"], "incomparable");
 }
+
+#[test]
+fn preference_records_add_the_win_rate_and_position_checks() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    std::fs::write(
+        dir.path().join(".evalsig/config.toml"),
+        "[project]\nname = \"example\"\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n",
+    )
+    .unwrap();
+    let examples = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/records.jsonl");
+    evalsig(dir.path())
+        .args(["import", examples])
+        .assert()
+        .success();
+    let v = json(evalsig(dir.path()).args(["compare", "r-base", "r-cand", "--scratch"]));
+    let p = &v["results"]["preference"];
+    // q-0001 is judged in both orders and the right side wins each time (½ for the
+    // candidate after the swap cancels); q-0002 is a tie.
+    assert_eq!(p["win_rate"]["value"], 0.5);
+    assert_eq!(p["position_bias"]["swapped_pairs"], 1);
+    assert_eq!(
+        p["raters"],
+        serde_json::json!(["model:pairwise-judge", "user:bob"])
+    );
+
+    // Judgments in one order only: no swapped pair to measure position bias with.
+    let one_order = dir.path().join("one-order.jsonl");
+    std::fs::write(
+        &one_order,
+        r#"{"record":"preference","item_id":"q-0003","left_run_id":"r-base","right_run_id":"r-cand","rater_id":"user:carol","source":"human","outcome":"left"}
+"#,
+    )
+    .unwrap();
+    let dir2 = tempfile::tempdir().unwrap();
+    evalsig(dir2.path()).arg("init").assert().success();
+    std::fs::copy(
+        dir.path().join(".evalsig/config.toml"),
+        dir2.path().join(".evalsig/config.toml"),
+    )
+    .unwrap();
+    let records: String = std::fs::read_to_string(examples)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.contains("\"preference\""))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let without = dir2.path().join("records.jsonl");
+    std::fs::write(&without, records).unwrap();
+    for f in [&without, &one_order] {
+        evalsig(dir2.path()).arg("import").arg(f).assert().success();
+    }
+    let v = json(evalsig(dir2.path()).args(["compare", "r-base", "r-cand", "--scratch"]));
+    let codes: Vec<&str> = v["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|w| w["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"no_swapped_pairs"), "{codes:?}");
+    assert_eq!(v["results"]["preference"]["win_rate"]["value"], 0.0);
+}
