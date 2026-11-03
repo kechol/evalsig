@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod checks;
 pub mod compare;
 pub mod config;
+pub mod cost;
 pub mod interval;
 pub mod kcurve;
 pub mod labels;

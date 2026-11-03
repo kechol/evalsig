@@ -212,6 +212,48 @@ def calibration_cases():
              "expected": {"brier": r(brier), "bins": bins}}]
 
 
+def cost_cases():
+    """Expected cost EC = pi*sum_j P(j|pos)C[1][j] + (1-pi)*sum_j P(j|neg)C[0][j], with levels
+    counted from the weakest. A threshold t calls levels >= t positive; with a 2x2 matrix
+    its EC is pi*((1-H)C10 + H*C11) + (1-pi)*(F*C01 + (1-F)*C00). Cost-ratio sensitivity
+    sets C_FP = 1, C_FN = r and finds the cheapest threshold at both ends of [r_lo, r_hi]."""
+    pos, neg = [5, 5, 10, 20], [40, 10, 8, 2]   # weakest level first
+    pi = 0.12
+    matrix = [[0, 0.2, 1, 3], [4, 2, 0.5, 0]]
+    npos, nneg = sum(pos), sum(neg)
+    ec = pi * sum(c * w / npos for c, w in zip(matrix[1], pos)) + (1 - pi) * sum(c * w / nneg for c, w in zip(matrix[0], neg))
+
+    def threshold_ec(t, c2):
+        h = sum(pos[t:]) / npos
+        f = sum(neg[t:]) / nneg
+        return pi * ((1 - h) * c2[1][0] + h * c2[1][1]) + (1 - pi) * (f * c2[0][1] + (1 - f) * c2[0][0])
+
+    binary = [[0, 1], [5, 0]]
+    ecs = [threshold_ec(t, binary) for t in range(1, len(pos))]
+    best = 1 + int(np.argmin(ecs))
+    def best_at(r):
+        vals = [threshold_ec(t, [[0, 1], [r, 0]]) for t in range(1, len(pos))]
+        return 1 + int(np.argmin(vals))
+    out = [{
+        "input": {"pos_by_level": pos, "neg_by_level": neg, "prevalence": pi, "matrix": matrix,
+                  "binary_matrix": binary, "ratio_range": [1, 20]},
+        "source": "closed (expected cost over the empirical ROC thresholds)",
+        "expected": {"expected_cost": r(ec), "threshold_costs": [r(x) for x in ecs], "optimal_threshold": best,
+                     "optimal_at_low": best_at(1), "optimal_at_high": best_at(20)},
+    }]
+    a, b = (0.8, 0.1), (0.9, 0.2)
+    def arm_ec(hf, ratio):
+        h, f = hf
+        return pi * (1 - h) * ratio + (1 - pi) * f
+    lo, hi = arm_ec(a, 1) - arm_ec(b, 1), arm_ec(a, 20) - arm_ec(b, 20)
+    out.append({
+        "input": {"a": list(a), "b": list(b), "prevalence": pi, "ratio_range": [1, 20]},
+        "source": "closed (difference in expected cost of two arms at both ends of the cost-ratio range)",
+        "expected": {"difference_at_low": r(lo), "difference_at_high": r(hi), "sign_changes": (lo > 0) != (hi > 0)},
+    })
+    return out
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -491,6 +533,7 @@ def main():
             "ordinal_roc": ordinal_cases(),
             "delong": delong_cases(),
             "calibration": calibration_cases(),
+            "cost": cost_cases(),
             "feature_likelihood_ratio": lr_cases(),
             "mcnemar": mcnemar_cases(),
             "agreement": agreement_cases(),

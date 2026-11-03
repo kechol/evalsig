@@ -593,6 +593,88 @@
     }
    }
   ],
+  "cost": [
+   {
+    "input": {
+     "pos_by_level": [
+      5,
+      5,
+      10,
+      20
+     ],
+     "neg_by_level": [
+      40,
+      10,
+      8,
+      2
+     ],
+     "prevalence": 0.12,
+     "matrix": [
+      [
+       0,
+       0.2,
+       1,
+       3
+      ],
+      [
+       4,
+       2,
+       0.5,
+       0
+      ]
+     ],
+     "binary_matrix": [
+      [
+       0,
+       1
+      ],
+      [
+       5,
+       0
+      ]
+     ],
+     "ratio_range": [
+      1,
+      20
+     ]
+    },
+    "source": "closed (expected cost over the empirical ROC thresholds)",
+    "expected": {
+     "expected_cost": 0.3396666666666667,
+     "threshold_costs": [
+      0.36833333333333335,
+      0.29666666666666663,
+      0.3293333333333333
+     ],
+     "optimal_threshold": 2,
+     "optimal_at_low": 3,
+     "optimal_at_high": 1
+    }
+   },
+   {
+    "input": {
+     "a": [
+      0.8,
+      0.1
+     ],
+     "b": [
+      0.9,
+      0.2
+     ],
+     "prevalence": 0.12,
+     "ratio_range": [
+      1,
+      20
+     ]
+    },
+    "source": "closed (difference in expected cost of two arms at both ends of the cost-ratio range)",
+    "expected": {
+     "difference_at_low": -0.076,
+     "difference_at_high": 0.1519999999999999,
+     "sign_changes": true
+    }
+   }
+  ],
   "feature_likelihood_ratio": [
    {
     "input": {
