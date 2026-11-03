@@ -334,3 +334,28 @@ after the entry is `Accepted`.
 - Alternatives: a separate `export` command for item rows (kept for Parquet and
   CSV in a later version; a format flag is what scripts expect today).
 - Consequences: commands that later gain `--items` may support `jsonl` too.
+
+## D-006 Working store: SQLite
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: The dashboard and interactive queries need indexed tables, while the
+  canonical data are JSONL snapshots whose bytes are hashed. The working store
+  must never become the evidence, and readers must not block on the CLI.
+- Decision:
+  - The working copy is SQLite through `rusqlite` with the `bundled` feature,
+    at `.evalsig/cache/evalsig.db`. It holds STRICT tables per record kind
+    (key columns plus the record as JSON) and the snapshot list.
+  - Triggers refuse UPDATE and DELETE on every table; the copy changes only by
+    `evalsig rebuild`, which deletes it and rebuilds it from the canonical
+    snapshots named by the ledger.
+  - WAL journal mode, so the dashboard can read while the CLI writes.
+  - Nothing hashed or verified reads the working copy; reports and `verify`
+    use the snapshots.
+- Alternatives: DuckDB (rejected for v1: another process cannot open a file
+  being written even read-only, and SQLite aggregates 600,000 rows in
+  0.25–0.55 s, enough for interactive use; Parquet export serves larger
+  analyses); no working copy (rejected: the dashboard would rescan snapshots on
+  every request).
+- Consequences: the bundled SQLite is C code compiled into the binary, the one
+  exception to keeping C out (D-010); `cargo-deny` accepts its licences.

@@ -1,5 +1,6 @@
 //! Objects, ledgers, working store, canonicalization and sealing for evalsig.
 
+pub mod cache;
 pub mod canonical;
 pub mod hash;
 pub mod ledger;

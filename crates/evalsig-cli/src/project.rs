@@ -44,6 +44,11 @@ impl Project {
         self.dir.join(CONFIG)
     }
 
+    /// The SQLite working copy (derived; `rebuild` recreates it).
+    pub fn cache_path(&self) -> PathBuf {
+        self.dir.join("cache").join("evalsig.db")
+    }
+
     pub fn ledger_path(&self) -> PathBuf {
         self.dir.join(LEDGER)
     }

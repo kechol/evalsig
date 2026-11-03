@@ -3,6 +3,7 @@ pub mod import;
 pub mod init;
 pub mod ledger;
 pub mod list;
+pub mod rebuild;
 pub mod report;
 pub mod schema;
 pub mod validate;
