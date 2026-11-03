@@ -426,7 +426,9 @@ dependencies = [
 name = "evalsig-adapters"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "evalsig-core",
+ "rusqlite",
  "ruzstd",
  "serde",
  "serde_json",

@@ -4,9 +4,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use evalsig_adapters::inspect;
 use evalsig_adapters::limits::{self, Limits};
 use evalsig_adapters::mapping::{self, Compiled, Host, MapError};
+use evalsig_adapters::{inspect, promptfoo};
 use evalsig_core::config::{Adapter, Config, ContentMode};
 use evalsig_core::records::Record;
 use evalsig_store::canonical::to_canonical_bytes;
@@ -25,6 +25,7 @@ use crate::validate::Issue;
 pub enum Reader {
     Mapping(Box<Compiled>),
     Inspect(inspect::Options),
+    Promptfoo,
 }
 
 /// The mapping or adapter an import goes through.
@@ -122,6 +123,7 @@ pub fn resolve(
                         .and_then(|v| serde_json::to_value(v).ok())
                         .and_then(|v| v.as_str().map(str::to_owned)),
                 }),
+                Adapter::Promptfoo => Reader::Promptfoo,
                 _ => Reader::Mapping(Box::new(mapping::from_import(block).map_err(invalid)?)),
             };
             let canonical = to_canonical_bytes(&serde_json::to_value(block).expect("serializes"))
@@ -250,6 +252,7 @@ pub fn apply(
         Reader::Inspect(options) => {
             return Ok((inspect_log(path, bytes, options, host)?, Vec::new()));
         }
+        Reader::Promptfoo => return Ok((promptfoo_results(path, bytes, host)?, Vec::new())),
     };
     let rows = mapping::rows(compiled, bytes).map_err(|e| CliError::invalid_input(path, e))?;
     let (records, issues) = mapping::apply(compiled, &rows, host).map_err(|e| match e {
@@ -278,7 +281,7 @@ impl Via {
     pub fn reads_json(&self) -> bool {
         match &self.reader {
             Reader::Mapping(c) => c.reads_json(),
-            Reader::Inspect(_) => false,
+            Reader::Inspect(_) | Reader::Promptfoo => false,
         }
     }
 }
@@ -294,6 +297,29 @@ pub fn inspect_log(
     let failed = |e: inspect::InspectError| CliError::invalid_input(path, e);
     let (log, samples) = inspect::read_log(bytes, zip, &host.limits).map_err(failed)?;
     let records = inspect::records(&log, &samples, options, host).map_err(failed)?;
+    Ok(records
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| (i + 1, r))
+        .collect())
+}
+
+/// The records of promptfoo results: a local database (`.db`, the evaluation named by
+/// `--arg eval=ID` or the most recent), or `-o out.json` output otherwise.
+pub fn promptfoo_results(
+    path: &Path,
+    bytes: &[u8],
+    host: &mut Bodies<'_>,
+) -> Result<mapping::Numbered, CliError> {
+    let failed = |e: promptfoo::PromptfooError| CliError::invalid_input(path, e);
+    let eval = if path.extension().is_some_and(|x| x == "db") {
+        promptfoo::read_database(path, host.arg("eval")).map_err(failed)?
+    } else {
+        limits::check_json_depth(bytes, &host.limits)
+            .map_err(|e| CliError::invalid_input(path, e))?;
+        promptfoo::parse(bytes).map_err(failed)?
+    };
+    let records = promptfoo::records(&eval, host).map_err(failed)?;
     Ok(records
         .into_iter()
         .enumerate()

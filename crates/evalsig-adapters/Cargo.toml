@@ -9,7 +9,9 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+blake3.workspace = true
 evalsig-core.workspace = true
+rusqlite.workspace = true
 ruzstd.workspace = true
 serde.workspace = true
 serde_json.workspace = true

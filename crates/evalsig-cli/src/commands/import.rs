@@ -30,6 +30,8 @@ pub enum AdapterArg {
     Csv,
     /// Inspect logs: `.eval` archives or `.json` logs.
     Inspect,
+    /// promptfoo results: `-o out.json` output or the local `.db`.
+    Promptfoo,
 }
 
 impl AdapterArg {
@@ -135,9 +137,10 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
         Some("jsonl" | "json") => Ok(AdapterArg::Records),
         Some("csv") => Ok(AdapterArg::Csv),
         Some("eval") => Ok(AdapterArg::Inspect),
+        Some("db") => Ok(AdapterArg::Promptfoo),
         _ => Err(
             CliError::usage(format!("cannot tell the format of {}", path.display()))
-                .with_hint("pass --adapter records or --adapter csv"),
+                .with_hint("pass --adapter records, csv, inspect or promptfoo"),
         ),
     }
 }
@@ -175,7 +178,9 @@ fn candidates<'a>(
                 .map(|(line, v)| (line, Candidate::Row(v)))
                 .collect())
         }
-        AdapterArg::Inspect => unreachable!("Inspect logs are read with their bodies"),
+        AdapterArg::Inspect | AdapterArg::Promptfoo => {
+            unreachable!("harness logs are read with their bodies")
+        }
     }
 }
 
@@ -239,10 +244,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         }
         let adapter = adapter.expect("chosen above when there is no mapping");
         adapters.insert(adapter);
-        if adapter == AdapterArg::Inspect {
+        if matches!(adapter, AdapterArg::Inspect | AdapterArg::Promptfoo) {
             let file = path.display().to_string();
-            let options = evalsig_adapters::inspect::Options::default();
-            for (row, value) in mapped::inspect_log(path, &bytes, &options, &mut bodies)? {
+            let read = match adapter {
+                AdapterArg::Inspect => mapped::inspect_log(
+                    path,
+                    &bytes,
+                    &evalsig_adapters::inspect::Options::default(),
+                    &mut bodies,
+                )?,
+                _ => mapped::promptfoo_results(path, &bytes, &mut bodies)?,
+            };
+            for (row, value) in read {
                 match validator.check_value(row, value) {
                     Ok(r) => records.push(r),
                     Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
