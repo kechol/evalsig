@@ -129,6 +129,14 @@ pub fn world_from(referee_records: &[Value], gate: &str, mapping: Option<&Path>)
 
 /// Draft on the agent's side, approve on the referee's; returns the approved hash.
 pub fn approve(w: &World, gate: &str, mapping: Option<&Path>) -> String {
+    approve_output(w, gate, mapping)["results"]["approved"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// The whole answer of `preregister approve` for these conditions.
+pub fn approve_output(w: &World, gate: &str, mapping: Option<&Path>) -> Value {
     let g = w.agent.path().join("gate.toml");
     std::fs::write(&g, gate).unwrap();
     let d = json(
@@ -157,7 +165,7 @@ pub fn approve(w: &World, gate: &str, mapping: Option<&Path>) -> String {
     }
     let a = c.output().unwrap();
     assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stderr));
-    json(&a)["results"]["approved"].as_str().unwrap().to_owned()
+    json(&a)
 }
 
 /// The candidate's records: triage-v2's run and judgments, changed by `edit`.

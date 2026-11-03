@@ -563,3 +563,28 @@ fn the_gate_takes_no_override_flags() {
     }
     assert_eq!(accesses(&w), 0);
 }
+
+#[test]
+fn approval_warns_of_low_power_and_counts_earlier_queries() {
+    let w = world(&gate_toml(10, 3), None);
+    assert_eq!(code(&submit(&w, &variant(w.referee.path(), 1))), Some(0));
+    // A small improvement to detect on a few dozen items: the gate would rarely pass.
+    let v = approve_output(
+        &w,
+        &gate_toml(10, 3).replace(
+            "rule = \"not_worse_than\"\nvalue = -0.3",
+            "rule = \"delta_lower_bound_at_least\"\nvalue = 0.0\nmin_effect = 0.01",
+        ),
+        None,
+    );
+    assert!(
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["code"] == "low_power_at_hypothesis"),
+        "{v}"
+    );
+    assert!(v["results"]["power_at_hypothesis"].as_f64().unwrap() < 0.5);
+    assert_eq!(v["results"]["holdout_access_so_far"], 1);
+}
