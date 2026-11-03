@@ -14,8 +14,9 @@ use crate::interval::wilson_two_sided;
 use crate::missing::{MissingPolicy, Policy, Side};
 use crate::numeric::{Rng, mean, sum};
 use crate::records::{
-    Item, Judgment, Label, LabelKind, MissingReason, OutputType, Run, Source, Value, ValueSemantics,
+    Item, Judgment, Label, MissingReason, OutputType, Run, Value, ValueSemantics,
 };
+use crate::reference;
 use crate::replicates::{Disagreement, item_value};
 use crate::rules::Rule;
 
@@ -145,50 +146,6 @@ struct Unit {
     /// Share of raters calling the item positive.
     reference: Option<f64>,
     model_reference: bool,
-}
-
-/// Positive share over the latest labels of one item under the reference mode.
-fn reference_share(
-    labels: &[&Label],
-    positive: &Rule,
-    mode: ReferenceMode,
-) -> Option<(f64, usize, bool)> {
-    let human: Vec<&Label> = labels
-        .iter()
-        .copied()
-        .filter(|l| l.source == Source::Human)
-        .collect();
-    let pool = if human.is_empty() {
-        labels.to_vec()
-    } else {
-        human
-    };
-    let model = pool.iter().all(|l| l.source == Source::Model);
-    let value = |l: &Label| l.value.and_then(|v| positive.is_positive(v));
-    if mode == ReferenceMode::Single
-        && let Some(adj) = pool.iter().find(|l| l.kind() == LabelKind::Adjudication)
-    {
-        return value(adj).map(|p| (f64::from(u8::from(p)), 1, model));
-    }
-    let votes: Vec<bool> = pool
-        .iter()
-        .filter(|l| l.kind() != LabelKind::Adjudication && l.label_replicate() == 0)
-        .filter_map(|l| value(l))
-        .collect();
-    if votes.is_empty() {
-        return None;
-    }
-    let share = votes.iter().filter(|v| **v).count() as f64 / votes.len() as f64;
-    let s = match mode {
-        ReferenceMode::Soft => share,
-        // Majority, and single without an adjudication: ties count one half.
-        _ => match share.partial_cmp(&0.5) {
-            Some(std::cmp::Ordering::Greater) => 1.0,
-            Some(std::cmp::Ordering::Less) => 0.0,
-            _ => 0.5,
-        },
-    };
-    Some((s, votes.len(), model))
 }
 
 fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) -> Option<f64> {
@@ -357,7 +314,7 @@ pub fn prepare<'a>(
         }
         let reference = positive
             .as_ref()
-            .and_then(|p| reference_share(&item_labels, p, s.reference));
+            .and_then(|p| reference::of(&item_labels, p, s.reference));
         units.push(Unit {
             item_id: (*item_id).to_owned(),
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
@@ -370,8 +327,8 @@ pub fn prepare<'a>(
             replicates,
             grades,
             at_least: at_least_reps,
-            reference: reference.map(|r| r.0),
-            model_reference: reference.is_some_and(|r| r.2),
+            reference: reference.map(|r| r.share),
+            model_reference: reference.is_some_and(|r| r.model_derived),
         });
     }
 

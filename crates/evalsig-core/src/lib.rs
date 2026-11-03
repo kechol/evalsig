@@ -15,6 +15,7 @@ pub mod missing;
 pub mod numeric;
 pub mod paired;
 pub mod records;
+pub mod reference;
 pub mod replicates;
 pub mod report;
 pub mod roc;

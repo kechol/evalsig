@@ -37,6 +37,15 @@ impl Confusion {
         }
     }
 
+    /// Add an item whose reference is positive with share `reference` (soft) and whose
+    /// judgments are positive with share `judged`.
+    pub fn add_shares(&mut self, reference: f64, judged: f64, weight: f64) {
+        self.hits += weight * reference * judged;
+        self.misses += weight * reference * (1.0 - judged);
+        self.false_alarms += weight * (1.0 - reference) * judged;
+        self.correct_rejections += weight * (1.0 - reference) * (1.0 - judged);
+    }
+
     pub fn from_pairs(pairs: impl IntoIterator<Item = (bool, bool, f64)>) -> Self {
         let mut c = Confusion::default();
         for (r, j, w) in pairs {
