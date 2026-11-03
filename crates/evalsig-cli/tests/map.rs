@@ -87,3 +87,91 @@ fn harness_outputs_are_recognised() {
         );
     }
 }
+
+fn evalsig(dir: &Path) -> Command {
+    let mut c = Command::cargo_bin("evalsig").unwrap();
+    c.env("EVALSIG_ACTOR", "user:test")
+        .args(["--format", "json", "--project"])
+        .arg(dir);
+    c
+}
+
+#[test]
+fn a_draft_leaves_every_decision_and_decide_fills_them() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let log = fixture("probe/secret-like.jsonl");
+    let mapping = dir.path().join("mapping.toml");
+    let out = evalsig(dir.path())
+        .args(["map", "draft"])
+        .arg(&log)
+        .arg("--out")
+        .arg(&mapping)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["verdict"]["code"], "needs_decisions");
+    let text = std::fs::read_to_string(&mapping).unwrap();
+    assert_eq!(text.matches("DECIDE").count(), 6, "{text}");
+    assert!(!text.contains("Maria") && !text.contains("sk-aaa"));
+    let import = |c: &mut Command| {
+        c.args(["import", "--mapping"])
+            .arg(&mapping)
+            .args(["--arg", "run-id=r1"])
+            .arg(&log);
+    };
+    let mut c = evalsig(dir.path());
+    import(&mut c);
+    c.assert().code(5);
+
+    for (id, choice) in [
+        ("item_key", "$.ticket"),
+        ("value_semantics", "decision"),
+        ("value", "$.verdict"),
+        ("output_type", "binary"),
+        ("value.none", r#"{"approve": true, "reject": false}"#),
+        ("replicate_kind", "gen_replicate=$.attempt"),
+        ("missing.reason", r#"{"timeout": "timeout"}"#),
+    ] {
+        evalsig(dir.path())
+            .args([
+                "map",
+                "decide",
+                id,
+                choice,
+                "--by",
+                "user:alice",
+                "--mapping",
+            ])
+            .arg(&mapping)
+            .assert()
+            .success();
+    }
+    std::fs::write(
+        dir.path().join(".evalsig/config.toml"),
+        "[project]\nname = \"x\"\n",
+    )
+    .unwrap();
+    let mut c = evalsig(dir.path());
+    import(&mut c);
+    let v: Value = serde_json::from_slice(&c.assert().success().get_output().stdout).unwrap();
+    assert_eq!(v["results"]["records"]["judgments"], 8);
+    let ledger = std::fs::read_to_string(dir.path().join(".evalsig/ledger.jsonl")).unwrap();
+    assert_eq!(ledger.matches("\"mapping_decision\"").count(), 7);
+    evalsig(dir.path())
+        .args([
+            "map",
+            "decide",
+            "nope",
+            "x",
+            "--by",
+            "user:alice",
+            "--mapping",
+        ])
+        .arg(&mapping)
+        .assert()
+        .code(64);
+}

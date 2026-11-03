@@ -110,7 +110,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
-        Command::Map(ref cmd) => commands::map::run(cmd),
+        Command::Map(ref cmd) => commands::map::run(&cli.project, cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Rebuild => commands::rebuild::run(&cli.project),
