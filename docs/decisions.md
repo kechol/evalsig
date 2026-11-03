@@ -725,3 +725,34 @@ after the entry is `Accepted`.
   key is what separates authority).
 - Consequences: anyone who can read the identity file is the referee; the
   deployment guide (docs/referee.md) says how to keep it from the agent.
+
+## D-013 Sealing with age (X25519)
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Holdout labels must be encrypted so only the referee can read them,
+  in a format people can check without evalsig (SPEC §8.2, audit §7). The
+  crate survey (`research/rust-crates.md` §4) chose the `age` crate for its
+  specified format, which the Go reference implementation and the `rage` CLI
+  read, over `hpke` or `crypto_box`, whose file format evalsig would have to
+  invent.
+- Decision:
+  - Sealed files are age v1 files to the referee's X25519 recipient, written
+    with the `age` crate 0.11 (MIT OR Apache-2.0) with default features off, a
+    dependency of `evalsig-store` only, used by its sealing module and by
+    `referee init` for the identity. They decrypt with `age -d -i` or
+    `rage -d -i`.
+  - 0.11 rather than the survey's 0.12: 0.12 adds P-256 and post-quantum
+    recipients through `p256`, whose `crypto-bigint` 0.5 carries
+    RUSTSEC-2026-0387 (non-constant-time operations). X25519 is all evalsig
+    uses, and 0.11 has no such dependency.
+  - age's localisation proc-macro (`i18n-embed-fl`) brings `basic-toml`
+    (RUSTSEC-2026-0374) and `proc-macro-error2` (RUSTSEC-2026-0173), both
+    flagged unmaintained, at compile time only. `deny.toml` ignores those two
+    advisories with this reason; vulnerabilities stay denied.
+- Alternatives: age 0.12 (not taken: the advisory above); `hpke` or
+  `crypto_box` with an evalsig format (not taken: no outside tool could
+  check the files); shelling out to the `age` CLI (not taken: one more
+  program to install and trust on every referee).
+- Consequences: moving to age 0.12 or later means re-checking advisories; the
+  file format does not change between them.

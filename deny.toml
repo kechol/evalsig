@@ -6,7 +6,11 @@ all-features = true
 
 [advisories]
 yanked = "deny"
-ignore = []
+# D-013: unmaintained, compile time only, through age's i18n-embed-fl proc-macro.
+ignore = [
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml via i18n-embed-fl (proc-macro), D-013" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 via i18n-embed-fl (proc-macro), D-013" },
+]
 
 [licenses]
 allow = [
