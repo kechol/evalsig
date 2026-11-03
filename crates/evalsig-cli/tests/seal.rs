@@ -137,12 +137,24 @@ fn sealed_labels_open_with_the_age_cli() {
         .arg(file)
         .output()
     {
-        Ok(o) if o.status.success() => o.stdout,
-        _ => {
-            eprintln!("age CLI not installed; opened with evalsig's own age reader");
-            let id = std::fs::read_to_string(s.home.path().join("identity.txt")).unwrap();
-            evalsig_store::seal::open(&id, &std::fs::read(file).unwrap()).unwrap()
+        Ok(o) => {
+            assert!(
+                o.status.success(),
+                "age -d refused the sealed file: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            o.stdout
         }
+        // CI installs age and sets EVALSIG_REQUIRE_AGE, so only a local run without the
+        // CLI skips this check.
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound
+                && std::env::var_os("EVALSIG_REQUIRE_AGE").is_none() =>
+        {
+            eprintln!("age CLI not installed; skipped (set EVALSIG_REQUIRE_AGE to require it)");
+            return;
+        }
+        Err(e) => panic!("the age CLI cannot run: {e}"),
     };
     let labels: Vec<Value> = String::from_utf8(plain)
         .unwrap()
