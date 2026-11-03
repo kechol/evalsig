@@ -192,7 +192,7 @@ pub fn render(output: &Output, format: Format) -> String {
             s.push('\n');
             s
         }
-        Format::Md => markdown(e),
+        Format::Md => crate::markdown::render(e).unwrap_or_else(|| markdown(e)),
         Format::Junit => junit(e, output.exit),
         Format::Text => text(e),
         Format::Jsonl => e.results["items"]

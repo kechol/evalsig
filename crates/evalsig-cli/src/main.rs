@@ -5,6 +5,7 @@ mod commands;
 mod data;
 mod error;
 mod exit;
+mod markdown;
 mod output;
 mod project;
 mod schemas;
