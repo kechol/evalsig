@@ -9,10 +9,13 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+rand_chacha.workspace = true
+statrs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+
 
 [lints]
 workspace = true

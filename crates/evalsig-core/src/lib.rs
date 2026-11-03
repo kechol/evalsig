@@ -5,6 +5,7 @@ pub mod config;
 pub mod interval;
 pub mod labels;
 pub mod missing;
+pub mod numeric;
 pub mod records;
 pub mod rules;
 pub mod time;

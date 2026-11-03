@@ -287,3 +287,32 @@ after the entry is `Accepted`.
   what is enforced).
 - Consequences: about 70 more crates in the CLI's dependency tree; the core
   library stays free of them.
+
+## D-009 Numerical dependencies
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Every interval and test needs normal and Beta distribution
+  functions accurate to the 1e-9 reference tolerance, and every resampling
+  method needs random numbers that repeat from a recorded seed on every
+  platform.
+- Decision:
+  - `statrs` (default features off, `std` only) provides the normal and Beta
+    distribution functions and their inverses. Its Beta inverse matches the
+    exact and Jeffreys interval reference values within 1e-9 (worst error
+    about 4e-15 on 2026-11-03), so no fallback inverse is kept; the
+    reference test fails if a later version drifts.
+  - `rand_chacha` (default features off) provides ChaCha20, seeded with
+    `seed_from_u64` from the configured or recorded seed. Uniform integers
+    use Lemire's unbiased method and uniform doubles take 53 bits, both
+    written in evalsig, so no distribution code of `rand` is involved.
+  - Sums run in a fixed iteration order with Neumaier compensation, so
+    results do not depend on threads or map order.
+  - A test pins the first ChaCha20 outputs and a derived mean for a fixed
+    seed; it passes on macOS and on Linux.
+- Alternatives: `rand` with its distributions (rejected: its sampling
+  algorithms may change between versions and alter results for a recorded
+  seed); writing the special functions ourselves (rejected: statrs meets the
+  tolerance and is widely used).
+- Consequences: upgrading `statrs` or `rand_chacha` requires the reference
+  and pinned tests to pass unchanged.
