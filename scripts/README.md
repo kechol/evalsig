@@ -20,6 +20,7 @@ uv run --project scripts scripts/<script>.py
 | `cross_verify.sh` | Builds stores with the Rust binary, checks them with `verify_store.py` and confirms it rejects tampered copies (CI job `cross-verify`) |
 | `smoke_test.sh` | End-to-end smoke test of the binary over the examples |
 | `sim_latent_reference.py` | Simulates the bias and interval coverage of the `soft` and `latent` references (D-016) |
+| `sim_ladder.py` | Simulates the false pass rate under an adaptive agent and the share of real improvements that pass, by holdout size, budget and Ladder step (D-015) |
 
 ## Regenerating the fixtures
 

@@ -756,3 +756,71 @@ after the entry is `Accepted`.
   program to install and trust on every referee).
 - Consequences: moving to age 0.12 or later means re-checking advisories; the
   file format does not change between them.
+
+## D-015 Ladder defaults: step factor k and budget
+
+- Status: Proposed
+- Date: 2026-11-03
+- Context: `gate` returns a value only when the candidate sets a new best,
+  rounded to a step η = max(k·√(ψ̂/n), 1/n) toward the baseline (the Ladder,
+  metrics spec §11.3). The spec proposes k = 2 and a budget B = 5 but asks
+  for a simulation first: the false pass rate when an agent picks its next
+  candidate from the gate's answers, and the share of real improvements
+  that pass and get their value back (SPEC §15). `scripts/sim_ladder.py`
+  runs that simulation: n of 300 and 1,000 in the primary denominator,
+  B of 5, 10 and 20, k of 1, 2 and 3, α = 0.05, validation error 0.1
+  (ψ̂ = 0.2), 4,000 runs per cell, seed 20261103. The attack is Blum and
+  Hardt's: B − 1 random candidates with no real advantage, then the
+  item-by-item majority of the ones the answers favour.
+- Results (`uv run --project scripts scripts/sim_ladder.py`):
+
+  | n | B | false pass, full feedback | false pass, Ladder k = 2 | real 0.05 passes | value back, k = 2 / k = 3 |
+  |---:|---:|---:|---:|---:|---:|
+  | 300 | 5 | 0.067 | 0.042 | 0.347 | 0.346 / 0.128 |
+  | 300 | 10 | 0.121 | 0.048 | 0.270 | 0.270 / 0.138 |
+  | 300 | 20 | 0.239 | 0.045 | 0.203 | 0.203 / 0.135 |
+  | 1000 | 5 | 0.063 | 0.036 | 0.893 | 0.893 / 0.706 |
+  | 1000 | 10 | 0.108 | 0.044 | 0.850 | 0.850 / 0.697 |
+  | 1000 | 20 | 0.233 | 0.047 | 0.783 | 0.783 / 0.703 |
+
+  Under the Ladder the false pass rate stays at or below α for every k and
+  B tried; with the unrounded difference returned it exceeds α already at
+  B = 5 and grows with B. The step factor barely moves the false pass rate,
+  because the Ladder's significance requirement withholds almost every
+  value from a candidate with no real advantage; it moves whether a real
+  improvement learns its value. k = 1 and k = 2 return the value of every
+  real improvement that passes; k = 3 withholds it from about two thirds at
+  n = 300.
+- Decision (proposed):
+  - `reuse_guard = "ladder"` is the default and `ladder_k` defaults to 2
+    (at least 1). At approval the referee fixes η from k, the primary
+    condition's denominator n and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)),
+    with e_val the baseline's validation error in that denominator, and
+    records η in the `preregister_approve` line. Example: e_val = 0.1,
+    n = 300 gives η ≈ 0.052.
+  - A user `ladder_step` is accepted only when it is at least the automatic
+    η; a smaller one fails approval as a usage error.
+  - At approval the referee evaluates the baseline on the holdout as the
+    first best; this does not use the budget.
+  - A submission returns a value only when the lower bound of its
+    difference to the best, one-sided at α/B, is above 0 and the
+    difference is at least η. The value is rounded to a multiple of η
+    toward the baseline (a delta rule rounds Δ). Otherwise the output
+    carries no value, only the verdict, the per-condition verdicts and the
+    budget left.
+  - `holdout.budget` defaults to 5. Each submission is judged at α/B, so a
+    larger budget costs power: at n = 300 a real 0.05 improvement passes
+    35% of the time at B = 5 and 20% at B = 20.
+- Alternatives: k = 1 (not taken: no measurable gain over k = 2 in these
+  runs, and twice as many returned values leak more against stronger
+  attacks than this one); k = 3 (not taken: withholds the value from most
+  real improvements at a few hundred items); B = 10 or 20 by default (not
+  taken: the power loss is larger than the protection gained, since the
+  Ladder already keeps the false pass rate near α); returning the
+  unrounded difference (not taken: the false pass rate exceeds α from
+  B = 5).
+- Consequences: at a few hundred holdout items the Ladder's theoretical
+  guarantee does not hold (it needs steps near (ln B / n)^{1/3}); the
+  protection rests on the budget, α/B and the withheld values, and
+  `docs/referee.md` says so. The simulation covers one attack; a stronger
+  one could do better against k = 1 or 2.
