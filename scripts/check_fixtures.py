@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Regenerate the fixtures into a temporary directory and compare them with the committed ones,
-and check that examples/custom-harness/records.out.jsonl is the converter script's output.
+"""Regenerate the fixtures and docs/sample-size.md into a temporary directory and compare them
+with the committed ones, and check that examples/custom-harness/records.out.jsonl is the
+converter script's output.
 
 Canonicalization vectors must match byte for byte. Reference values must match within
 1e-12 (absolute); `generated_with` and `source` strings are allowed to differ, since they
@@ -16,6 +17,7 @@ from pathlib import Path
 
 from gen_canonicalization_vectors import OUT as VECTORS
 from reference_values import OUT as REFERENCE
+from sample_size import OUT as SAMPLE_SIZE
 
 HERE = Path(__file__).resolve().parent
 TOL = 1e-12
@@ -53,6 +55,10 @@ def main():
             errors.append(f"{VECTORS.name}: bytes differ")
         compare(json.loads(REFERENCE.read_text(encoding="utf-8")),
                 json.loads((tmp / REFERENCE.name).read_text(encoding="utf-8")), REFERENCE.name, errors)
+        subprocess.run([sys.executable, str(HERE / "sample_size.py"), "--out", str(tmp / SAMPLE_SIZE.name)],
+                       check=True, stdout=subprocess.DEVNULL)
+        if (tmp / SAMPLE_SIZE.name).read_bytes() != SAMPLE_SIZE.read_bytes():
+            errors.append(f"{SAMPLE_SIZE.name}: bytes differ")
     harness = HERE.parent / "examples" / "custom-harness"
     converted = subprocess.run(
         [sys.executable, "-I", str(harness / "convert_runlog.py"), str(harness / "run-log.sample.jsonl"),

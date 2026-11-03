@@ -15,6 +15,7 @@ pub mod meta;
 pub mod missing;
 pub mod numeric;
 pub mod paired;
+pub mod power;
 pub mod ppi;
 pub mod preference;
 pub mod records;

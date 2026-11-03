@@ -12,7 +12,8 @@ uv run --project scripts scripts/<script>.py
 | `evalsig_canon.py` | Canonical JSON bytes (RFC 8785 + NFC) and `sha256:` / `blake3:` references. Standard library only, except BLAKE3 |
 | `gen_canonicalization_vectors.py` | Writes `tests/fixtures/canonicalization-vectors.json` |
 | `reference_values.py` | Writes `tests/fixtures/reference-values.json` from scipy, closed forms and published values |
-| `check_fixtures.py` | Regenerates both fixtures in a temporary directory and compares them with the committed files, and checks `examples/custom-harness/records.out.jsonl` against `convert_runlog.py` |
+| `sample_size.py` | Writes `docs/sample-size.md`, the sample-size tables that `evalsig_core::power` also renders |
+| `check_fixtures.py` | Regenerates both fixtures and `docs/sample-size.md` in a temporary directory and compares them with the committed files, and checks `examples/custom-harness/records.out.jsonl` against `convert_runlog.py` |
 | `gen_harness_fixtures.sh` | Runs Inspect and promptfoo with models that call no AI and writes `tests/fixtures/harness/` (see its README) |
 | `json_shape.py` | Prints the key paths, types and example values of a JSON or JSONL file as a Markdown table |
 | `verify_store.py` | Checks a `.evalsig/` directory or ledger file without evalsig: ledger chains, object names and canonical form, saved report hashes |
@@ -27,6 +28,7 @@ The fixtures are generated files; edit the generators, never the JSON.
 ```sh
 uv run --project scripts scripts/gen_canonicalization_vectors.py
 uv run --project scripts scripts/reference_values.py
+uv run --project scripts scripts/sample_size.py
 uv run --project scripts scripts/check_fixtures.py
 ```
 
