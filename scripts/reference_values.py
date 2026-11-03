@@ -306,6 +306,39 @@ def agreement_ordinal_cases():
     }]
 
 
+def ppi_mean(y, f, f_unlabelled, alpha, lam=None):
+    """PPI++ for a mean in the conventions of ppi_py (ppi_mean_pointestimate / ppi_mean_ci):
+    lambda = Cov_n(y, f) / ((1 + n/N) Var_{n+N}(f)) clipped to [0, 1] with the population
+    covariance and the sample variance; standard errors from population variances."""
+    y, f, fu = (np.asarray(a, dtype=float) for a in (y, f, f_unlabelled))
+    n, big_n = len(y), len(fu)
+    if lam is None:
+        cov = np.mean((y - y.mean()) * (f - f.mean()))
+        var_f = np.var(np.concatenate([f, fu]), ddof=1)
+        lam = float(np.clip(cov / ((1 + n / big_n) * var_f), 0, 1))
+    est = lam * fu.mean() + (y - lam * f).mean()
+    se = math.sqrt((lam * fu).std() ** 2 / big_n + (y - lam * f).std() ** 2 / n)
+    z = stats.norm.ppf(1 - alpha / 2)
+    return est, se, lam, (est - z * se, est + z * se)
+
+
+def ppi_cases():
+    """A grader agreeing with humans on about 80% of items; 60 human labels, 240 grader-only."""
+    rng = np.random.default_rng(20261103)
+    truth = (rng.random(300) < 0.4).astype(int)
+    grader = np.where(rng.random(300) < 0.8, truth, 1 - truth)
+    y, f, fu = truth[:60], grader[:60], grader[60:]
+    out = []
+    for lam in (None, 0.0, 1.0):
+        est, se, used, ci = ppi_mean(y, f, fu, 0.05, lam)
+        out.append({
+            "input": {"y": y.tolist(), "f": f.tolist(), "f_unlabelled": fu.tolist(), "level": 0.95, "lambda": lam},
+            "source": "closed (PPI++ mean in the conventions of ppi_py ppi_mean_pointestimate, ppi_mean_ci and _calc_lam_glm, read at commit 3d1f0c6)",
+            "expected": {"estimate": r(est), "se": r(se), "lambda": r(used), "ci95": [r(ci[0]), r(ci[1])]},
+        })
+    return out
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -605,6 +638,7 @@ def main():
             "agreement": agreement_cases(),
             "agreement_prevalence_robust": agreement_extra_cases(),
             "agreement_ordinal": agreement_ordinal_cases(),
+            "ppi_mean": ppi_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

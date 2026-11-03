@@ -14,15 +14,15 @@
         "interval": "too_few_units",
         "metric": "accuracy",
         "missing_bounds": [
-          0.75,
+          0.6,
           1.0
         ],
-        "n": 2.0,
+        "n": 5.0,
         "rater_spread": [
-          0.75,
+          0.6,
           1.0
         ],
-        "value": 0.75
+        "value": 0.6
       },
       {
         "ci": null,
@@ -47,7 +47,7 @@
           0.0,
           0.5
         ],
-        "n": 1.0,
+        "n": 4.0,
         "rater_spread": [
           0.5,
           0.5
@@ -92,7 +92,7 @@
     "reference": {
       "by_rater": {
         "user:alice": {
-          "accuracy": 0.75,
+          "accuracy": 0.6,
           "false_alarm_rate": 0.5,
           "hit_rate": 1.0,
           "precision": 1.0
@@ -110,6 +110,7 @@
       },
       "detected": true,
       "estimand": "performance against these raters",
+      "inclusion_weighted_items": 1,
       "items_with_reference": 2,
       "mode": "soft",
       "model_derived_items": 0,
@@ -169,7 +170,7 @@
       },
       "command": "report"
     },
-    "output": "blake3:124065087e9179acd4bf1e4535834519207d3ec0a6d5e6f6afb529ca3023a8a4"
+    "output": "blake3:6396d6e60eddedb3cd21593b553133bf986970f74bafad1e7e8606b6baa0850e"
   },
   "truncated": null
 }

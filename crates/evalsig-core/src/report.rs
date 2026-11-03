@@ -90,6 +90,9 @@ pub struct ReferenceInfo {
     pub raters: usize,
     pub items_with_reference: usize,
     pub model_derived_items: usize,
+    /// Items weighted by 1 / label_inclusion_prob.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub inclusion_weighted_items: usize,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub design: Option<reference::DesignInfo>,
     /// In a crossed design: each metric with each rater alone as the reference.
@@ -158,6 +161,8 @@ struct Unit {
     model_reference: bool,
     /// Each rater's vote (1 positive, 0 negative).
     votes: BTreeMap<String, f64>,
+    /// Whether the weight includes 1 / label_inclusion_prob.
+    inclusion_weighted: bool,
 }
 
 fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) -> Option<f64> {
@@ -336,7 +341,13 @@ pub fn prepare<'a>(
         units.push(Unit {
             item_id: (*item_id).to_owned(),
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
-            weight: item.map_or(1.0, |i| i.weight()),
+            // Inverse-probability weights correct partial verification (metrics spec §9.9).
+            weight: item.map_or(1.0, |i| match (reference, i.label_inclusion_prob) {
+                (Some(_), Some(p)) => i.weight() / p,
+                _ => i.weight(),
+            }),
+            inclusion_weighted: reference.is_some()
+                && item.is_some_and(|i| i.label_inclusion_prob.is_some()),
             stratum: s.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
@@ -391,6 +402,10 @@ pub fn prepare<'a>(
             },
         ),
     })
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Build the report of one run from its records.
@@ -478,6 +493,7 @@ pub fn build(
         raters: p.raters,
         items_with_reference: units.iter().filter(|u| u.reference.is_some()).count(),
         model_derived_items: units.iter().filter(|u| u.model_reference).count(),
+        inclusion_weighted_items: units.iter().filter(|u| u.inclusion_weighted).count(),
         design,
         by_rater,
     });

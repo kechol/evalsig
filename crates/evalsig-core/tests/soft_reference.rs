@@ -270,3 +270,61 @@ fn items_split_by_agreement_get_their_own_metrics() {
     assert!((value("unanimous", "accuracy") - 0.5).abs() < TOL);
     assert!(value("unanimous", "hit_rate").abs() < TOL);
 }
+
+#[test]
+fn inclusion_probabilities_reweight_partially_verified_items() {
+    // Positive judgments are always checked by a human, negative ones half the time.
+    // (item, judged, reference, inclusion probability); f and g have no label.
+    let rows = [
+        ("a", true, Some(true), 1.0),
+        ("b", true, Some(false), 1.0),
+        ("c", true, Some(true), 1.0),
+        ("d", false, Some(true), 0.5),
+        ("e", false, Some(false), 0.5),
+        ("f", false, None, 0.5),
+        ("g", false, None, 0.5),
+    ];
+    let mut lines = vec![
+        r#"{"record":"run","run_id":"r","system":{"id":"s","version":"1"},"output_type":"binary"}"#
+            .to_owned(),
+    ];
+    for (item, judged, reference, p) in rows {
+        lines.push(format!(
+            r#"{{"record":"item","item_id":"{item}","label_inclusion_prob":{p}}}"#
+        ));
+        lines.push(format!(
+            r#"{{"record":"judgment","item_id":"{item}","run_id":"r","gen_replicate":0,"output_type":"binary","value":{judged}}}"#
+        ));
+        if let Some(v) = reference {
+            lines.push(format!(
+                r#"{{"record":"label","item_id":"{item}","rater_id":"ana","source":"human","value":{v},"version":1}}"#
+            ));
+        }
+    }
+    let rs: Vec<Record> = lines
+        .iter()
+        .map(|l| Record::from_json(l).unwrap())
+        .collect();
+    let p = parts(&rs);
+    let r = report::build(
+        p.run,
+        &p.judgments,
+        &p.items,
+        &p.labels,
+        &settings(ReferenceMode::Soft),
+    )
+    .unwrap();
+    let metric = |name: &str| {
+        r.metrics
+            .iter()
+            .find(|m| m.metric == name)
+            .unwrap()
+            .value
+            .unwrap()
+    };
+    // Weighted by 1/p: H = (1 + 1) / (1 + 1 + 2) and F = 1 / (1 + 2); unweighted they
+    // would be 2/3 and 1/2.
+    assert!((metric("hit_rate") - 0.5).abs() < TOL);
+    assert!((metric("false_alarm_rate") - 1.0 / 3.0).abs() < TOL);
+    assert_eq!(r.reference.unwrap().inclusion_weighted_items, 5);
+}
