@@ -10,6 +10,7 @@ pub mod numeric;
 pub mod paired;
 pub mod records;
 pub mod replicates;
+pub mod report;
 pub mod rules;
 pub mod score;
 pub mod sdt;

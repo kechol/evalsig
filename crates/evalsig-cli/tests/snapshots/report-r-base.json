@@ -1,0 +1,129 @@
+{
+  "schema": "evalsig.report/1",
+  "ok": true,
+  "verdict": null,
+  "results": {
+    "decision": {
+      "ordinal_at_least": 2
+    },
+    "estimand": "single_shot",
+    "level": 0.95,
+    "metrics": [
+      {
+        "ci": [
+          0.75,
+          0.75
+        ],
+        "interval": "bootstrap",
+        "metric": "accuracy",
+        "missing_bounds": [
+          0.75,
+          1.0
+        ],
+        "n": 2.0,
+        "resamples": 2000,
+        "value": 0.75
+      },
+      {
+        "ci": [
+          1.0,
+          1.0
+        ],
+        "interval": "bootstrap",
+        "metric": "hit_rate",
+        "missing_bounds": [
+          1.0,
+          1.0
+        ],
+        "n": 1.0,
+        "resamples": 2000,
+        "value": 1.0
+      },
+      {
+        "ci": [
+          0.5,
+          0.5
+        ],
+        "interval": "bootstrap",
+        "metric": "false_alarm_rate",
+        "missing_bounds": [
+          0.0,
+          0.5
+        ],
+        "n": 1.0,
+        "resamples": 2000,
+        "value": 0.5
+      },
+      {
+        "ci": [
+          1.0,
+          1.0
+        ],
+        "interval": "bootstrap",
+        "metric": "precision",
+        "n": 1.0,
+        "resamples": 2000,
+        "value": 1.0
+      }
+    ],
+    "missing_by_reason": {
+      "timeout": 1
+    },
+    "missing_policy": {
+      "error": "worst",
+      "excluded": "drop",
+      "grader_failed": "drop",
+      "invalid_output": "worst",
+      "invalidated": "drop",
+      "limit": "worst",
+      "not_run": "drop",
+      "other": "drop",
+      "refused": "worst",
+      "timeout": "worst"
+    },
+    "n_insufficient_replicates": 0,
+    "n_items": 2,
+    "n_judgments": 4,
+    "n_missing": 1,
+    "output_type": "ordinal",
+    "positive": {
+      "ordinal_at_least": 2
+    },
+    "reference": {
+      "items_with_reference": 2,
+      "mode": "soft",
+      "model_derived_items": 0,
+      "raters": 4
+    },
+    "reproducibility": {
+      "generation": {
+        "items": 1,
+        "items_with_any_disagreement": 0.0,
+        "pairwise_disagreement": 0.0,
+        "upper_bound": 0.95
+      }
+    },
+    "run": "r-base",
+    "seed": 20261029,
+    "task": "default",
+    "value_semantics": "decision"
+  },
+  "warnings": [
+    {
+      "code": "model_derived_reference",
+      "message": "1 reference labels come from a model, not from people"
+    }
+  ],
+  "next": [],
+  "provenance": {
+    "snapshots": [
+      "blake3:4634d478d96fdc30bd605c47a344e3e7412eca0b768b7147bdadc37c7acace47"
+    ],
+    "config": "blake3:0d9b86d2bc915a65a3c73290f62d9ced671d3a27f0786877e4e0fd7de05c2a9d",
+    "seed": 20261029,
+    "tool": "evalsig <VERSION>",
+    "ledger": "agent",
+    "ledger_seq": 1
+  },
+  "truncated": null
+}

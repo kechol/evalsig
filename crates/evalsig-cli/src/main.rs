@@ -48,6 +48,8 @@ enum Command {
     Import(commands::import::Args),
     /// List the imported items.
     Items,
+    /// The default-tier metrics of one run.
+    Report(commands::report::Args),
     /// List the imported runs.
     Runs,
     /// Print a published JSON Schema (`records`, `ledger-entry`).
@@ -81,6 +83,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
+        Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
         Command::Validate {
