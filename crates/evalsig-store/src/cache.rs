@@ -5,7 +5,7 @@
 //! change only by a rebuild), and WAL lets readers such as the dashboard read while
 //! the CLI writes.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use evalsig_core::records::Record;
 use rusqlite::{Connection, params};
@@ -70,6 +70,20 @@ fn append_only_triggers() -> String {
     sql
 }
 
+/// The serde name of a unit enum variant, as stored in the key columns.
+fn tag(v: impl serde::Serialize) -> Option<String> {
+    serde_json::to_value(v).ok()?.as_str().map(str::to_owned)
+}
+
+/// Insert with a statement prepared once per connection rather than once per row.
+fn insert(
+    tx: &rusqlite::Transaction<'_>,
+    sql: &str,
+    p: impl rusqlite::Params,
+) -> rusqlite::Result<usize> {
+    tx.prepare_cached(sql)?.execute(p)
+}
+
 fn value_of(r: &Record) -> Option<f64> {
     match r {
         Record::Judgment(j) => j.value.map(|v| v.as_f64()),
@@ -88,62 +102,47 @@ pub fn rebuild(
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // Build beside the old copy and rename it into place, so a failed rebuild leaves
+    // the old copy and readers never see a partial one.
+    let tmp = with_suffix(path, ".tmp");
     for suffix in ["", "-wal", "-shm"] {
-        let p = path.with_file_name(format!(
-            "{}{suffix}",
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("evalsig.db")
-        ));
-        match std::fs::remove_file(&p) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
+        remove_if_present(&with_suffix(&tmp, suffix))?;
     }
-    let mut conn = Connection::open(path)?;
+    let mut conn = Connection::open(&tmp)?;
     conn.execute_batch(SCHEMA)?;
     conn.execute_batch(&append_only_triggers())?;
     let tx = conn.transaction()?;
     for (i, h) in snapshots.iter().enumerate() {
-        tx.execute(
+        insert(
+            &tx,
             "INSERT INTO snapshots VALUES (?1, ?2)",
             params![i as i64, h.to_string()],
         )?;
     }
     for r in records {
         let json = serde_json::to_string(r).expect("records serialize");
-        let missing = r.missing().map(|m| {
-            serde_json::to_value(m.reason)
-                .expect("reason serializes")
-                .as_str()
-                .unwrap_or("")
-                .to_owned()
-        });
+        let missing = r.missing().and_then(|m| tag(m.reason));
         match r {
-            Record::Run(x) => tx.execute(
+            Record::Run(x) => insert(
+                &tx,
                 "INSERT INTO runs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     x.run_id,
                     x.system.id,
                     x.system.version,
-                    serde_json::to_value(x.value_semantics())
-                        .expect("serializes")
-                        .as_str(),
-                    x.output_type.map(|t| serde_json::to_value(t)
-                        .expect("serializes")
-                        .as_str()
-                        .unwrap_or("")
-                        .to_owned()),
+                    tag(x.value_semantics()),
+                    x.output_type.and_then(tag),
                     x.levels,
                     json
                 ],
             )?,
-            Record::Item(x) => tx.execute(
+            Record::Item(x) => insert(
+                &tx,
                 "INSERT INTO items VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![x.item_id, x.cluster_key(), x.weight(), x.occurred_at, json],
             )?,
-            Record::Label(x) => tx.execute(
+            Record::Label(x) => insert(
+                &tx,
                 "INSERT INTO labels VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     x.item_id,
@@ -151,13 +150,14 @@ pub fn rebuild(
                     x.task(),
                     x.label_replicate(),
                     x.version,
-                    serde_json::to_value(x.source).expect("serializes").as_str(),
+                    tag(x.source),
                     value_of(r),
                     missing,
                     json
                 ],
             )?,
-            Record::Judgment(x) => tx.execute(
+            Record::Judgment(x) => insert(
+                &tx,
                 "INSERT INTO judgments VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     x.item_id,
@@ -170,18 +170,39 @@ pub fn rebuild(
                     json
                 ],
             )?,
-            Record::Preference(x) => tx.execute(
+            Record::Preference(x) => insert(
+                &tx,
                 "INSERT INTO preferences (item_id, record) VALUES (?1, ?2)",
                 params![x.item_id, json],
             )?,
-            Record::Content(x) => tx.execute(
+            Record::Content(x) => insert(
+                &tx,
                 "INSERT INTO contents VALUES (?1, ?2)",
                 params![x.content_ref, json],
             )?,
         };
     }
     tx.commit()?;
+    // Closing checkpoints the WAL into the file before it is renamed.
+    conn.close().map_err(|(_, e)| e)?;
+    for suffix in ["-wal", "-shm"] {
+        remove_if_present(&with_suffix(path, suffix))?;
+    }
+    std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut p = path.as_os_str().to_owned();
+    p.push(suffix);
+    PathBuf::from(p)
+}
+
+fn remove_if_present(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 /// Open an existing working copy for reading.
@@ -205,24 +226,23 @@ pub fn counts(conn: &Connection) -> Result<Vec<(&'static str, i64)>, CacheError>
         .collect()
 }
 
-/// Every row of every table in primary-key order, as text: two working copies built
-/// from the same data give the same dump.
+/// Every row of every table as text, rows sorted within each table: two working
+/// copies built from the same data give the same dump.
 pub fn dump(conn: &Connection) -> Result<String, CacheError> {
     let mut out = String::new();
     for t in TABLES {
-        let mut stmt = conn.prepare(&format!("SELECT * FROM {t} ORDER BY 1, 2"))?;
+        let mut stmt = conn.prepare(&format!("SELECT * FROM {t}"))?;
         let n = stmt.column_count();
-        let rows = stmt.query_map([], |row| {
-            (0..n)
-                .map(|i| row.get_ref(i).map(|v| format!("{v:?}")))
-                .collect::<Result<Vec<_>, _>>()
-        })?;
-        for r in rows {
-            out.push_str(t);
-            out.push('\t');
-            out.push_str(&r?.join("\t"));
-            out.push('\n');
-        }
+        let mut rows = stmt
+            .query_map([], |row| {
+                (0..n)
+                    .map(|i| row.get_ref(i).map(|v| format!("{v:?}")))
+                    .collect::<Result<Vec<_>, _>>()
+            })?
+            .map(|r| r.map(|cols| format!("{t}\t{}\n", cols.join("\t"))))
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.sort();
+        out.extend(rows);
     }
     Ok(out)
 }

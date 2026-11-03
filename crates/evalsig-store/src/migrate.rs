@@ -6,10 +6,12 @@
 //! `detect` accepts every line names the format they are in.
 
 use evalsig_core::records::{RECORDS_VERSION, Record};
+use serde::Deserialize;
 use serde_json::Value as Json;
 
 use crate::hash::ContentHash;
 use crate::objects::{ObjectError, ObjectStore};
+use crate::snapshot;
 
 /// One step from a record format to the next.
 pub struct Migration {
@@ -46,11 +48,8 @@ pub enum MigrateError {
 /// A snapshot's lines as JSON, without reading them as records.
 pub fn read_lines(store: &ObjectStore, hash: &ContentHash) -> Result<Vec<Json>, MigrateError> {
     let bytes = store.get(hash)?;
-    if bytes.is_empty() {
-        return Ok(Vec::new());
-    }
-    bytes
-        .split(|b| *b == b'\n')
+    snapshot::lines(&bytes)
+        .into_iter()
         .enumerate()
         .map(|(i, l)| {
             serde_json::from_slice(l).map_err(|e| MigrateError::Json {
@@ -61,15 +60,40 @@ pub fn read_lines(store: &ObjectStore, hash: &ContentHash) -> Result<Vec<Json>, 
         .collect()
 }
 
-/// The format the lines are in.
-pub fn detect(lines: &[Json], migrations: &[Migration]) -> Option<&'static str> {
-    if lines.iter().all(|l| Record::from_value(l.clone()).is_ok()) {
-        return Some(RECORDS_VERSION);
-    }
+/// A line read as a current-format record.
+fn record(line: &Json) -> Result<Record, String> {
+    let r = Record::deserialize(line).map_err(|e| e.to_string())?;
+    r.check().map_err(|e| e.to_string())?;
+    Ok(r)
+}
+
+fn records(lines: &[Json]) -> Result<Vec<Record>, MigrateError> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            record(l).map_err(|message| MigrateError::Record {
+                line: i + 1,
+                message,
+            })
+        })
+        .collect()
+}
+
+/// The earlier format the lines are in, by the first migration that accepts them all.
+fn earlier(lines: &[Json], migrations: &[Migration]) -> Option<&'static str> {
     migrations
         .iter()
         .find(|m| lines.iter().all(m.detect))
         .map(|m| m.from)
+}
+
+/// The format the lines are in.
+pub fn detect(lines: &[Json], migrations: &[Migration]) -> Option<&'static str> {
+    if lines.iter().all(|l| record(l).is_ok()) {
+        return Some(RECORDS_VERSION);
+    }
+    earlier(lines, migrations)
 }
 
 /// Bring lines to the current format. Returns the records and the formats passed
@@ -78,7 +102,10 @@ pub fn upgrade(
     mut lines: Vec<Json>,
     migrations: &[Migration],
 ) -> Result<(Vec<Record>, Vec<&'static str>), MigrateError> {
-    let mut path = vec![detect(&lines, migrations).ok_or(MigrateError::Unknown)?];
+    if let Ok(current) = records(&lines) {
+        return Ok((current, vec![RECORDS_VERSION]));
+    }
+    let mut path = vec![earlier(&lines, migrations).ok_or(MigrateError::Unknown)?];
     while path.last() != Some(&RECORDS_VERSION) {
         // Each step is taken at most once, so a cycle in the table cannot loop.
         if path.len() > migrations.len() {
@@ -103,17 +130,7 @@ pub fn upgrade(
             .collect::<Result<_, _>>()?;
         path.push(m.to);
     }
-    let records = lines
-        .into_iter()
-        .enumerate()
-        .map(|(i, l)| {
-            Record::from_value(l).map_err(|e| MigrateError::Record {
-                line: i + 1,
-                message: e.to_string(),
-            })
-        })
-        .collect::<Result<_, _>>()?;
-    Ok((records, path))
+    Ok((records(&lines)?, path))
 }
 
 #[cfg(test)]

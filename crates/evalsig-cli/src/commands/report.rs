@@ -7,7 +7,6 @@ use evalsig_core::config::Config;
 use evalsig_core::records::Label;
 use evalsig_core::report;
 use evalsig_core::validity;
-use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
@@ -17,6 +16,7 @@ use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output, Warning, round_numbers};
 use crate::project::Project;
+use crate::provenance::{self, Request};
 
 #[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct Args {
@@ -80,18 +80,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     envelope.warnings = c.warnings;
     let summary = json!({
         "run": args.run,
-        "task": args.analysis.task,
+        "task": envelope.results["task"],
+        "estimand": envelope.results["estimand"],
         "seed": c.seed,
     });
-    let request = json!({ "command": "report", "args": args });
-    crate::provenance::finish(
+    let request = Request::Report(args.clone());
+    provenance::finish(
         &project,
         &config,
         &d,
         &mut envelope,
         c.seed,
-        request,
-        Kind::Report,
+        &request,
         summary,
     )?;
     Ok(checks::apply(envelope, &c.findings))

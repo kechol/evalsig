@@ -371,28 +371,30 @@ after the entry is `Accepted`.
   immutable snapshots, so removing text from them needs a new snapshot.
 - Decision:
   - A record's `*_ref` is always the hash of the original body, whatever
-    `store.content` is, so a snapshot's ID does not depend on how bodies are
-    kept. `full` stores the body under that name; `hash` stores nothing;
+    `store.content` is, so how bodies are kept never changes what records
+    name. `full` stores the body under that name; `hash` stores nothing;
     `redact` stores the body with every match of `store.redact_patterns`
     replaced by `[redacted]`, under the redacted bytes' own name, and the
     snapshot's provenance keeps the pair (original, stored). Under `redact`,
     imports also replace matches in `item.attrs` strings, strata values,
-    `label.reason` and `missing.detail`.
+    `label.reason` and `missing.detail` before the snapshot is written, so
+    those snapshots hold the redacted fields.
   - `evalsig purge <ref> --reason <text> --yes` finds the items whose records
     name the body, replaces those items' free-text fields in every current
     snapshot with the BLAKE3 reference of the value, writes the new
     snapshots, and appends a `purge` line whose summary lists each
-    replacement (`replaced: [{from, to}]`). It then deletes the body, its
+    replacement (`replaced: [{from, to, provenance}]`). It then deletes the body, its
     redacted copy, the superseded snapshots and the saved reports that name
     them, and rebuilds the working copy if one exists. Superseded snapshots
     remain only as hashes in the ledger. Purge is the one operation that
     removes objects (D-010).
-  - Data loading follows `purge` lines: a replaced snapshot takes the place of
-    the one it supersedes.
+  - Data loading follows `purge` lines: a replacement takes the place of the
+    snapshot it supersedes, also when that snapshot is imported again, and
+    importing records that were purged is refused.
   - `regex` (MIT OR Apache-2.0, already in the tree through `jsonschema`) is a
     direct dependency of `evalsig-store` for the patterns.
 - Alternatives: naming records after the redacted body (rejected: the
-  snapshot ID and input-change detection would depend on the storage mode);
+  references and input-change detection would depend on the storage mode);
   a new `content` field for the stored name (rejected: `records/1` is a
   public format, D-003); purging only the body (rejected: the same text often
   appears in attrs, reasons and details).

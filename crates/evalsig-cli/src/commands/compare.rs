@@ -11,7 +11,6 @@ use evalsig_core::paired::Verdict;
 use evalsig_core::records::{Item, Label, Run};
 use evalsig_core::report::{self, Prepared};
 use evalsig_core::validity;
-use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
@@ -20,9 +19,10 @@ use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{
-    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, config_hash, round_numbers,
+    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
 use crate::project::Project;
+use crate::provenance::{self, Request};
 
 #[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct Args {
@@ -295,28 +295,23 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut envelope = Envelope::new("evalsig.compare/1", c.results);
     envelope.verdict = c.verdict;
     envelope.warnings = c.warnings;
-    let request = json!({ "command": "compare", "args": args });
+    let request = Request::Compare(args.clone());
     if args.scratch {
-        envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
-        envelope.provenance.config = Some(config_hash(&config).to_string());
-        envelope.provenance.seed = Some(c.seed);
-        envelope.provenance.request = Some(request);
-        envelope.provenance.output =
-            Some(crate::provenance::output_hash(&envelope.results)?.to_string());
+        provenance::fill(&project, &config, &d, &mut envelope, c.seed, &request)?;
     } else {
         let summary = json!({
             "baseline": args.baseline,
             "candidates": args.candidates,
+            "metric": envelope.results["primary_metric"],
             "verdict": envelope.verdict.as_ref().map(|v| v.code),
         });
-        crate::provenance::finish(
+        provenance::finish(
             &project,
             &config,
             &d,
             &mut envelope,
             c.seed,
-            request,
-            Kind::Compare,
+            &request,
             summary,
         )?;
     }

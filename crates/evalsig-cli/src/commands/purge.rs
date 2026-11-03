@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use evalsig_store::content;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind};
-use evalsig_store::{cache, snapshot};
+use evalsig_store::ledger::Kind;
+use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
 
 use crate::data;
@@ -27,21 +27,31 @@ pub struct Args {
     pub yes: bool,
 }
 
-/// Saved reports computed from any of these snapshots.
+/// Saved reports computed from any of these snapshots. Files that are not JSON
+/// results are not reports and are left alone.
 fn reports_using(dir: &Path, snapshots: &BTreeSet<String>) -> Result<Vec<PathBuf>, CliError> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    if snapshots.is_empty() {
         return Ok(out);
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+        Err(e) => return Err(io_error(dir, &e)),
     };
     for entry in entries {
         let path = entry.map_err(|e| io_error(dir, &e))?.path();
-        let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, &e))?;
-        let uses = serde_json::from_str::<Value>(&text)
-            .ok()
-            .and_then(|v| v["provenance"]["snapshots"].as_array().cloned())
-            .into_iter()
-            .flatten()
-            .any(|s| s.as_str().is_some_and(|s| snapshots.contains(s)));
+        if !path.is_file() || path.extension().is_none_or(|x| x != "json") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).map_err(|e| io_error(&path, &e))?;
+        let report: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        let uses = report["provenance"]["snapshots"]
+            .as_array()
+            .is_some_and(|s| {
+                s.iter()
+                    .any(|s| s.as_str().is_some_and(|s| snapshots.contains(s)))
+            });
         if uses {
             out.push(path);
         }
@@ -64,27 +74,26 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let body_ref = body.to_string();
     let project = Project::open(root)?;
     let store = project.objects();
-    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
-    let current = data::current(&entries)?;
     let mut sets = Vec::new();
-    for (s, p) in &current {
-        let records = snapshot::read(&store, s).map_err(CliError::store)?;
-        let p = p.ok_or_else(|| CliError::store(format!("snapshot {s} has no provenance")))?;
-        let prov = snapshot::read_provenance(&store, &p).map_err(CliError::store)?;
-        sets.push((*s, records, prov));
+    for x in data::in_force(&project)? {
+        let records = snapshot::read(&store, &x.snapshot).map_err(CliError::store)?;
+        sets.push((x.snapshot, records, data::provenance_of(&store, &x)?));
     }
     let items: BTreeSet<String> = sets
         .iter()
         .flat_map(|(_, rs, _)| content::items_naming(rs, &body_ref))
         .collect();
-    let redactions = || sets.iter().flat_map(|(_, _, p)| &p.redactions);
-    let mut doomed: Vec<ContentHash> = redactions()
-        .filter(|r| r.original == body)
-        .map(|r| r.stored)
-        // A redacted copy shared with another body stays.
-        .filter(|s| !redactions().any(|r| r.original != body && r.stored == *s))
-        .chain(store.contains(&body).then_some(body))
+    let named: BTreeSet<&str> = sets
+        .iter()
+        .flat_map(|(_, rs, _)| rs.iter().flat_map(content::bodies))
+        .filter(|r| *r != body_ref)
         .collect();
+    let mut doomed = content::unshared_copies(
+        sets.iter().flat_map(|(_, _, p)| &p.redactions),
+        &named,
+        &body,
+    );
+    doomed.extend(store.contains(&body).then_some(body));
     if items.is_empty() && doomed.is_empty() {
         return Err(CliError::usage(format!(
             "no record names {body_ref} and it is not stored"
@@ -92,46 +101,30 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     let mut replaced = Vec::new();
     let mut records_changed = 0;
+    let (mut snapshots, mut read) = (Vec::new(), Vec::new());
     for (old, mut records, prov) in sets {
         let n = content::purge_records(&mut records, &items, &body_ref).map_err(CliError::store)?;
         if n == 0 {
+            snapshots.push(old);
+            read.push(records);
             continue;
         }
         records_changed += n;
-        let written = snapshot::write(&store, records, |snapshot| {
-            let mut p = prov;
-            p.snapshot = snapshot;
-            p.redactions.retain(|r| r.original != body);
-            p
+        let r = snapshot::replace(&store, old, &mut records, prov, |p| {
+            p.redactions.retain(|r| r.original != body)
         })
         .map_err(CliError::store)?;
-        replaced.push(json!({
-            "from": old,
-            "to": written.snapshot,
-            "provenance": written.provenance,
-        }));
+        snapshots.push(r.to);
+        read.push(records);
         doomed.push(old);
+        replaced.push(r);
     }
-    let superseded: BTreeSet<String> = replaced
-        .iter()
-        .filter_map(|r| r["from"].as_str().map(str::to_owned))
-        .collect();
-    let reports = reports_using(&project.dir.join("reports"), &superseded)?;
+    let superseded: BTreeSet<String> = replaced.iter().map(|r| r.from.to_string()).collect();
+    let reports = reports_using(&project.reports_dir(), &superseded)?;
     let report_names: Vec<String> = reports
         .iter()
         .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
         .collect();
-    let mut envelope = Envelope::new(
-        "evalsig.purge/1",
-        json!({
-            "body": body_ref,
-            "items": items,
-            "records_changed": records_changed,
-            "replaced": replaced,
-            "deleted_objects": doomed,
-            "deleted_reports": report_names,
-        }),
-    );
     let summary = json!({
         "reason": args.reason,
         "replaced": replaced,
@@ -139,21 +132,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         "deleted_objects": doomed,
         "deleted_reports": report_names,
     });
-    let outputs = replaced
-        .iter()
-        .flat_map(|r| [&r["to"], &r["provenance"]])
-        .filter_map(|v| v.as_str().map(str::to_owned))
-        .collect();
+    let mut results = summary.clone();
+    results["body"] = json!(body_ref);
+    results["items"] = json!(items);
+    let mut envelope = Envelope::new("evalsig.purge/1", results);
     // The ledger names the replacements before anything is deleted, so an
     // interrupted purge leaves text behind rather than data that cannot be loaded.
     project.record(
         &mut envelope,
         Kind::Purge,
-        std::iter::once(body_ref)
-            .chain(superseded.iter().cloned())
-            .collect(),
-        outputs,
-        summary.as_object().cloned().unwrap_or_default(),
+        std::iter::once(body_ref).chain(superseded).collect(),
+        Replacement::outputs(&replaced),
+        summary,
     )?;
     for h in &doomed {
         store.remove(h).map_err(CliError::store)?;
@@ -161,10 +151,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     for p in &reports {
         std::fs::remove_file(p).map_err(|e| io_error(p, &e))?;
     }
-    let db = project.cache_path();
-    if db.exists() {
-        let d = data::load(&project)?;
-        cache::rebuild(&db, &d.records, &d.snapshots).map_err(CliError::store)?;
+    if project.cache_path().exists() {
+        project.rebuild_cache(&data::layered(snapshots, read))?;
     }
     Ok(Output::success(envelope))
 }

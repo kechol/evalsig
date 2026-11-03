@@ -137,3 +137,16 @@ fn entries_in_the_wrong_ledger_are_reported() {
     let (code, _) = verify(Path::new(REFEREE), &["--side", "agent"]);
     assert_eq!(code, 5);
 }
+
+#[test]
+fn a_named_ledger_that_does_not_exist_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    for cmd in ["anchor", "show", "verify"] {
+        Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["ledger", cmd, "--ledger"])
+            .arg(dir.path().join("ledger.jsonl.typo"))
+            .assert()
+            .code(64);
+    }
+}

@@ -353,9 +353,10 @@ pub fn read(path: &Path) -> Result<Vec<Entry>, LedgerError> {
 
 /// Check the chain. An empty result means every line is intact and linked. A
 /// truncated tail or a rebuilt chain is only detectable against an external anchor
-/// (the head hash recorded elsewhere).
-pub fn verify(text: &str, side: Option<LedgerSide>) -> Vec<Problem> {
+/// (the head hash recorded elsewhere). Also returns the entries that parse.
+pub fn check(text: &str, side: Option<LedgerSide>) -> (Vec<Entry>, Vec<Problem>) {
     let mut problems = Vec::new();
+    let mut entries = Vec::new();
     let mut prev = GENESIS.to_owned();
     for (i, line) in text.lines().filter(|l| !l.trim().is_empty()).enumerate() {
         let n = i + 1;
@@ -387,9 +388,15 @@ pub fn verify(text: &str, side: Option<LedgerSide>) -> Vec<Problem> {
         {
             problems.push(Problem::Side { line: n });
         }
-        prev = entry.hash;
+        prev = entry.hash.clone();
+        entries.push(entry);
     }
-    problems
+    (entries, problems)
+}
+
+/// The problems [`check`] finds.
+pub fn verify(text: &str, side: Option<LedgerSide>) -> Vec<Problem> {
+    check(text, side).1
 }
 
 /// The head hash to anchor externally; `genesis` for an empty ledger.

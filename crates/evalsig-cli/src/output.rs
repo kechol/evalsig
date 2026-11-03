@@ -190,13 +190,6 @@ impl Output {
     }
 }
 
-/// The hash of the configuration with every default filled in (D-004).
-pub fn config_hash(config: &evalsig_core::config::Config) -> evalsig_store::hash::ContentHash {
-    let bytes = evalsig_store::canonical::to_canonical_bytes(&config.to_json())
-        .expect("configuration JSON is canonical");
-    evalsig_store::hash::ContentHash::blake3(&bytes)
-}
-
 /// Round every number to 10 decimal places (metrics spec §0).
 pub fn round_numbers(v: Json) -> Json {
     match v {

@@ -154,6 +154,16 @@ fn purge_removes_the_text_and_keeps_the_ledger_valid() {
         .args(["purge", &body.to_string(), "--reason", "again", "--yes"])
         .assert()
         .success();
+
+    // Importing the purged records again is refused and leaves no text behind.
+    std::fs::write(&file, records(&body.to_string())).unwrap();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(&file)
+        .assert()
+        .code(3);
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(holding(&root, SECRET), Vec::<String>::new());
 }
 
 #[test]

@@ -57,23 +57,23 @@ impl Redactor {
         out
     }
 
-    /// Redact in place; `true` if anything matched.
-    fn apply(&self, s: &mut String) -> bool {
+    /// Redact in place; returns how many strings changed.
+    fn apply(&self, s: &mut String) -> usize {
         match self.redact(s) {
             Cow::Owned(r) => {
                 *s = r;
-                true
+                1
             }
-            Cow::Borrowed(_) => false,
+            Cow::Borrowed(_) => 0,
         }
     }
 
-    fn apply_json(&self, v: &mut Json) -> bool {
+    fn apply_json(&self, v: &mut Json) -> usize {
         match v {
             Json::String(s) => self.apply(s),
-            Json::Array(xs) => xs.iter_mut().fold(false, |c, x| self.apply_json(x) | c),
-            Json::Object(m) => m.values_mut().fold(false, |c, x| self.apply_json(x) | c),
-            _ => false,
+            Json::Array(xs) => xs.iter_mut().map(|x| self.apply_json(x)).sum(),
+            Json::Object(m) => m.values_mut().map(|x| self.apply_json(x)).sum(),
+            _ => 0,
         }
     }
 }
@@ -158,14 +158,15 @@ pub fn redact_records(records: &mut [Record], redactor: &Redactor) -> usize {
     records
         .iter_mut()
         .map(|r| {
-            fields(r).into_iter().fold(false, |c, f| {
-                (match f {
+            fields(r)
+                .into_iter()
+                .map(|f| match f {
                     Field::Json(v) => redactor.apply_json(v),
                     Field::Text(s) => redactor.apply(s),
-                }) | c
-            })
+                })
+                .sum::<usize>()
         })
-        .filter(|changed| *changed)
+        .filter(|&n| n > 0)
         .count()
 }
 
@@ -179,15 +180,40 @@ fn item_id(record: &Record) -> Option<&str> {
     }
 }
 
-/// Whether a record names the body in one of its `*_ref` fields.
-fn names(record: &Record, body: &str) -> bool {
+/// The bodies a record names: its `*_ref` fields, or a `content` record's `ref`.
+pub fn bodies(record: &Record) -> impl Iterator<Item = &str> {
     let refs: [Option<&String>; 2] = match record {
         Record::Item(i) => [i.input_ref.as_ref(), i.reference_ref.as_ref()],
         Record::Judgment(j) => [j.output_ref.as_ref(), j.rationale_ref.as_ref()],
         Record::Preference(p) => [p.rationale_ref.as_ref(), None],
-        Record::Label(_) | Record::Run(_) | Record::Content(_) => [None, None],
+        Record::Content(c) => [Some(&c.content_ref), None],
+        Record::Label(_) | Record::Run(_) => [None, None],
     };
-    refs.into_iter().flatten().any(|r| r == body)
+    refs.into_iter().flatten().map(String::as_str)
+}
+
+/// Whether a record other than a `content` record names the body.
+fn names(record: &Record, body: &str) -> bool {
+    !matches!(record, Record::Content(_)) && bodies(record).any(|r| r == body)
+}
+
+/// The redacted copies of `body` that go when it is purged: those no other redaction
+/// in force stores and that are not themselves a body some record names (`named`).
+pub fn unshared_copies<'r>(
+    redactions: impl Iterator<Item = &'r Redaction> + Clone,
+    named: &BTreeSet<&str>,
+    body: &ContentHash,
+) -> Vec<ContentHash> {
+    let shared: BTreeSet<ContentHash> = redactions
+        .clone()
+        .filter(|r| r.original != *body)
+        .map(|r| r.stored)
+        .collect();
+    redactions
+        .filter(|r| r.original == *body)
+        .map(|r| r.stored)
+        .filter(|s| !shared.contains(s) && !named.contains(s.to_string().as_str()))
+        .collect()
 }
 
 /// The items whose records name the body.
@@ -308,6 +334,33 @@ mod tests {
         let (c, _) = store_body(&store, ContentMode::Full, &r, body, "text/plain").unwrap();
         assert_eq!(c.stored, Some(Stored::Full));
         assert_eq!(store.get(&original).unwrap(), body);
+    }
+
+    #[test]
+    fn copies_another_body_uses_are_kept() {
+        let h = |b: &[u8]| ContentHash::blake3(b);
+        let (x, y, z) = (h(b"x"), h(b"y"), h(b"z"));
+        let rs = [
+            Redaction {
+                original: x,
+                stored: y,
+            },
+            Redaction {
+                original: x,
+                stored: z,
+            },
+        ];
+        let named = BTreeSet::from([y.to_string()]);
+        let named: BTreeSet<&str> = named.iter().map(String::as_str).collect();
+        assert_eq!(unshared_copies(rs.iter(), &named, &x), [z]);
+        let shared = [
+            rs[1].clone(),
+            Redaction {
+                original: y,
+                stored: z,
+            },
+        ];
+        assert!(unshared_copies(shared.iter(), &BTreeSet::new(), &x).is_empty());
     }
 
     #[test]

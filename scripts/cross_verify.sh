@@ -10,8 +10,33 @@ dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 export EVALSIG_ACTOR=ci:cross-verify
 
+uv sync --quiet --locked --project "$root/scripts"
 verify() {
-    uv run --quiet --locked --project "$root/scripts" "$root/scripts/verify_store.py" "$@"
+    uv run --quiet --no-sync --project "$root/scripts" "$root/scripts/verify_store.py" "$@"
+}
+
+# Rewrite one file of a copy of the synthetic store with a jq filter and require the
+# verifier to reject the copy with the expected problem.
+expect_rejected() {
+    what=$1 file=$2 filter=$3 flags=$4 expected=$5
+    copy="$dir/tampered"
+    rm -rf "$copy"
+    cp -R "$dir/synthetic/.evalsig" "$copy"
+    target="$copy/$file"
+    # shellcheck disable=SC2086 # $flags is a list of jq options
+    jq $flags "$filter" "$target" >"$dir/rewritten"
+    mv "$dir/rewritten" "$target"
+    if out=$(verify "$copy"); then
+        echo "cross-verify: $what was not detected" >&2
+        exit 1
+    fi
+    case $out in
+    *"$expected"*) ;;
+    *)
+        printf 'cross-verify: %s was rejected for another reason:\n%s\n' "$what" "$out" >&2
+        exit 1
+        ;;
+    esac
 }
 
 "$bin" --project "$dir/synthetic" init >/dev/null
@@ -34,22 +59,14 @@ done
 verify "$dir/synthetic/.evalsig" "$dir/examples/.evalsig" \
     "$root/examples/ledger.jsonl" "$root/examples/ledger-agent.jsonl"
 
-cp -R "$dir/synthetic/.evalsig" "$dir/tampered"
-ledger="$dir/tampered/ledger.jsonl"
-jq -c 'if .kind == "compare" then .summary.verdict = "worsened" else . end' "$ledger" >"$dir/ledger.tmp"
-mv "$dir/ledger.tmp" "$ledger"
-if verify "$dir/tampered" >/dev/null; then
-    echo "cross-verify: a rewritten ledger line was not detected" >&2
-    exit 1
-fi
-
-cp -R "$dir/synthetic/.evalsig" "$dir/tampered-report"
-report=$(find "$dir/tampered-report/reports" -name '*.json' | head -n 1)
-jq '.results.metrics[0].value = 0.5' "$report" >"$dir/report.tmp"
-mv "$dir/report.tmp" "$report"
-if verify "$dir/tampered-report" >/dev/null; then
-    echo "cross-verify: a rewritten report value was not detected" >&2
-    exit 1
-fi
+expect_rejected "a rewritten ledger line" ledger.jsonl \
+    'if .kind == "compare" then .summary.verdict = "worsened" else . end' -c \
+    "line 3: hash does not match the content"
+report=$(cd "$dir/synthetic/.evalsig" &&
+    for f in reports/*.json; do
+        if [ "$(jq -r .schema "$f")" = evalsig.report/1 ]; then echo "$f"; fi
+    done)
+expect_rejected "a rewritten report value" "$report" '.results.metrics[0].value = 0.5' "" \
+    "results hash to"
 
 echo "cross-verify passed: Rust and Python agree on every hash; tampering is detected"

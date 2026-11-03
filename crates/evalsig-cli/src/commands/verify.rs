@@ -13,6 +13,7 @@ use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 use crate::project::{Project, io_error};
+use crate::provenance::{Request, output_hash};
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -60,7 +61,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let saved: Value = serde_json::from_str(&text)
         .map_err(|e| invalid(format!("{}: {e}", args.report.display())))?;
     let prov = &saved["provenance"];
-    let request = &prov["request"];
     let snapshots: Vec<ContentHash> = prov["snapshots"]
         .as_array()
         .ok_or_else(|| invalid("the result names no snapshots"))?
@@ -77,24 +77,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .ok_or_else(|| invalid("the result names no configuration"))?;
     let config = project.stored_config(&config_ref)?;
     let d = data::load_snapshots(&project, snapshots)?;
-    let recomputed = match request["command"].as_str() {
-        Some("report") => {
-            let a: report::Args = serde_json::from_value(request["args"].clone())
-                .map_err(|e| invalid(e.to_string()))?;
-            report::compute(&d, &config, &a)?.results
-        }
-        Some("compare") => {
-            let a: compare::Args = serde_json::from_value(request["args"].clone())
-                .map_err(|e| invalid(e.to_string()))?;
-            compare::compute(&d, &config, &a)?.results
-        }
-        other => return Err(invalid(format!("cannot recompute a result of {other:?}"))),
+    let request: Request = serde_json::from_value(prov["request"].clone())
+        .map_err(|e| invalid(format!("cannot recompute this result: {e}")))?;
+    let recomputed = match &request {
+        Request::Report(a) => report::compute(&d, &config, a)?.results,
+        Request::Compare(a) => compare::compute(&d, &config, a)?.results,
     };
     let mut mismatches = Vec::new();
     differences("", &saved["results"], &recomputed, &mut mismatches);
-    let saved_hash = crate::provenance::output_hash(&saved["results"])?;
-    let recomputed_hash = crate::provenance::output_hash(&recomputed)?;
-    let matched = mismatches.is_empty() && saved_hash == recomputed_hash;
+    // `differences` compares every leaf, so no mismatch means equal results.
+    let matched = mismatches.is_empty();
+    let n_mismatches = mismatches.len();
+    let saved_hash = output_hash(&saved["results"])?;
+    let recomputed_hash = output_hash(&recomputed)?;
     let mut envelope = Envelope::new(
         "evalsig.verify/1",
         json!({
@@ -115,13 +110,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             ),
         });
     }
-    let summary = json!({ "match": matched, "mismatches": envelope.results["mismatches"].as_array().map_or(0, Vec::len) });
     project.record(
         &mut envelope,
         Kind::Verify,
         vec![saved_hash.to_string()],
         vec![recomputed_hash.to_string()],
-        summary.as_object().cloned().unwrap_or_default(),
+        json!({ "match": matched, "mismatches": n_mismatches }),
     )?;
     if matched {
         return Ok(Output::success(envelope));

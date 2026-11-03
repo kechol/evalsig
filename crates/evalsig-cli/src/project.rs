@@ -49,6 +49,17 @@ impl Project {
         self.dir.join("cache").join("evalsig.db")
     }
 
+    /// Saved results, named by their output hash.
+    pub fn reports_dir(&self) -> PathBuf {
+        self.dir.join("reports")
+    }
+
+    /// Recreate the working copy from the data in force.
+    pub fn rebuild_cache(&self, d: &crate::data::Data) -> Result<(), CliError> {
+        evalsig_store::cache::rebuild(&self.cache_path(), &d.records, &d.snapshots)
+            .map_err(CliError::store)
+    }
+
     pub fn ledger_path(&self) -> PathBuf {
         self.dir.join(LEDGER)
     }
@@ -65,8 +76,11 @@ impl Project {
         kind: evalsig_store::ledger::Kind,
         inputs: Vec<String>,
         outputs: Vec<String>,
-        summary: serde_json::Map<String, serde_json::Value>,
+        summary: serde_json::Value,
     ) -> Result<(), CliError> {
+        let serde_json::Value::Object(summary) = summary else {
+            panic!("a ledger summary is a JSON object");
+        };
         let entry = evalsig_store::ledger::append(
             &self.ledger_path(),
             evalsig_store::ledger::LedgerSide::Agent,

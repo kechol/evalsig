@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use evalsig_store::ledger::{self, Kind};
+use evalsig_store::ledger::Kind;
 use evalsig_store::migrate::{self, MIGRATIONS, Migration};
-use evalsig_store::snapshot;
+use evalsig_store::snapshot::{self, Replacement};
 use serde_json::json;
 
 use crate::data;
@@ -28,11 +28,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let store = project.objects();
-    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    let mut rows = Vec::new();
     let mut replaced = Vec::new();
-    for (old, prov) in data::current(&entries)? {
+    for x in data::in_force(&project)? {
+        let old = x.snapshot;
         let lines = migrate::read_lines(&store, &old).map_err(CliError::store)?;
-        let (records, path) = migrate::upgrade(lines, migrations).map_err(|e| {
+        let (mut records, path) = migrate::upgrade(lines, migrations).map_err(|e| {
             CliError::new(
                 "unknown_format",
                 format!("snapshot {old}: {e}"),
@@ -48,37 +49,27 @@ fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Ou
             "to_version": path[path.len() - 1],
         });
         if !args.dry_run {
-            let prov =
-                prov.ok_or_else(|| CliError::store(format!("snapshot {old} has no provenance")))?;
-            let prov = snapshot::read_provenance(&store, &prov).map_err(CliError::store)?;
-            let written = snapshot::write(&store, records, |s| {
-                let mut p = prov;
-                p.snapshot = s;
-                p
-            })
-            .map_err(CliError::store)?;
-            row["to"] = json!(written.snapshot);
-            row["provenance"] = json!(written.provenance);
+            let prov = data::provenance_of(&store, &x)?;
+            let r = snapshot::replace(&store, old, &mut records, prov, |_| {})
+                .map_err(CliError::store)?;
+            row["to"] = json!(r.to);
+            row["provenance"] = json!(r.provenance);
+            replaced.push(r);
         }
-        replaced.push(row);
+        rows.push(row);
     }
     let mut envelope = Envelope::new(
         "evalsig.migrate/1",
-        json!({ "dry_run": args.dry_run, "migrated": replaced }),
+        json!({ "dry_run": args.dry_run, "migrated": rows }),
     );
-    if !args.dry_run && !replaced.is_empty() {
-        let inputs = replaced
-            .iter()
-            .filter_map(|r| r["from"].as_str().map(str::to_owned))
-            .collect();
-        let outputs = replaced
-            .iter()
-            .flat_map(|r| [&r["to"], &r["provenance"]])
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect();
-        let mut summary = serde_json::Map::new();
-        summary.insert("replaced".into(), json!(replaced));
-        project.record(&mut envelope, Kind::Migrate, inputs, outputs, summary)?;
+    if !replaced.is_empty() {
+        project.record(
+            &mut envelope,
+            Kind::Migrate,
+            replaced.iter().map(|r| r.from.to_string()).collect(),
+            Replacement::outputs(&replaced),
+            json!({ "replaced": rows }),
+        )?;
     }
     Ok(Output::success(envelope))
 }
@@ -87,7 +78,7 @@ fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Ou
 mod tests {
     use evalsig_core::records::RECORDS_VERSION;
     use evalsig_store::canonical::to_canonical_bytes;
-    use evalsig_store::ledger::{LedgerSide, NewEntry};
+    use evalsig_store::ledger::{self, LedgerSide, NewEntry};
     use evalsig_store::snapshot::{PROVENANCE_SCHEMA, Provenance};
     use serde_json::Value;
 

@@ -17,6 +17,15 @@ pub enum SideArg {
     Referee,
 }
 
+impl From<SideArg> for LedgerSide {
+    fn from(s: SideArg) -> Self {
+        match s {
+            SideArg::Agent => LedgerSide::Agent,
+            SideArg::Referee => LedgerSide::Referee,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum LedgerCommand {
     /// List the entries of a ledger.
@@ -47,9 +56,15 @@ pub enum LedgerCommand {
     },
 }
 
-fn path_of(root: &Path, ledger: &Option<PathBuf>) -> Result<PathBuf, CliError> {
+/// The ledger to read: a named file, which must exist, or the project's own, which
+/// is empty until the first entry.
+fn path_of(root: &Path, ledger: Option<&Path>) -> Result<PathBuf, CliError> {
     match ledger {
-        Some(p) => Ok(p.clone()),
+        Some(p) if !p.is_file() => Err(CliError::usage(format!(
+            "no ledger file at {}",
+            p.display()
+        ))),
+        Some(p) => Ok(p.to_path_buf()),
         None => Ok(Project::open(root)?.ledger_path()),
     }
 }
@@ -57,7 +72,7 @@ fn path_of(root: &Path, ledger: &Option<PathBuf>) -> Result<PathBuf, CliError> {
 pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, CliError> {
     match cmd {
         LedgerCommand::Show { ledger, last } => {
-            let path = path_of(root, ledger)?;
+            let path = path_of(root, ledger.as_deref())?;
             let entries = ledger::read(&path).map_err(CliError::store)?;
             let skip = last.map_or(0, |n| entries.len().saturating_sub(n));
             let rows: Vec<_> = entries
@@ -80,17 +95,10 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, CliError> {
             side,
             anchor,
         } => {
-            let path = path_of(root, ledger)?;
+            let path = path_of(root, ledger.as_deref())?;
             let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, &e))?;
-            let side = side.map(|s| match s {
-                SideArg::Agent => LedgerSide::Agent,
-                SideArg::Referee => LedgerSide::Referee,
-            });
-            let mut problems: Vec<String> = ledger::verify(&text, side)
-                .iter()
-                .map(Problem::to_string)
-                .collect();
-            let entries = ledger::read(&path).map_err(CliError::store)?;
+            let (entries, found) = ledger::check(&text, side.map(LedgerSide::from));
+            let mut problems: Vec<String> = found.iter().map(Problem::to_string).collect();
             if let Some(a) = anchor
                 && !entries.iter().any(|e| &e.hash == a)
             {
@@ -125,7 +133,7 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, CliError> {
             })
         }
         LedgerCommand::Anchor { ledger } => {
-            let path = path_of(root, ledger)?;
+            let path = path_of(root, ledger.as_deref())?;
             let entries = ledger::read(&path).map_err(CliError::store)?;
             Ok(Output::success(Envelope::new(
                 "evalsig.ledger.anchor/1",

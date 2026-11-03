@@ -209,7 +209,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .map(|a| a.name())
         .collect::<Vec<_>>()
         .join("+");
-    let written = snapshot::write(&project.objects(), records, |snapshot| Provenance {
+    let written = snapshot::write(&project.objects(), &mut records, |snapshot| Provenance {
         schema: PROVENANCE_SCHEMA.into(),
         snapshot,
         sources: sources.clone(),
@@ -223,6 +223,22 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         redactions: vec![],
     })
     .map_err(CliError::store)?;
+    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    if snapshot::purged(&entries)
+        .map_err(CliError::store)?
+        .contains(&written.snapshot)
+    {
+        // Purge deleted this snapshot, so the object was just written again.
+        project
+            .objects()
+            .remove(&written.snapshot)
+            .map_err(CliError::store)?;
+        return Err(CliError::new(
+            "purged_records",
+            "these records were purged from the project; remove the purged text from the source before importing it again",
+            Exit::Rejected,
+        ));
+    }
     let mut summary = serde_json::Map::new();
     summary.insert("adapter".into(), json!(adapter));
     if let Some(n) = redacted {

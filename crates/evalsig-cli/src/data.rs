@@ -8,8 +8,10 @@ use evalsig_core::labels::LabelSet;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run};
 use evalsig_core::time::Instant;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind};
-use evalsig_store::{rows, snapshot};
+use evalsig_store::ledger;
+use evalsig_store::objects::ObjectStore;
+use evalsig_store::rows;
+use evalsig_store::snapshot::{self, InForce, Provenance};
 
 use crate::error::CliError;
 use crate::exit::Exit;
@@ -21,46 +23,22 @@ pub struct Data {
 }
 
 pub fn load(project: &Project) -> Result<Data, CliError> {
-    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
-    let snapshots = current(&entries)?.into_iter().map(|(s, _)| s).collect();
+    let snapshots = in_force(project)?.into_iter().map(|x| x.snapshot).collect();
     load_snapshots(project, snapshots)
 }
 
-fn hash(v: Option<&str>, e: &ledger::Entry) -> Result<ContentHash, CliError> {
-    v.and_then(|o| o.parse().ok())
-        .ok_or_else(|| CliError::store(format!("ledger line {} names no snapshot", e.seq)))
+/// The snapshots in force, as the project's ledger names them.
+pub fn in_force(project: &Project) -> Result<Vec<InForce>, CliError> {
+    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    snapshot::in_force(&entries).map_err(CliError::store)
 }
 
-/// The snapshots in force with their provenance objects: those named by `import`
-/// lines in import order, each once (its last import), and in place of each one a
-/// `purge` or `migrate` line replaced, the replacement.
-pub fn current(
-    entries: &[ledger::Entry],
-) -> Result<Vec<(ContentHash, Option<ContentHash>)>, CliError> {
-    let mut snapshots: Vec<(ContentHash, Option<ContentHash>)> = Vec::new();
-    for e in entries {
-        match e.kind {
-            Kind::Import => {
-                let s = hash(e.outputs.first().map(String::as_str), e)?;
-                let p = e.outputs.get(1).and_then(|o| o.parse().ok());
-                snapshots.retain(|(x, _)| *x != s);
-                snapshots.push((s, p));
-            }
-            Kind::Purge | Kind::Migrate => {
-                let replaced = e.summary.get("replaced").and_then(|v| v.as_array());
-                for r in replaced.into_iter().flatten() {
-                    let from = hash(r["from"].as_str(), e)?;
-                    let to = hash(r["to"].as_str(), e)?;
-                    let p = r["provenance"].as_str().and_then(|o| o.parse().ok());
-                    for slot in snapshots.iter_mut().filter(|(x, _)| *x == from) {
-                        *slot = (to, p);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(snapshots)
+/// The provenance object of a snapshot in force.
+pub fn provenance_of(store: &ObjectStore, x: &InForce) -> Result<Provenance, CliError> {
+    let p = x
+        .provenance
+        .ok_or_else(|| CliError::store(format!("snapshot {} has no provenance", x.snapshot)))?;
+    snapshot::read_provenance(store, &p).map_err(CliError::store)
 }
 
 /// The data of exactly these snapshots, layered in the given order.
@@ -70,10 +48,15 @@ pub fn load_snapshots(project: &Project, snapshots: Vec<ContentHash>) -> Result<
         .iter()
         .map(|h| snapshot::read(&store, h).map_err(CliError::store))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Data {
+    Ok(layered(snapshots, read))
+}
+
+/// Data from snapshots already read, in the same order.
+pub fn layered(snapshots: Vec<ContentHash>, read: Vec<Vec<Record>>) -> Data {
+    Data {
         records: rows::layer(read),
         snapshots,
-    })
+    }
 }
 
 impl Data {

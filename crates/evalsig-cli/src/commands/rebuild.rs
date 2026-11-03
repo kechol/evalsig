@@ -13,8 +13,8 @@ use crate::project::Project;
 pub fn run(root: &Path) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let d = data::load(&project)?;
+    project.rebuild_cache(&d)?;
     let db = project.cache_path();
-    cache::rebuild(&db, &d.records, &d.snapshots).map_err(CliError::store)?;
     let conn = cache::open(&db).map_err(CliError::store)?;
     let counts: serde_json::Map<String, serde_json::Value> = cache::counts(&conn)
         .map_err(CliError::store)?
