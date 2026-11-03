@@ -23,7 +23,7 @@ use evalsig_store::ledger::Kind;
 use evalsig_store::seal;
 use serde_json::{Value, json};
 
-use crate::commands::approve;
+use crate::commands::{approve, gate_serve};
 use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
@@ -33,16 +33,37 @@ use crate::referee::Referee;
 use crate::validate::RecordValidator;
 
 #[derive(Debug, Clone, clap::Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 pub struct Args {
+    #[command(subcommand)]
+    pub action: Option<Action>,
+    #[command(flatten)]
+    pub submission: Submission,
+    /// The referee's home (default: EVALSIG_REFEREE).
+    #[arg(long, value_name = "DIR")]
+    pub referee: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum Action {
+    /// As the referee: answer submissions on a Unix socket in the referee home and,
+    /// with --http, on token HTTP at 127.0.0.1.
+    Serve(gate_serve::ServeArgs),
+    /// Submit a candidate to a running `gate serve` and print its answer.
+    Submit(gate_serve::SubmitArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct Submission {
     /// The approved conditions, by hash.
-    #[arg(long, value_name = "HASH")]
-    pub approved: String,
+    #[arg(long, value_name = "HASH", required = true)]
+    pub approved: Option<String>,
     /// The candidate's run ID.
-    #[arg(long, value_name = "RUN")]
-    pub candidate: String,
+    #[arg(long, value_name = "RUN", required = true)]
+    pub candidate: Option<String>,
     /// The candidate's records (records/1 JSONL): its run and judgments.
-    #[arg(long, value_name = "FILE")]
-    pub records: PathBuf,
+    #[arg(long, value_name = "FILE", required = true)]
+    pub records: Option<PathBuf>,
     /// The hash of the mapping or converter that made the records, as the candidate's
     /// side reports it.
     #[arg(long, value_name = "HASH")]
@@ -50,9 +71,58 @@ pub struct Args {
     /// The agent-side ledger, whose head is copied into the gate line.
     #[arg(long, value_name = "FILE")]
     pub agent_ledger: Option<PathBuf>,
-    /// The referee's home (default: EVALSIG_REFEREE).
-    #[arg(long, value_name = "DIR")]
+}
+
+/// One submission as the referee judges it.
+#[derive(Debug, Clone)]
+pub struct Request {
+    pub approved: String,
+    pub candidate: String,
+    pub records: PathBuf,
+    pub mapping_hash: Option<String>,
+    pub agent_ledger_head: Option<String>,
     pub referee: Option<PathBuf>,
+}
+
+impl Submission {
+    /// The fields clap requires when no subcommand is given.
+    pub fn parts(&self) -> (&str, &str, &Path) {
+        (
+            self.approved.as_deref().expect("required by clap"),
+            self.candidate.as_deref().expect("required by clap"),
+            self.records.as_deref().expect("required by clap"),
+        )
+    }
+
+    /// The head of the agent-side ledger, if one was named and can be read.
+    pub fn agent_ledger_head(&self) -> Option<String> {
+        let p = self.agent_ledger.as_ref()?;
+        evalsig_store::ledger::read(p)
+            .ok()
+            .and_then(|e| e.last().map(|e| e.hash.clone()))
+    }
+}
+
+pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    match &args.action {
+        Some(Action::Serve(a)) => gate_serve::serve(root, a),
+        Some(Action::Submit(a)) => gate_serve::submit(a),
+        None => {
+            let s = &args.submission;
+            let (approved, candidate, records) = s.parts();
+            judge_request(
+                root,
+                &Request {
+                    approved: approved.to_owned(),
+                    candidate: candidate.to_owned(),
+                    records: records.to_owned(),
+                    mapping_hash: s.mapping_hash.clone(),
+                    agent_ledger_head: s.agent_ledger_head(),
+                    referee: args.referee.clone(),
+                },
+            )
+        }
+    }
 }
 
 fn rejected(code: &'static str, message: impl Into<String>) -> CliError {
@@ -70,7 +140,9 @@ struct Answer {
     conditions: Vec<Value>,
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+/// Judge one submission: the checks, the budget, the conditions, the ledger lines and
+/// the result file.
+pub fn judge_request(root: &Path, args: &Request) -> Result<Output, CliError> {
     let referee = Referee::open(args.referee.as_deref())?;
     let approved = approve::load(&referee, &args.approved)?;
     let r = &approved["resolved"];
@@ -213,12 +285,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     )?;
     let envelope = answer_envelope(&args.approved, &args.candidate, answer, (budget, used));
     let seal_void = referee.seal_void(&project);
-    let head = match &args.agent_ledger {
-        Some(p) => evalsig_store::ledger::read(p)
-            .ok()
-            .and_then(|e| e.last().map(|e| e.hash.clone())),
-        None => None,
-    };
     referee.record(
         Kind::Gate,
         vec![args.approved.clone(), candidate_hash.clone()],
@@ -228,7 +294,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "candidate": candidate_hash,
             "verdict": envelope.verdict.as_ref().map(|v| v.code),
             "conditions": envelope.results["conditions"].as_array().map(|c| c.iter().map(|x| x["passed"].clone()).collect::<Vec<_>>()),
-            "agent_ledger_head": head,
+            "agent_ledger_head": args.agent_ledger_head,
             "seal_void": seal_void,
             "withheld_warnings": recorded,
         }),
@@ -301,7 +367,7 @@ fn stopped(code: VerdictCode, text: String) -> Answer {
 #[allow(clippy::too_many_arguments)]
 fn judge(
     approved: &Value,
-    args: &Args,
+    args: &Request,
     referee: &Referee,
     d: &data::Data,
     run: &Run,
@@ -489,7 +555,7 @@ fn judge(
 
 /// The resolved settings, every missing value the worst (SPEC §8.3), and a seed
 /// derived from the approval and the candidate.
-fn settings(r: &Value, args: &Args) -> Result<Settings, CliError> {
+fn settings(r: &Value, args: &Request) -> Result<Settings, CliError> {
     let rule = |k: &str| -> Option<Rule> { serde_json::from_value(r[k].clone()).ok() };
     let seed_bytes =
         ContentHash::blake3(format!("{}{}", args.approved, args.candidate).as_bytes()).hex();

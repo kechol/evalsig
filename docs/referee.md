@@ -80,8 +80,28 @@ Cut and seal the holdout on the referee side before the agent sees the data:
 |---|---|---|---|
 | Local | `evalsig gate serve` under a separate OS user that owns the key, the referee ledger and `approved/` | `evalsig gate submit` over a Unix socket, or token HTTP on 127.0.0.1 | The agent's user cannot read the referee user's files |
 | CI | A workflow job with the key in an environment-protected secret runs `evalsig gate` and posts the result | A pull request carrying the candidate's records | The workflow and `approved/` come from the base branch (`pull_request_target` with a base-ref checkout, or a required check in another repository); the referee ledger and state live where pull requests cannot write (a protected branch or an outside store); fork pull requests get no secret. See `examples/ci/` (T-090) |
-| Remote | `gate serve` on another machine, behind HTTPS | `gate submit` with a token | As local, plus the transport's own authentication |
+| Remote | `gate serve --http <port>` on another machine | `gate submit --url` with a token, through a tunnel to the referee's 127.0.0.1 port (for example `ssh -L`) | As local, plus the tunnel's own authentication |
 
 Running `gate` with the agent's own privileges, key included, makes the seal
 meaningless; `gate` then warns that the seal is void and records it in the
 ledger.
+
+## Serving submissions
+
+- `evalsig gate serve --referee <home> [--http <port>]` answers one submission
+  at a time and prints where it listens as one JSON line. It always listens on
+  `gate.sock` in the home (mode 0600); with `--http` it also listens on
+  127.0.0.1 and creates `token` in the home (mode 0600) on first use. Port 0
+  picks a free one.
+- To let the agent's user reach the socket and nothing else, give the home
+  and the socket to a group the agent belongs to: `chgrp <group> <home>
+  <home>/gate.sock`, `chmod 0710 <home>` and `chmod 0660 <home>/gate.sock`.
+  The referee keeps its identity, token and ledger at 0600 and its
+  directories at 0700, so the group reaches the socket and nothing else.
+- `evalsig gate submit --approved <hash> --candidate <run> --records <file>`
+  with `--socket <home>/gate.sock`, or with `--url http://127.0.0.1:<port>`
+  and `--token-file <file>` (or `EVALSIG_GATE_TOKEN`), prints the same answer
+  `gate` gives and exits with its code. `--agent-ledger` sends the head of
+  the agent-side ledger, which the referee copies into its `gate` line.
+- `scripts/gate_two_users.sh` runs this between two OS users;
+  `scripts/gate_serve_docker.sh` runs it in a container.

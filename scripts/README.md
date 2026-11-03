@@ -19,6 +19,8 @@ uv run --project scripts scripts/<script>.py
 | `verify_store.py` | Checks a `.evalsig/` directory or ledger file without evalsig: ledger chains, object names and canonical form, saved report hashes |
 | `cross_verify.sh` | Builds stores with the Rust binary, checks them with `verify_store.py` and confirms it rejects tampered copies (CI job `cross-verify`) |
 | `smoke_test.sh` | End-to-end smoke test of the binary over the examples |
+| `gate_two_users.sh` | Runs `gate serve` and `gate submit` between the OS users `referee` and `agent` on a disposable Linux machine (CI job `gate-two-users`) |
+| `gate_serve_docker.sh` | Builds evalsig in a Rust container and runs `gate_two_users.sh` there |
 | `sim_latent_reference.py` | Simulates the bias and interval coverage of the `soft` and `latent` references (D-016) |
 | `sim_ladder.py` | Simulates the false pass rate under an adaptive agent and the share of real improvements that pass, by holdout size, budget and Ladder step (D-015) |
 

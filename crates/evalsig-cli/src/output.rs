@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 
 use clap::ValueEnum;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
 use crate::exit::Exit;
@@ -22,7 +22,7 @@ pub enum Format {
 
 /// The conclusion of an output. The set is fixed within a schema version; agents
 /// quote unknown codes without interpreting them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerdictCode {
     Pass,
@@ -92,25 +92,26 @@ impl From<evalsig_core::paired::Verdict> for VerdictCode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verdict {
     pub code: VerdictCode,
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Warning {
     pub code: String,
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Next {
     pub command: String,
     pub why: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Provenance {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub snapshots: Vec<String>,
@@ -140,14 +141,14 @@ impl Provenance {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Truncated {
     pub rows_omitted: u64,
     pub hash: String,
 }
 
 /// The envelope. `ok` says the command ran to the end, not whether a gate passed.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
     pub schema: String,
     pub ok: bool,

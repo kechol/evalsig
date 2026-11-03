@@ -25,6 +25,15 @@ pub fn generate() -> (String, String) {
     )
 }
 
+/// 32 random bytes as hex, for a bearer token: the BLAKE3 hash of a fresh X25519
+/// secret, which age draws from the operating system's generator.
+pub fn random_token() -> String {
+    let id = age::x25519::Identity::generate();
+    blake3::hash(id.to_string().expose_secret().as_bytes())
+        .to_hex()
+        .to_string()
+}
+
 /// The secret key line of an identity file: the first line that is not a comment.
 fn identity_line(text: &str) -> Option<&str> {
     text.lines()

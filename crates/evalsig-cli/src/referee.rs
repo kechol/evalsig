@@ -17,7 +17,14 @@ use crate::project::{actor, io_error, now};
 pub const ENV: &str = "EVALSIG_REFEREE";
 const IDENTITY: &str = "identity.txt";
 const RECIPIENT: &str = "recipient.txt";
-const SUBDIRS: [&str; 5] = ["holdouts", "sealed", "approved", "results", "state"];
+const SUBDIRS: [&str; 6] = [
+    "holdouts",
+    "sealed",
+    "approved",
+    "results",
+    "state",
+    "exclusions",
+];
 
 /// An opened referee home.
 #[derive(Debug, Clone)]
@@ -31,16 +38,33 @@ fn referee_only(message: impl Into<String>) -> CliError {
     )
 }
 
+/// Only the referee's user may use `path`: files 0600, directories 0700. A group the
+/// agent belongs to may then traverse the home to reach `gate.sock` and nothing else.
 #[cfg(unix)]
-fn private(path: &Path) -> Result<(), CliError> {
+pub fn private(path: &Path) -> Result<(), CliError> {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    let mode = if path.is_dir() { 0o700 } else { 0o600 };
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
         .map_err(|e| io_error(path, &e))
 }
 
 #[cfg(not(unix))]
-fn private(_: &Path) -> Result<(), CliError> {
+pub fn private(_: &Path) -> Result<(), CliError> {
     Ok(())
+}
+
+/// Create `path` holding `bytes`, readable by the referee's user only from the
+/// moment it exists.
+pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
+        .open(path)
+        .and_then(|mut f| f.write_all(bytes))
+        .map_err(|e| io_error(path, &e))
 }
 
 /// `evalsig referee init <dir>`: a new home with a fresh identity.
@@ -51,15 +75,19 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
             dir.display()
         )));
     }
+    std::fs::create_dir_all(dir).map_err(|e| io_error(dir, &e))?;
+    private(dir)?;
     for sub in SUBDIRS {
         let p = dir.join(sub);
         std::fs::create_dir_all(&p).map_err(|e| io_error(&p, &e))?;
+        private(&p)?;
     }
     let (secret, recipient) = seal::generate();
     let id = dir.join(IDENTITY);
-    std::fs::write(&id, format!("# public key: {recipient}\n{secret}\n"))
-        .map_err(|e| io_error(&id, &e))?;
-    private(&id)?;
+    write_private(
+        &id,
+        format!("# public key: {recipient}\n{secret}\n").as_bytes(),
+    )?;
     let r = dir.join(RECIPIENT);
     std::fs::write(&r, format!("{recipient}\n")).map_err(|e| io_error(&r, &e))?;
     Ok(Output::success(Envelope::new(
@@ -199,6 +227,7 @@ impl Referee {
             },
         )
         .map_err(CliError::store)
+        .and_then(|e| private(&self.ledger_path()).map(|()| e))
     }
 }
 
