@@ -254,6 +254,39 @@ def cost_cases():
     return out
 
 
+def _katz(a, n1, b, n0, z):
+    aa, bb, m1, m0 = (a, b, n1, n0) if a and b else (a + 0.5, b + 0.5, n1 + 1, n0 + 1)
+    lr = (aa / m1) / (bb / m0)
+    se = math.sqrt(1 / aa - 1 / m1 + 1 / bb - 1 / m0)
+    return lr, se, (lr * math.exp(-z * se), lr * math.exp(z * se))
+
+
+def lr_bh_cases():
+    """Several features at once: p-values of log LR = 0 by the Katz SE, Benjamini-Hochberg
+    rejections R at alpha, and intervals at the FCR-adjusted level 1 - max(R, 1)*alpha/m
+    (Benjamini & Yekutieli 2005), beside the unadjusted ones."""
+    feats = [(12, 50, 3, 50), (30, 40, 30, 60), (7, 20, 0, 80), (20, 50, 18, 50)]
+    alpha, m = 0.05, len(feats)
+    ps = []
+    for a, n1, b, n0 in feats:
+        lr, se, _ = _katz(a, n1, b, n0, Z95)
+        ps.append(2 * stats.norm.sf(abs(math.log(lr)) / se))
+    order = sorted(range(m), key=lambda i: ps[i])
+    rejected = 0
+    for rank, i in enumerate(order, 1):
+        if ps[i] <= rank * alpha / m:
+            rejected = rank
+    level = 1 - max(rejected, 1) * alpha / m
+    z_adj = stats.norm.ppf(1 - (1 - level) / 2)
+    adjusted = [list(map(r, _katz(a, n1, b, n0, z_adj)[2])) for a, n1, b, n0 in feats]
+    return [{
+        "input": {"features": [list(f) for f in feats], "alpha": alpha},
+        "source": "closed (Katz log intervals; BH step-up; Benjamini & Yekutieli 2005 FCR level)",
+        "expected": {"p_values": [r(p) for p in ps], "rejected": rejected, "adjusted_level": r(level),
+                     "adjusted95": adjusted},
+    }]
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -535,6 +568,7 @@ def main():
             "calibration": calibration_cases(),
             "cost": cost_cases(),
             "feature_likelihood_ratio": lr_cases(),
+            "feature_likelihood_ratio_bh": lr_bh_cases(),
             "mcnemar": mcnemar_cases(),
             "agreement": agreement_cases(),
             "agreement_prevalence_robust": agreement_extra_cases(),
