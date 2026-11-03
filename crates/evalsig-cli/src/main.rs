@@ -60,6 +60,8 @@ enum Command {
         #[arg(long)]
         run: Option<String>,
     },
+    /// Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere.
+    Export(commands::export::Args),
     /// Read records into a snapshot and record the import in the ledger.
     Import(commands::import::Args),
     /// List the imported items.
@@ -138,6 +140,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Capabilities { ref run } => {
             commands::list::capabilities(&cli.project, run.as_deref())
         }
+        Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
