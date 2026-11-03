@@ -6,6 +6,7 @@ pub mod checks;
 pub mod compare;
 pub mod config;
 pub mod interval;
+pub mod kcurve;
 pub mod labels;
 pub mod missing;
 pub mod numeric;

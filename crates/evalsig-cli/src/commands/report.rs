@@ -5,8 +5,8 @@ use std::path::Path;
 use evalsig_core::checks::Finding;
 use evalsig_core::config::Config;
 use evalsig_core::records::Label;
-use evalsig_core::report;
 use evalsig_core::validity;
+use evalsig_core::{kcurve, report};
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
@@ -30,6 +30,11 @@ pub struct Args {
     /// Include one row per item.
     #[arg(long)]
     pub items: bool,
+    /// Also report majority@k, any@k and all@k for k = 1 … the fewest replicates of
+    /// any item, with the expected cost per item.
+    #[arg(long)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub k_curve: bool,
     #[command(flatten)]
     pub checks: DatasetArgs,
 }
@@ -50,8 +55,15 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     settings.prevalence = config.cost.as_ref().map(|c| c.prevalence);
     settings.by = args.by.clone();
     settings.items = args.items;
-    let report = report::build(run, &d.judgments(&args.run), &d.items(), &labels, &settings)
-        .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
+    let judgments = d.judgments(&args.run);
+    let items = d.items();
+    let failed = |e: report::ReportError| CliError::new("report", e.to_string(), Exit::Rejected);
+    let report = report::build(run, &judgments, &items, &labels, &settings).map_err(failed)?;
+    let mut results = serde_json::to_value(&report).expect("report serializes");
+    if args.k_curve {
+        let curve = kcurve::build(run, &judgments, &items, &labels, &settings).map_err(failed)?;
+        results["k_curve"] = serde_json::to_value(curve).expect("curves serialize");
+    }
     let findings = validity::dataset(
         &d.records,
         &checks::overrides(args.checks, ArmArgs::default()),
@@ -64,7 +76,7 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
         });
     }
     Ok(Computed {
-        results: round_numbers(serde_json::to_value(&report).expect("report serializes")),
+        results: round_numbers(results),
         findings,
         warnings,
         seed: settings.seed,
