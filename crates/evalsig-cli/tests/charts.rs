@@ -7,7 +7,7 @@ use evalsig_dashboard::svg;
 use serde_json::Value;
 
 mod common;
-use common::evalsig_json;
+use common::{evalsig_json, jsonl, project};
 
 const RECORDS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/records.jsonl");
 const CONFIG: &str = "[project]\nname = \"example\"\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n[stats]\nseed = 20261029\n";
@@ -123,5 +123,35 @@ fn every_drawn_value_is_the_cli_value() {
         for (k, v) in c["transition"].as_object().unwrap() {
             assert!(table.contains(&format!("data-key=\"{k}\">{v}<")), "{k}");
         }
+    }
+}
+
+#[test]
+fn the_reliability_diagram_shows_the_cli_calibration() {
+    // A score run with human labels: the report carries ROC and calibration.
+    let mut rows = vec![
+        serde_json::json!({"record": "run", "run_id": "s", "system": {"id": "s", "version": "1"}, "output_type": "score", "value_semantics": "decision"}),
+    ];
+    for i in 0..80 {
+        let positive = i % 5 < 2;
+        let score = if positive { 0.55 } else { 0.3 } + f64::from(i % 7) * 0.05;
+        rows.push(serde_json::json!({"record": "item", "item_id": format!("i{i}")}));
+        rows.push(serde_json::json!({"record": "label", "item_id": format!("i{i}"), "rater_id": "rater:a", "source": "human", "value": positive, "version": 1}));
+        rows.push(serde_json::json!({"record": "judgment", "item_id": format!("i{i}"), "run_id": "s", "gen_replicate": 0, "output_type": "score", "value": score}));
+    }
+    let p = project(&jsonl(&rows));
+    let report = out(p.path(), &["report", "s", "--threshold", "0.5"]);
+    let calibration = &report["results"]["calibration"];
+    let bins = calibration["bins"].as_array().unwrap();
+    assert!(!bins.is_empty());
+    let drawn = svg::reliability(calibration);
+    for b in bins {
+        assert!(
+            drawn.contains(&format!(
+                "data-x=\"{}\" data-y=\"{}\"",
+                b["mean_score"], b["positive_share"]
+            )),
+            "{b}"
+        );
     }
 }

@@ -129,6 +129,15 @@ fn every_screen_renders_for_the_examples() {
                 .stdout,
         )
         .unwrap();
+        // The rater agreement as the CLI computes it.
+        let agree: Value = serde_json::from_slice(
+            &evalsig_json(p)
+                .args(["agree", "--run", &run])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
         let before = std::fs::read_to_string(p.join(".evalsig/ledger.jsonl")).unwrap();
         for (screen, expect) in [
             ("", "<h1>Overview</h1>"),
@@ -160,6 +169,31 @@ fn every_screen_renders_for_the_examples() {
                 "{value}: {page}"
             );
         }
+        // The reference screen shows the same-rule and pair values agree prints.
+        let page = get(d.port, &format!("{base}reference?run={run}"), &host);
+        let a = &agree["results"];
+        // The screen writes a missing value as a dash.
+        let shown = |v: &Value| {
+            if v.is_null() {
+                "<td>–</td>".to_owned()
+            } else {
+                format!("<td class=\"n\">{v}</td>")
+            }
+        };
+        for x in a["same_rule"].as_array().unwrap() {
+            assert!(page.contains(&shown(&x["mean_kappa"])), "{x}: {page}");
+        }
+        for x in a["pairs"].as_array().unwrap() {
+            assert!(page.contains(&shown(&x["values"]["cohen_kappa"])), "{x}");
+        }
+        assert!(
+            a["same_rule"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|x| x["who"] == run.as_str()),
+            "{a}"
+        );
         // The comparison shows the CLI's verdict and the overview its intervals.
         let page = get(d.port, &format!("{base}compare"), &host);
         assert!(page.contains("class=\"verdict\""), "{page}");

@@ -415,30 +415,91 @@ fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErr
     })
 }
 
-fn reference(root: &Path) -> Result<Screen, CliError> {
-    let out = agree::run(root, &parse::<agree::Args>(&[])?);
-    let mut body = String::new();
-    let warnings = match out {
+fn reference(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+    let runs = run_ids(root)?;
+    // The system's row joins the human ones when a run is chosen.
+    let run = runs
+        .first()
+        .map(|first| chosen(q, "run", &runs, first).to_owned());
+    let mut words = vec![];
+    if let Some(r) = &run {
+        words.extend(["--run", r.as_str()]);
+    }
+    let mut body = picker("reference", &runs, &[("run", run.as_deref().unwrap_or(""))]);
+    let warnings = match agree::run(root, &parse::<agree::Args>(&words)?) {
         Ok(o) => {
             let r = &o.envelope.results;
-            for (key, title) in [
-                ("pairs", "Rater pairs"),
-                ("raters", "Raters"),
-                ("design", "Design"),
-            ] {
-                if let Some(rows) = r[key].as_array() {
-                    let t: Vec<Vec<String>> = rows
-                        .iter()
-                        .map(|x| vec![serde_json::to_string(x).unwrap_or_default()])
-                        .collect();
-                    body.push_str(&format!("<h2>{title}</h2>"));
-                    body.push_str(&html::table(&[title], &t));
-                }
-            }
-            if body.is_empty() {
+            // Everyone against the human raters under the same rule (leave-one-out).
+            let same: Vec<Vec<String>> = r["same_rule"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|x| {
+                    vec![
+                        cell(&x["who"]),
+                        cell(&x["kind"]),
+                        cell(&x["mean_kappa"]),
+                        cell(&x["humans_compared"]),
+                    ]
+                })
+                .collect();
+            body.push_str("<h2>Same rule: each rater, grader or run against the humans</h2>");
+            body.push_str(&html::table(
+                &["Who", "Kind", "Mean κ", "Humans compared"],
+                &same,
+            ));
+            let pairs: Vec<Vec<String>> = r["pairs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|x| {
+                    let v = &x["values"];
+                    vec![
+                        format!("{} – {}", cell(&x["raters"][0]), cell(&x["raters"][1])),
+                        cell(&x["items"]),
+                        cell(&v["cohen_kappa"]),
+                        cell(&v["gwet_ac1"]),
+                        cell(&v["positive_agreement"]),
+                        cell(&v["negative_agreement"]),
+                    ]
+                })
+                .collect();
+            body.push_str("<h2>Rater pairs</h2>");
+            body.push_str(&html::table(
+                &[
+                    "Pair",
+                    "Items",
+                    "Cohen κ",
+                    "Gwet AC1",
+                    "Positive agreement",
+                    "Negative agreement",
+                ],
+                &pairs,
+            ));
+            let variability: Vec<Vec<String>> = r["variability"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(task, v)| {
+                    vec![
+                        task.clone(),
+                        cell(&v["within_rate"]),
+                        cell(&v["within_rater"]["pairs"]),
+                        cell(&v["between_rate"]),
+                        cell(&v["between_raters"]["pairs"]),
+                    ]
+                })
+                .collect();
+            body.push_str("<h2>Rater variability</h2>");
+            body.push_str(&html::table(
+                &["Task", "Within a rater", "Pairs", "Between raters", "Pairs"],
+                &variability,
+            ));
+            if !r["ceiling"].is_null() {
                 body.push_str(&format!(
-                    "<pre>{}</pre>",
-                    esc(&serde_json::to_string_pretty(r).unwrap_or_default())
+                    "<p>Ceiling with a soft reference: <span data-ceiling=\"{}\">{}</span></p>",
+                    esc(&cell(&r["ceiling"])),
+                    esc(&cell(&r["ceiling"]))
                 ));
             }
             warnings_of(&o.envelope.warnings)
@@ -451,6 +512,8 @@ fn reference(root: &Path) -> Result<Screen, CliError> {
     body.push_str(&how_to_read(&[
         "rater_design",
         "same_rule",
+        "within_rater",
+        "ceiling",
         "alt_test",
         "reference_agreement",
     ]));
@@ -506,7 +569,7 @@ fn route(root: &Path, path: &str) -> Page {
         "compare" => comparison(root, &q),
         "trend" => trend_screen(root, &q),
         "reproducibility" => reproducibility(root, &q),
-        "reference" => reference(root),
+        "reference" => reference(root, &q),
         "discrimination" => discrimination(root, &q),
         _ => return Page::not_found(),
     };
