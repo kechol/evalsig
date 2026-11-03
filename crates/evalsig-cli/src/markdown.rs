@@ -201,6 +201,22 @@ fn report(e: &Envelope) -> String {
             r["n_insufficient_replicates"]
         );
     }
+    if let Some(points) = r["k_curve"]["points"].as_array() {
+        s.push_str("\n| Rule | k | Metric | Value | Interval |\n|---|---:|---|---:|---|\n");
+        for p in points {
+            for m in p["metrics"].as_array().into_iter().flatten() {
+                let _ = writeln!(
+                    s,
+                    "| {} | {} | {} | {} | {} |",
+                    inline(p["rule"].as_str().unwrap_or("?")),
+                    p["k"],
+                    inline(m["metric"].as_str().unwrap_or("?")),
+                    num(&m["value"]),
+                    interval_cell(m, num),
+                );
+            }
+        }
+    }
     if let Some(items) = r["items"].as_array() {
         let _ = writeln!(
             s,
@@ -238,6 +254,38 @@ fn compare_table(s: &mut String, c: &Value) {
             count(&t["cleared_false_alarms"]),
         );
     }
+    if let Some(seq) = c["sequential"]["metrics"].as_array() {
+        s.push_str("\n| Metric | Items added | Difference | Confidence sequence | Verdict |\n|---|---:|---:|---|---|\n");
+        for m in seq {
+            let _ = writeln!(
+                s,
+                "| {} | {} | {} | {} | {} |",
+                inline(m["metric"].as_str().unwrap_or("?")),
+                m["n"],
+                signed(&m["delta"]),
+                pair(&m["confidence_sequence"], signed),
+                id(&m["verdict"]),
+            );
+        }
+    }
+    if let Some(p) = c["preference"].as_object() {
+        let w = &p["win_rate"];
+        let _ = writeln!(
+            s,
+            "\nPairwise preference: candidate win rate {} ({}) over {} items from {}; left side wins {} of decided swapped judgments",
+            num(&w["value"]),
+            pair(&w["ci"], num),
+            w["items"],
+            p["raters"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|r| inline(r.as_str().unwrap_or("?")))
+                .collect::<Vec<_>>()
+                .join(", "),
+            num(&p["position_bias"]["left_win_rate"]),
+        );
+    }
 }
 
 fn compare(e: &Envelope) -> String {
@@ -248,14 +296,24 @@ fn compare(e: &Envelope) -> String {
     }
     match r["comparisons"].as_array() {
         None => {
-            let _ = writeln!(
-                s,
-                "{} → {} on {} paired items ({} unpaired)\n",
-                id(&r["arms"]["baseline"]),
-                id(&r["arms"]["candidate"]),
-                r["n_used"],
-                r["n_unpaired"],
-            );
+            if r["paired"] == false {
+                let _ = writeln!(
+                    s,
+                    "{} → {} as independent samples ({} items in the two arms)\n",
+                    id(&r["arms"]["baseline"]),
+                    id(&r["arms"]["candidate"]),
+                    r["n_used"],
+                );
+            } else {
+                let _ = writeln!(
+                    s,
+                    "{} → {} on {} paired items ({} unpaired)\n",
+                    id(&r["arms"]["baseline"]),
+                    id(&r["arms"]["candidate"]),
+                    r["n_used"],
+                    r["n_unpaired"],
+                );
+            }
             compare_table(&mut s, r);
         }
         Some(list) => {
@@ -271,6 +329,9 @@ fn compare(e: &Envelope) -> String {
                 s.push('\n');
             }
         }
+    }
+    if let Some(uses) = r["validation_uses"].as_u64() {
+        let _ = writeln!(s, "\nComparison {uses} on this split.");
     }
     s.push('\n');
     footer(&mut s, e);

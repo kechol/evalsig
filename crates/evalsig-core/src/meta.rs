@@ -27,29 +27,48 @@ pub struct MetaEvaluation {
     pub spearman_rho: Option<f64>,
 }
 
-/// Agreement of (grader, reference) pairs. `ordered` values (levels, scores) get the
-/// weighted κ and Spearman's ρ; nominal values get κ and AC1, and two classes also
-/// the positive and negative agreement with the higher value as positive.
+/// The table of integer levels over every level from the lowest to the highest seen,
+/// so the quadratic weights follow the level distance; `None` for non-integer scores.
+fn level_table(pairs: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
+    let values = pairs.iter().flat_map(|&(a, b)| [a, b]);
+    if values.clone().any(|v| v.fract() != 0.0) {
+        return None;
+    }
+    let lo = values.clone().fold(f64::INFINITY, f64::min);
+    let hi = values.fold(f64::NEG_INFINITY, f64::max);
+    let q = (hi - lo) as usize + 1;
+    let mut t = vec![vec![0.0; q]; q];
+    for &(a, b) in pairs {
+        t[(a - lo) as usize][(b - lo) as usize] += 1.0;
+    }
+    Some(t)
+}
+
+/// Agreement of (grader, reference) pairs. `ordered` values get Spearman's ρ and,
+/// for integer levels, the quadratic weighted κ; nominal values get κ and AC1, and two
+/// classes also the positive and negative agreement with the higher value as positive.
 pub fn evaluate(pairs: &[(f64, f64)], ordered: bool) -> MetaEvaluation {
-    let (categories, table) = agreement::table(pairs);
     let mut m = MetaEvaluation {
         n: pairs.len(),
         ..MetaEvaluation::default()
     };
     if ordered {
-        m.quadratic_weighted_kappa = agreement::quadratic_weighted_kappa(&table);
+        m.quadratic_weighted_kappa =
+            level_table(pairs).and_then(|t| agreement::quadratic_weighted_kappa(&t));
         let (x, y): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
         m.spearman_rho = agreement::spearman(&x, &y);
         return m;
     }
+    let (categories, table) = agreement::table(pairs);
     m.cohen_kappa = agreement::cohen_kappa(&table);
     m.gwet_ac1 = agreement::gwet_ac1(&table);
     if categories.len() == 2 {
         // `table` orders categories ascending; specific agreement wants positive first.
-        let flipped = vec![
-            vec![table[1][1], table[1][0]],
-            vec![table[0][1], table[0][0]],
-        ];
+        let flipped: Vec<Vec<f64>> = table
+            .iter()
+            .rev()
+            .map(|row| row.iter().rev().copied().collect())
+            .collect();
         if let Some((pos, neg)) = agreement::specific_agreement(&flipped) {
             m.positive_agreement = pos;
             m.negative_agreement = neg;
@@ -83,6 +102,14 @@ mod tests {
         let pairs = [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (3.0, 2.0)];
         let m = evaluate(&pairs, true);
         assert!(m.quadratic_weighted_kappa.unwrap() > 0.0);
+        // Levels 1, 2 and 5: the unseen 3 and 4 still set the weights.
+        let gap = evaluate(&[(1.0, 1.0), (2.0, 2.0), (5.0, 5.0), (5.0, 2.0)], true);
+        let adjacent = evaluate(&[(1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (3.0, 2.0)], true);
+        assert!(gap.quadratic_weighted_kappa < adjacent.quadratic_weighted_kappa);
+        assert_eq!(
+            evaluate(&[(0.1, 0.2), (0.9, 0.8)], true).quadratic_weighted_kappa,
+            None
+        );
         // Midranks (1, 2, 3.5, 3.5) and (1, 2.5, 4, 2.5): ρ = 3.75 / 4.5.
         assert!((m.spearman_rho.unwrap() - 5.0 / 6.0).abs() < 1e-12);
         assert_eq!(m.cohen_kappa, None);

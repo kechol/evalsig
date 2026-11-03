@@ -73,6 +73,12 @@ pub fn mean(values: impl IntoIterator<Item = f64>) -> Option<f64> {
     (n > 0).then(|| total / n as f64)
 }
 
+/// Variance with divisor n − ddof (0: population, 1: sample); NaN when n ≤ ddof.
+pub fn variance(xs: &[f64], ddof: usize) -> f64 {
+    let m = mean(xs.iter().copied()).unwrap_or(f64::NAN);
+    sum(xs.iter().map(|x| (x - m) * (x - m))) / (xs.len() as f64 - ddof as f64)
+}
+
 /// Weighted mean Σwv / Σw of (value, weight) pairs; `None` when the weights sum to 0.
 pub fn weighted_mean(pairs: impl IntoIterator<Item = (f64, f64)> + Clone) -> Option<f64> {
     let w = sum(pairs.clone().into_iter().map(|(_, w)| w));

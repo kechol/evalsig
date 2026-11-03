@@ -1,8 +1,9 @@
 //! Agreement between raters (metrics §9.1) and the variability of one rater (§9.5).
 //!
 //! Tables are square Q×Q counts with rows for the first rater and columns for the
-//! second, categories in ascending order. For a 2×2 table index 0 is the positive
-//! category, so `[[a, b], [c, d]]` has `a` as both positive.
+//! second. `table` orders categories ascending, so for 0/1 values index 0 is the
+//! negative class; `specific_agreement` instead takes `[[a, b], [c, d]]` with `a` as
+//! both positive, so flip a `table` result before passing it.
 
 use std::collections::BTreeMap;
 
@@ -199,13 +200,13 @@ pub fn spearman(x: &[f64], y: &[f64]) -> Option<f64> {
 
 /// Pairs of labels on the same item, and how many of them differ.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-pub struct Disagreement {
+pub struct LabelDisagreement {
     pub items: usize,
     pub pairs: usize,
     pub disagreeing: usize,
 }
 
-impl Disagreement {
+impl LabelDisagreement {
     pub fn rate(&self) -> Option<f64> {
         (self.pairs > 0).then(|| self.disagreeing as f64 / self.pairs as f64)
     }
@@ -232,7 +233,7 @@ type ByItem<'a> = BTreeMap<&'a str, BTreeMap<&'a str, Vec<(u32, f64)>>>;
 /// revision of each label; adjudications are not independent and are left out.
 pub fn variability<'a>(
     labels: impl IntoIterator<Item = &'a Label>,
-) -> BTreeMap<String, (Disagreement, Disagreement)> {
+) -> BTreeMap<String, (LabelDisagreement, LabelDisagreement)> {
     let mut by: BTreeMap<&str, ByItem<'_>> = BTreeMap::new();
     for l in labels {
         if l.kind() == LabelKind::Adjudication {
@@ -250,7 +251,8 @@ pub fn variability<'a>(
     }
     by.into_iter()
         .map(|(task, items)| {
-            let (mut within, mut between) = (Disagreement::default(), Disagreement::default());
+            let (mut within, mut between) =
+                (LabelDisagreement::default(), LabelDisagreement::default());
             for raters in items.into_values() {
                 let mut firsts = Vec::new();
                 for mut replicates in raters.into_values() {

@@ -56,8 +56,8 @@ const fn spec(
     }
 }
 
-/// Every check of SPEC §7 in table order, then `comparison_graph_disconnected` from
-/// metrics spec §10.
+/// Every check of SPEC §7 in table order, with `comparison_graph_disconnected` from
+/// metrics spec §10 after the other pairwise-preference checks.
 pub const CHECKS: [CheckSpec; 23] = [
     spec(
         "missing_counted",
@@ -327,8 +327,8 @@ impl Overrides {
 mod tests {
     use super::*;
 
-    /// SPEC §7 row by row, then metrics spec §10: code, default action, override flag,
-    /// delivering task.
+    /// SPEC §7 row by row, with metrics spec §10's check after the pairwise ones: code,
+    /// default action, override flag, delivering task.
     const EXPECTED: [(&str, Action, Option<&str>, &str); 23] = [
         ("missing_counted", Action::Always, None, "T-038"),
         (

@@ -138,18 +138,24 @@ pub fn adjusted_level(ps: &[f64], alpha: f64) -> f64 {
     1.0 - rejected.max(1) as f64 * alpha / m
 }
 
+/// The two-sided p-value of log LR = 0. A feature that fires on every item of both
+/// classes has LR 1 and no spread, so its p-value is 1.
+fn p_value(r: &Ratio) -> f64 {
+    let z = r.lr.ln().abs() / r.se;
+    if z.is_nan() {
+        1.0
+    } else {
+        2.0 * Normal::standard().sf(z)
+    }
+}
+
 /// Assess several features at once at confidence `level`.
 pub fn assess(features: &[Counts], level: f64, t: Thresholds) -> Vec<Option<Assessed>> {
-    let normal = Normal::standard();
     let ratios: Vec<Option<Ratio>> = features
         .iter()
         .map(|c| likelihood_ratio(*c, level))
         .collect();
-    let ps: Vec<f64> = ratios
-        .iter()
-        .flatten()
-        .map(|r| 2.0 * normal.sf(r.lr.ln().abs() / r.se))
-        .collect();
+    let ps: Vec<f64> = ratios.iter().flatten().map(p_value).collect();
     let adjusted = adjusted_level(&ps, 1.0 - level);
     features
         .iter()
@@ -159,7 +165,7 @@ pub fn assess(features: &[Counts], level: f64, t: Thresholds) -> Vec<Option<Asse
             let wide = likelihood_ratio(*c, adjusted)?;
             Some(Assessed {
                 ratio: r,
-                p_value: 2.0 * normal.sf(r.lr.ln().abs() / r.se),
+                p_value: p_value(&r),
                 adjusted_interval: wide.interval,
                 class: classify(*c, wide.interval, t),
             })

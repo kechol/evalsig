@@ -79,28 +79,33 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let d = data::load_snapshots(&project, snapshots)?;
     let request: Request = serde_json::from_value(prov["request"].clone())
         .map_err(|e| invalid(format!("cannot recompute this result: {e}")))?;
+    let mut uses_not_recounted = false;
     let recomputed = match &request {
         Request::Report(a) => report::compute(&d, &config, a)?.results,
         Request::Compare(a) => {
             let mut c = compare::compute(&d, &config, a)?;
             // The use count comes from the ledger lines before the one naming this
-            // output (all of them for an unrecorded comparison).
+            // output. A comparison made with --scratch is in no line, so its count
+            // cannot be recounted and is taken as saved.
             let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
-            let before = entries
-                .iter()
-                .position(|e| {
-                    e.outputs
-                        .iter()
-                        .any(|o| Some(o.as_str()) == prov["output"].as_str())
-                })
-                .unwrap_or(entries.len());
-            if saved["results"].get("validation_uses").is_some() {
-                compare::count_uses(
-                    &mut c.results,
-                    &mut Vec::new(),
-                    &entries[..before],
-                    config.compare.validation_warn_after,
-                );
+            let recorded = entries.iter().position(|e| {
+                e.outputs
+                    .iter()
+                    .any(|o| Some(o.as_str()) == prov["output"].as_str())
+            });
+            if let Some(saved_uses) = saved["results"].get("validation_uses") {
+                match recorded {
+                    Some(before) => compare::count_uses(
+                        &mut c.results,
+                        &mut Vec::new(),
+                        &entries[..before],
+                        config.compare.validation_warn_after,
+                    ),
+                    None => {
+                        c.results["validation_uses"] = saved_uses.clone();
+                        uses_not_recounted = true;
+                    }
+                }
             }
             c.results
         }
@@ -123,6 +128,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "mismatches": mismatches,
         }),
     );
+    if uses_not_recounted {
+        envelope.warnings.push(Warning {
+            code: "validation_uses_not_recounted".into(),
+            message: "the comparison was not recorded in the ledger, so its validation_uses is taken as saved".into(),
+        });
+    }
     if prov["tool"].as_str() != Some(crate::tool_version().as_str()) {
         envelope.warnings.push(Warning {
             code: "tool_version_differs".into(),

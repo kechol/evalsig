@@ -338,16 +338,15 @@ pub fn prepare<'a>(
                 .map(|(r, v)| (r.to_owned(), f64::from(u8::from(v))))
                 .collect()
         });
+        // Inverse-probability weights correct partial verification (metrics spec §9.9).
+        let inverse_inclusion = reference
+            .and(item.and_then(|i| i.label_inclusion_prob))
+            .map(|p| 1.0 / p);
         units.push(Unit {
             item_id: (*item_id).to_owned(),
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
-            // Inverse-probability weights correct partial verification (metrics spec §9.9).
-            weight: item.map_or(1.0, |i| match (reference, i.label_inclusion_prob) {
-                (Some(_), Some(p)) => i.weight() / p,
-                _ => i.weight(),
-            }),
-            inclusion_weighted: reference.is_some()
-                && item.is_some_and(|i| i.label_inclusion_prob.is_some()),
+            weight: item.map_or(1.0, |i| i.weight()) * inverse_inclusion.unwrap_or(1.0),
+            inclusion_weighted: inverse_inclusion.is_some(),
             stratum: s.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
@@ -593,6 +592,20 @@ impl MetricId {
         self != MetricId::FalseAlarmRate
     }
 
+    /// `higher_is_better` or `lower_is_better`, as comparisons report it.
+    pub fn direction(self) -> &'static str {
+        if self.higher_is_better() {
+            "higher_is_better"
+        } else {
+            "lower_is_better"
+        }
+    }
+
+    /// The factor that orients a difference so that positive is better.
+    pub fn sign(self) -> f64 {
+        if self.higher_is_better() { 1.0 } else { -1.0 }
+    }
+
     fn needs_reference(self) -> bool {
         matches!(
             self,
@@ -828,16 +841,14 @@ impl Calc<'_> {
             .iter()
             .flat_map(|u| u.votes.keys().map(String::as_str))
             .collect();
+        // One copy of the units, whose reference is swapped for each rater's votes.
+        let mut alone: Vec<Unit> = units.to_vec();
         raters
             .into_iter()
             .map(|rater| {
-                let alone: Vec<Unit> = units
-                    .iter()
-                    .map(|u| Unit {
-                        reference: u.votes.get(rater).copied(),
-                        ..u.clone()
-                    })
-                    .collect();
+                for (a, u) in alone.iter_mut().zip(units) {
+                    a.reference = u.votes.get(rater).copied();
+                }
                 let refs: Vec<&Unit> = alone.iter().collect();
                 let values = self
                     .ids(semantics)

@@ -157,9 +157,15 @@ fn preference_json(
     let bias = preference::position_bias(&judged, settings.level);
     findings.extend(preference::checks(&bias, overrides));
     let raters: BTreeSet<&str> = judged.iter().map(|j| j.rater_id).collect();
+    let pair = [baseline, candidate];
     let sources: BTreeSet<String> = preferences
         .iter()
-        .filter(|p| raters.contains(p.rater_id.as_str()))
+        .filter(|p| {
+            p.outcome.is_some()
+                && raters.contains(p.rater_id.as_str())
+                && pair.contains(&p.left_run_id.as_str())
+                && pair.contains(&p.right_run_id.as_str())
+        })
         .filter_map(|p| json!(p.source).as_str().map(str::to_owned))
         .collect();
     Some(json!({

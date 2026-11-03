@@ -73,3 +73,15 @@ fn bh_adjusted_intervals_match() {
     let p = features::posterior(4.0, 0.12);
     assert!((p - 4.0 * 0.12 / 0.88 / (1.0 + 4.0 * 0.12 / 0.88)).abs() < 1e-12);
 }
+
+#[test]
+fn a_feature_firing_on_every_item_has_p_value_one() {
+    let all = Counts {
+        a: 20.0,
+        n_pos: 20.0,
+        b: 30.0,
+        n_neg: 30.0,
+    };
+    let assessed = features::assess(&[all], 0.95, Thresholds::default());
+    assert_eq!(assessed[0].as_ref().unwrap().p_value, 1.0);
+}

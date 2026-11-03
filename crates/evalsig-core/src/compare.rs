@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
 use crate::interval::newcombe;
-use crate::numeric::{Rng, mean, norm_ppf, sum};
+use crate::numeric::{Rng, mean, norm_ppf, sum, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
 
@@ -86,15 +86,63 @@ fn ratio(values: &BTreeMap<String, ItemValue>, items: &[&str]) -> Option<f64> {
     (den > 0.0).then(|| sum(items.iter().map(|i| values[*i].numerator)) / den)
 }
 
+/// The metrics both runs support, in the baseline's order.
+fn shared_ids(a: &Prepared<'_>, b: &Prepared<'_>) -> Vec<MetricId> {
+    let b_ids = b.metric_ids();
+    a.metric_ids()
+        .into_iter()
+        .filter(|m| b_ids.contains(m))
+        .collect()
+}
+
+/// An interval and test: (interval, method, resamples, p-value, p-value method).
+type Inference = (
+    Option<(f64, f64)>,
+    &'static str,
+    Option<u32>,
+    Option<f64>,
+    &'static str,
+);
+
+const NO_INFERENCE: Inference = (None, "none", None, None, "none");
+const TOO_FEW_UNITS: Inference = (None, "too_few_units", None, None, "none");
+
+/// A metric's difference with its §7.1 verdict.
+fn finish(
+    id: MetricId,
+    (base, cand): (Option<f64>, Option<f64>),
+    missing_bounds: Option<(f64, f64)>,
+    o: &Options,
+    (ci, interval, resamples, p_value, p_method): Inference,
+) -> MetricDelta {
+    let delta = base.zip(cand).map(|(x, y)| id.sign() * (y - x));
+    let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
+    MetricDelta {
+        metric: id.name(),
+        direction: id.direction(),
+        baseline: base,
+        candidate: cand,
+        delta,
+        ci,
+        interval,
+        resamples,
+        min_effect,
+        missing_bounds,
+        p_value,
+        p_method,
+        verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
+    }
+}
+
+/// The lower and upper ends of two differences, when both exist.
+fn bounds(x: Option<f64>, y: Option<f64>) -> Option<(f64, f64)> {
+    x.zip(y).map(|(x, y)| (x.min(y), x.max(y)))
+}
+
 /// Compare the baseline with one candidate on the items both have.
 pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Comparison {
     let a = base.prepared;
-    let b_ids = b.metric_ids();
-    let ids: Vec<MetricId> = a
-        .metric_ids()
-        .into_iter()
-        .filter(|m| b_ids.contains(m))
-        .collect();
+    let ids = shared_ids(a, b);
     let judged_b = b.judged();
     let in_both: BTreeSet<&str> = base
         .judged
@@ -159,7 +207,7 @@ fn metric_delta(
     b: &Prepared<'_>,
     o: &Options,
 ) -> MetricDelta {
-    let sign = if id.higher_is_better() { 1.0 } else { -1.0 };
+    let sign = id.sign();
     let [pa, wa, ba] = va;
     let [pb, wb, bb] = vb;
     let items: Vec<&str> = paired
@@ -183,13 +231,10 @@ fn metric_delta(
     };
     let has_system_missing = a.system_missing().0 + b.system_missing().0 > 0;
     let missing_bounds = if has_system_missing && id != MetricId::Precision {
-        oriented(ba, wb)
-            .zip(oriented(wa, bb))
-            .map(|(x, y)| (x.min(y), x.max(y)))
+        bounds(oriented(ba, wb), oriented(wa, bb))
     } else {
         None
     };
-    let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
     let integral = items.iter().all(|i| {
         let (x, y) = (&pa[*i], &pb[*i]);
         [x.numerator, x.denominator, y.numerator, y.denominator]
@@ -200,8 +245,8 @@ fn metric_delta(
     for i in &items {
         clusters.entry(pa[*i].cluster.as_str()).or_default().push(i);
     }
-    let (ci, interval, resamples, p_value, p_method) = if delta.is_none() {
-        (None, "none", None, None, "none")
+    let inference = if delta.is_none() {
+        NO_INFERENCE
     } else if independent && integral && id.is_paired_proportion() {
         // Each item counts 0 or 1 in a shared denominator: discordant pairs decide.
         let counted: Vec<&str> = items
@@ -232,7 +277,7 @@ fn metric_delta(
             "mcnemar_exact",
         )
     } else if clusters.len() < bootstrap::MIN_UNITS {
-        (None, "too_few_units", None, None, "none")
+        TOO_FEW_UNITS
     } else {
         // Paired cluster bootstrap: one draw of clusters serves both arms. Each
         // cluster's sums are taken once, so a resample adds cluster totals.
@@ -269,25 +314,7 @@ fn metric_delta(
             "bootstrap",
         )
     };
-    MetricDelta {
-        metric: id.name(),
-        direction: if id.higher_is_better() {
-            "higher_is_better"
-        } else {
-            "lower_is_better"
-        },
-        baseline: base,
-        candidate: cand,
-        delta,
-        ci,
-        interval,
-        resamples,
-        min_effect,
-        missing_bounds,
-        p_value,
-        p_method,
-        verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
-    }
+    finish(id, (base, cand), missing_bounds, o, inference)
 }
 
 /// Welch's t interval for the difference of two means, with its two-sided p-value.
@@ -298,8 +325,7 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
         return None;
     }
     let (ma, mb) = (mean(a.iter().copied())?, mean(b.iter().copied())?);
-    let var = |x: &[f64], m: f64| sum(x.iter().map(|v| (v - m).powi(2))) / (x.len() - 1) as f64;
-    let (sa, sb) = (var(a, ma) / na, var(b, mb) / nb);
+    let (sa, sb) = (variance(a, 1) / na, variance(b, 1) / nb);
     let se = (sa + sb).sqrt();
     if se == 0.0 {
         return None;
@@ -308,8 +334,24 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
     let t = StudentsT::new(0.0, 1.0, df).ok()?;
     let q = t.inverse_cdf(0.5 + level / 2.0);
     let d = mb - ma;
-    let p = 2.0 * (1.0 - t.cdf((d / se).abs()));
+    let p = 2.0 * t.sf((d / se).abs());
     Some(((d - q * se, d + q * se), p))
+}
+
+/// Each cluster's (numerator, denominator) totals.
+fn cluster_totals(v: &BTreeMap<String, ItemValue>) -> Vec<[f64; 2]> {
+    let mut c: BTreeMap<&str, [f64; 2]> = BTreeMap::new();
+    for x in v.values() {
+        let e = c.entry(x.cluster.as_str()).or_default();
+        e[0] += x.numerator;
+        e[1] += x.denominator;
+    }
+    c.into_values().collect()
+}
+
+fn total_ratio(v: &BTreeMap<String, ItemValue>) -> Option<f64> {
+    let den = sum(v.values().map(|x| x.denominator));
+    (den > 0.0).then(|| sum(v.values().map(|x| x.numerator)) / den)
 }
 
 /// Compare two runs whose item sets need not overlap, as independent samples
@@ -317,136 +359,115 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
 /// mean scores of unit-weight items, otherwise a bootstrap that resamples each arm's
 /// clusters separately. Items in both arms count in both.
 pub fn unpaired(a: &Prepared<'_>, b: &Prepared<'_>, o: &Options) -> Comparison {
-    let b_ids = b.metric_ids();
-    let ids: Vec<MetricId> = a
-        .metric_ids()
-        .into_iter()
-        .filter(|m| b_ids.contains(m))
-        .collect();
     let independent = a.independent() && b.independent();
-    let z = norm_ppf(0.5 + o.level / 2.0);
-    let metrics = ids
-        .iter()
-        .map(|&id| {
-            let sign = if id.higher_is_better() { 1.0 } else { -1.0 };
-            let keep = |v: BTreeMap<String, ItemValue>| -> BTreeMap<String, ItemValue> {
-                v.into_iter()
-                    .filter(|(k, _)| !o.excluded.contains(k))
-                    .collect()
-            };
-            let [pa, wa, ba] = values_of(a, id).map(keep);
-            let [pb, wb, bb] = values_of(b, id).map(keep);
-            let all = |v: &BTreeMap<String, ItemValue>| -> Option<f64> {
-                let keys: Vec<&str> = v.keys().map(String::as_str).collect();
-                ratio(v, &keys)
-            };
-            let (base, cand) = (all(&pa), all(&pb));
-            let delta = base.zip(cand).map(|(x, y)| sign * (y - x));
-            let has_system_missing = a.system_missing().0 + b.system_missing().0 > 0;
-            let missing_bounds = if has_system_missing && id != MetricId::Precision {
-                let d = |x: &BTreeMap<String, ItemValue>, y: &BTreeMap<String, ItemValue>| {
-                    all(x).zip(all(y)).map(|(x, y)| sign * (y - x))
-                };
-                d(&ba, &wb)
-                    .zip(d(&wa, &bb))
-                    .map(|(x, y)| (x.min(y), x.max(y)))
-            } else {
-                None
-            };
-            let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
-            let integral = pa
-                .values()
-                .chain(pb.values())
-                .all(|v| v.numerator.fract() == 0.0 && v.denominator.fract() == 0.0);
-            let unit = |v: &BTreeMap<String, ItemValue>| {
-                v.iter()
-                    .all(|(k, x)| x.denominator == 1.0 && x.cluster == *k)
-            };
-            let points = |v: &BTreeMap<String, ItemValue>| -> Vec<f64> {
-                v.values().map(|x| x.numerator).collect()
-            };
-            let orient = |(lo, hi): (f64, f64)| if sign > 0.0 { (lo, hi) } else { (-hi, -lo) };
-            let (ci, interval, resamples, p_value, p_method) = if delta.is_none() {
-                (None, "none", None, None, "none")
-            } else if independent && integral && id.is_paired_proportion() {
-                let k = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.numerator));
-                let n = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.denominator));
-                // newcombe gives p_first − p_second; candidate minus baseline here.
-                let ci = newcombe(k(&pb), n(&pb), k(&pa), n(&pa), z);
-                (Some(orient(ci)), "newcombe", None, None, "none")
-            } else if id == MetricId::MeanScore && unit(&pa) && unit(&pb) {
-                match welch(&points(&pa), &points(&pb), o.level) {
-                    Some((ci, p)) => (Some(orient(ci)), "welch", None, Some(p), "welch_t"),
-                    None => (None, "too_few_units", None, None, "none"),
-                }
-            } else {
-                let clusters = |v: &BTreeMap<String, ItemValue>| -> Vec<[f64; 2]> {
-                    let mut c: BTreeMap<&str, [f64; 2]> = BTreeMap::new();
-                    for x in v.values() {
-                        let e = c.entry(x.cluster.as_str()).or_default();
-                        e[0] += x.numerator;
-                        e[1] += x.denominator;
-                    }
-                    c.into_values().collect()
-                };
-                let (ca, cb) = (clusters(&pa), clusters(&pb));
-                if ca.len() < bootstrap::MIN_UNITS || cb.len() < bootstrap::MIN_UNITS {
-                    (None, "too_few_units", None, None, "none")
-                } else {
-                    let mut rng = Rng::new(o.seed);
-                    let mut reps = Vec::with_capacity(o.bootstrap as usize);
-                    let draw = |c: &[[f64; 2]], rng: &mut Rng| -> Option<f64> {
-                        let mut t = [0.0; 2];
-                        for _ in 0..c.len() {
-                            let g = c[rng.below(c.len() as u64) as usize];
-                            t[0] += g[0];
-                            t[1] += g[1];
-                        }
-                        (t[1] > 0.0).then(|| t[0] / t[1])
-                    };
-                    for _ in 0..o.bootstrap {
-                        if let (Some(x), Some(y)) = (draw(&ca, &mut rng), draw(&cb, &mut rng)) {
-                            reps.push(sign * (y - x));
-                        }
-                    }
-                    let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
-                    (
-                        bootstrap::percentile_interval(reps, o.level),
-                        "bootstrap",
-                        Some(o.bootstrap),
-                        p,
-                        "bootstrap",
-                    )
-                }
-            };
-            MetricDelta {
-                metric: id.name(),
-                direction: if id.higher_is_better() {
-                    "higher_is_better"
-                } else {
-                    "lower_is_better"
-                },
-                baseline: base,
-                candidate: cand,
-                delta,
-                ci,
-                interval,
-                resamples,
-                min_effect,
-                missing_bounds,
-                p_value,
-                p_method,
-                verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
-            }
-        })
+    let has_system_missing = a.system_missing().0 + b.system_missing().0 > 0;
+    let metrics = shared_ids(a, b)
+        .into_iter()
+        .map(|id| unpaired_delta(id, a, b, o, independent, has_system_missing))
         .collect();
-    let (ja, jb) = (a.judged(), b.judged());
     Comparison {
-        n_used: ja.len() + jb.len(),
+        n_used: a.judged().len() + b.judged().len(),
         n_unpaired: 0,
         metrics,
         transition: None,
     }
+}
+
+fn unpaired_delta(
+    id: MetricId,
+    a: &Prepared<'_>,
+    b: &Prepared<'_>,
+    o: &Options,
+    independent: bool,
+    has_system_missing: bool,
+) -> MetricDelta {
+    let sign = id.sign();
+    let values = |p: &Prepared<'_>, fill| -> BTreeMap<String, ItemValue> {
+        p.item_values(id, fill)
+            .into_iter()
+            .filter(|(k, _)| !o.excluded.contains(k))
+            .collect()
+    };
+    let (pa, pb) = (values(a, Fill::Policy), values(b, Fill::Policy));
+    let (base, cand) = (total_ratio(&pa), total_ratio(&pb));
+    let delta = base.zip(cand).map(|(x, y)| sign * (y - x));
+    let missing_bounds = (has_system_missing && id != MetricId::Precision)
+        .then(|| {
+            let d = |x: Option<f64>, y: Option<f64>| x.zip(y).map(|(x, y)| sign * (y - x));
+            let (wa, ba) = (
+                total_ratio(&values(a, Fill::Worst)),
+                total_ratio(&values(a, Fill::Best)),
+            );
+            let (wb, bb) = (
+                total_ratio(&values(b, Fill::Worst)),
+                total_ratio(&values(b, Fill::Best)),
+            );
+            bounds(d(ba, wb), d(wa, bb))
+        })
+        .flatten();
+    let integral = pa
+        .values()
+        .chain(pb.values())
+        .all(|v| v.numerator.fract() == 0.0 && v.denominator.fract() == 0.0);
+    let unit = |v: &BTreeMap<String, ItemValue>| {
+        v.iter()
+            .all(|(k, x)| x.denominator == 1.0 && x.cluster == *k)
+    };
+    let orient = |(lo, hi): (f64, f64)| if sign > 0.0 { (lo, hi) } else { (-hi, -lo) };
+    let inference = if delta.is_none() {
+        NO_INFERENCE
+    } else if independent && integral && id.is_paired_proportion() {
+        let k = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.numerator));
+        let n = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.denominator));
+        // newcombe gives p_first − p_second; candidate minus baseline here.
+        let ci = newcombe(
+            k(&pb),
+            n(&pb),
+            k(&pa),
+            n(&pa),
+            norm_ppf(0.5 + o.level / 2.0),
+        );
+        (Some(orient(ci)), "newcombe", None, None, "none")
+    } else if id == MetricId::MeanScore && unit(&pa) && unit(&pb) {
+        let points = |v: &BTreeMap<String, ItemValue>| -> Vec<f64> {
+            v.values().map(|x| x.numerator).collect()
+        };
+        match welch(&points(&pa), &points(&pb), o.level) {
+            Some((ci, p)) => (Some(orient(ci)), "welch", None, Some(p), "welch_t"),
+            None => TOO_FEW_UNITS,
+        }
+    } else {
+        let (ca, cb) = (cluster_totals(&pa), cluster_totals(&pb));
+        if ca.len() < bootstrap::MIN_UNITS || cb.len() < bootstrap::MIN_UNITS {
+            TOO_FEW_UNITS
+        } else {
+            // The arms are independent, so each draws its own clusters.
+            let (mut ra, mut rb) = (Rng::new(o.seed), Rng::new(o.seed.wrapping_add(1)));
+            let ratio_of = |c: &[[f64; 2]], drawn: &[usize]| {
+                let (k, n) = drawn
+                    .iter()
+                    .fold((0.0, 0.0), |(k, n), &g| (k + c[g][0], n + c[g][1]));
+                (n > 0.0).then(|| k / n)
+            };
+            let (reps, _) = bootstrap::replicates(ca.len(), None, o.bootstrap, &mut ra, |da| {
+                let db: Vec<usize> = (0..cb.len())
+                    .map(|_| rb.below(cb.len() as u64) as usize)
+                    .collect();
+                ratio_of(&ca, da)
+                    .zip(ratio_of(&cb, &db))
+                    .map(|(x, y)| sign * (y - x))
+            });
+            let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
+            (
+                bootstrap::percentile_interval(reps, o.level),
+                "bootstrap",
+                Some(o.bootstrap),
+                p,
+                "bootstrap",
+            )
+        }
+    };
+    finish(id, (base, cand), missing_bounds, o, inference)
 }
 
 /// A paired difference monitored with a confidence sequence (metrics spec §7.2).
@@ -463,18 +484,18 @@ pub struct SequentialDelta {
     pub verdict: Verdict,
 }
 
-/// Paired differences of each metric whose item values lie in [0, 1], added in an
-/// order shuffled by the seed, with the confidence sequence of their mean. An item
-/// counts where both arms give it a positive denominator; its value is the ratio.
+/// Paired differences of accuracy, H, F and the score metrics (metrics spec §7.2),
+/// added in an order shuffled by the seed, with the confidence sequence of their
+/// mean. A metric qualifies when every item it counts has denominator 1 and a value
+/// in [0, 1], so the metric is the plain mean of the item values; soft or weighted
+/// references, whose items carry fractional weights, have no sequence. An item counts
+/// where both arms give it a positive denominator.
 pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec<SequentialDelta> {
-    let a = base.prepared;
-    let b_ids = b.metric_ids();
-    a.metric_ids()
+    shared_ids(base.prepared, b)
         .into_iter()
-        .filter(|m| b_ids.contains(m))
         .filter_map(|id| {
-            let sign = if id.higher_is_better() { 1.0 } else { -1.0 };
-            let (pa, pb) = (&base.values[&id][0], &values_of(b, id)[0]);
+            let sign = id.sign();
+            let (pa, pb) = (&base.values[&id][0], &b.item_values(id, Fill::Policy));
             let value = |v: &ItemValue| v.numerator / v.denominator;
             let mut ds: Vec<f64> = pa
                 .iter()
@@ -486,12 +507,12 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
                 })
                 .map(|(x, y)| sign * (y - x))
                 .collect();
-            let bounded = pa
+            let plain_mean = pa
                 .values()
                 .chain(pb.values())
                 .filter(|v| v.denominator > 0.0)
-                .all(|v| (0.0..=1.0).contains(&value(v)));
-            if !bounded {
+                .all(|v| v.denominator == 1.0 && (0.0..=1.0).contains(&v.numerator));
+            if id == MetricId::Precision || !plain_mean {
                 return None;
             }
             let mut rng = Rng::new(o.seed);
@@ -503,11 +524,7 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
             let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
             Some(SequentialDelta {
                 metric: id.name(),
-                direction: if id.higher_is_better() {
-                    "higher_is_better"
-                } else {
-                    "lower_is_better"
-                },
+                direction: id.direction(),
                 n: ds.len(),
                 delta,
                 confidence_sequence: cs,

@@ -9,7 +9,7 @@ use evalsig_core::features::{self, Counts};
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Value};
 use evalsig_core::reference;
-use evalsig_core::report::{self, Settings};
+use evalsig_core::report::{self, Metric, Settings};
 use evalsig_core::roc::{self, SoftItem};
 use evalsig_core::rules::Rule;
 use evalsig_core::sdt::Confusion;
@@ -124,6 +124,16 @@ fn shares(p: &Parts<'_>, mode: ReferenceMode) -> Vec<f64> {
         .collect()
 }
 
+/// The value of the named metric.
+fn value_of(metrics: &[Metric], name: &str) -> f64 {
+    metrics
+        .iter()
+        .find(|m| m.metric == name)
+        .unwrap()
+        .value
+        .unwrap()
+}
+
 fn judged() -> Vec<f64> {
     DATA.iter().map(|d| f64::from(u8::from(d.2))).collect()
 }
@@ -150,14 +160,7 @@ fn rates_and_accuracy_match_the_soft_definitions() {
         &settings(ReferenceMode::Soft),
     )
     .unwrap();
-    let metric = |name: &str| {
-        r.metrics
-            .iter()
-            .find(|m| m.metric == name)
-            .unwrap()
-            .value
-            .unwrap()
-    };
+    let metric = |name: &str| value_of(&r.metrics, name);
     let (s, y) = (SHARES, judged());
     let dot = |f: &dyn Fn(usize) -> f64| (0..4).map(f).sum::<f64>();
     // H = Σ s·y / Σ s = 7/13, F = Σ (1−s)·y / Σ (1−s) = 5/11.
@@ -254,14 +257,7 @@ fn items_split_by_agreement_get_their_own_metrics() {
         ..settings(ReferenceMode::Soft)
     };
     let r = report::build(p.run, &p.judgments, &p.items, &p.labels, &s).unwrap();
-    let value = |stratum: &str, name: &str| {
-        r.by[stratum]
-            .iter()
-            .find(|m| m.metric == name)
-            .unwrap()
-            .value
-            .unwrap()
-    };
+    let value = |stratum: &str, name: &str| value_of(&r.by[stratum], name);
     assert_eq!(r.by.keys().collect::<Vec<_>>(), ["split", "unanimous"]);
     // Split: q1 (s 2/3, judged positive) and q2 (s 1/2, positive).
     assert!((value("split", "accuracy") - 7.0 / 12.0).abs() < TOL);
@@ -314,14 +310,7 @@ fn inclusion_probabilities_reweight_partially_verified_items() {
         &settings(ReferenceMode::Soft),
     )
     .unwrap();
-    let metric = |name: &str| {
-        r.metrics
-            .iter()
-            .find(|m| m.metric == name)
-            .unwrap()
-            .value
-            .unwrap()
-    };
+    let metric = |name: &str| value_of(&r.metrics, name);
     // Weighted by 1/p: H = (1 + 1) / (1 + 1 + 2) and F = 1 / (1 + 2); unweighted they
     // would be 2/3 and 1/2.
     assert!((metric("hit_rate") - 0.5).abs() < TOL);

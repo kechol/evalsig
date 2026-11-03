@@ -250,6 +250,8 @@ pub struct Comparison {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RankingError {
+    #[error("a ranking needs preferences between at least two arms")]
+    TooFewArms,
     #[error("the comparison graph of the arms is not connected")]
     Disconnected,
     #[error("the strengths have no finite estimate (an arm wins or loses every comparison)")]
@@ -317,43 +319,67 @@ const MAX_LOG_STRENGTH: f64 = 30.0;
 /// comparison is a tie. Each comparison is a softmax over the logits θ_i, θ_j and
 /// log ν + (θ_i + θ_j)/2; Newton's method on (θ_1 … θ_{m−1}, log ν) with θ_0 = 0.
 pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, RankingError> {
-    if arms < 2 || !connected(arms, comparisons) {
+    if arms < 2 {
+        return Err(RankingError::TooFewArms);
+    }
+    if !connected(arms, comparisons) {
         return Err(RankingError::Disconnected);
     }
     let ties = comparisons.iter().any(|c| c.score == 0.5);
     let dim = arms - 1 + usize::from(ties);
-    // Logit coefficient vectors over the parameters (θ_0 is fixed at 0).
-    let theta = |a: usize| -> Vec<f64> {
-        let mut v = vec![0.0; dim];
-        if a > 0 {
-            v[a - 1] = 1.0;
+    // A comparison touches at most three parameters: θ_i, θ_j (θ_0 is fixed at 0) and
+    // log ν. `slots` lists them; each logit is a coefficient per slot.
+    let local = |c: &Comparison| -> ([Option<usize>; 3], [[f64; 3]; 3], usize) {
+        let slots = [
+            c.i.checked_sub(1),
+            c.j.checked_sub(1),
+            ties.then_some(dim - 1),
+        ];
+        let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5, 1.0]];
+        for (s, slot) in slots.iter().enumerate() {
+            if slot.is_none() {
+                for row in &mut v {
+                    row[s] = 0.0;
+                }
+            }
         }
-        v
+        let observed = if c.score == 0.0 {
+            0
+        } else if c.score == 1.0 {
+            1
+        } else {
+            2
+        };
+        (slots, v, observed)
     };
-    let logits = |c: &Comparison| -> Vec<(Vec<f64>, bool)> {
-        let (vi, vj) = (theta(c.i), theta(c.j));
-        let mut out = vec![(vi.clone(), c.score == 0.0), (vj.clone(), c.score == 1.0)];
-        if ties {
-            let mut vt: Vec<f64> = vi.iter().zip(&vj).map(|(a, b)| (a + b) / 2.0).collect();
-            vt[dim - 1] = 1.0;
-            out.push((vt, c.score == 0.5));
-        }
-        out
-    };
-    let dot = |v: &[f64], x: &[f64]| v.iter().zip(x).map(|(a, b)| a * b).sum::<f64>();
+    // Logits and softmax probabilities of one comparison at x.
+    let softmax =
+        |slots: &[Option<usize>; 3], v: &[[f64; 3]; 3], x: &[f64]| -> ([f64; 3], [f64; 3], usize) {
+            let n = if ties { 3 } else { 2 };
+            let mut s = [f64::NEG_INFINITY; 3];
+            for (k, sk) in s.iter_mut().enumerate().take(n) {
+                *sk = (0..3)
+                    .filter_map(|d| slots[d].map(|g| v[k][d] * x[g]))
+                    .sum();
+            }
+            let max = s[..n].iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let total: f64 = s[..n].iter().map(|v| (v - max).exp()).sum();
+            let mut p = [0.0; 3];
+            for k in 0..n {
+                p[k] = (s[k] - max).exp() / total;
+            }
+            let lse = max + total.ln();
+            for sk in &mut s[..n] {
+                *sk -= lse;
+            }
+            (s, p, n)
+        };
     let loglik = |x: &[f64]| -> f64 {
         comparisons
             .iter()
             .map(|c| {
-                let ls = logits(c);
-                let s: Vec<f64> = ls.iter().map(|(v, _)| dot(v, x)).collect();
-                let max = s.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let lse = max + s.iter().map(|v| (v - max).exp()).sum::<f64>().ln();
-                ls.iter()
-                    .zip(&s)
-                    .find(|((_, o), _)| *o)
-                    .map_or(0.0, |(_, v)| *v)
-                    - lse
+                let (slots, v, o) = local(c);
+                softmax(&slots, &v, x).0[o]
             })
             .sum()
     };
@@ -363,26 +389,19 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
         let mut g = vec![0.0; dim];
         let mut h = vec![vec![0.0; dim]; dim];
         for c in comparisons {
-            let ls = logits(c);
-            let s: Vec<f64> = ls.iter().map(|(v, _)| dot(v, &x)).collect();
-            let max = s.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            let e: Vec<f64> = s.iter().map(|v| (v - max).exp()).collect();
-            let total: f64 = e.iter().sum();
-            let p: Vec<f64> = e.iter().map(|v| v / total).collect();
-            let mu: Vec<f64> = (0..dim)
-                .map(|d| ls.iter().zip(&p).map(|((v, _), pk)| pk * v[d]).sum())
-                .collect();
-            for ((v, observed), pk) in ls.iter().zip(&p) {
-                for d in 0..dim {
-                    g[d] += (f64::from(u8::from(*observed)) - pk) * v[d];
-                    for k in 0..dim {
-                        h[d][k] += pk * v[d] * v[k];
-                    }
-                }
+            let (slots, v, observed) = local(c);
+            let (_, p, n) = softmax(&slots, &v, &x);
+            let mut mu = [0.0; 3];
+            for (d, m) in mu.iter_mut().enumerate() {
+                *m = (0..n).map(|k| p[k] * v[k][d]).sum();
             }
-            for d in 0..dim {
-                for k in 0..dim {
-                    h[d][k] -= mu[d] * mu[k];
+            for d in 0..3 {
+                let Some(gd) = slots[d] else { continue };
+                g[gd] += v[observed][d] - mu[d];
+                for e in 0..3 {
+                    let Some(ge) = slots[e] else { continue };
+                    let second: f64 = (0..n).map(|k| p[k] * v[k][d] * v[k][e]).sum();
+                    h[gd][ge] += second - mu[d] * mu[e];
                 }
             }
         }
@@ -441,6 +460,9 @@ pub struct Ranking {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tie: Option<f64>,
     pub interval: &'static str,
+    /// Resamples whose refit failed (an arm dropped out or won everything); the
+    /// intervals come from the others.
+    pub failed_resamples: u32,
 }
 
 /// The ranking of arms from preference records, strongest first, with percentile
@@ -483,6 +505,7 @@ pub fn ranking<'a>(
         .collect();
     let all: Vec<Comparison> = items.iter().flatten().copied().collect();
     let fit = bradley_terry(names.len(), &all)?;
+    let mut failed_resamples = 0;
     let (cis, interval) = if items.len() < MIN_UNITS {
         (vec![None; names.len()], "too_few_units")
     } else {
@@ -496,10 +519,13 @@ pub fn ranking<'a>(
                 .iter()
                 .flat_map(|&i| items[i].iter().copied())
                 .collect();
-            if let Ok(f) = bradley_terry(names.len(), &cs) {
-                for (d, v) in draws.iter_mut().zip(f.log_strength) {
-                    d.push(v);
+            match bradley_terry(names.len(), &cs) {
+                Ok(f) => {
+                    for (d, v) in draws.iter_mut().zip(f.log_strength) {
+                        d.push(v);
+                    }
                 }
+                Err(_) => failed_resamples += 1,
             }
         }
         (
@@ -529,5 +555,6 @@ pub fn ranking<'a>(
         arms,
         tie: fit.tie,
         interval,
+        failed_resamples,
     })
 }

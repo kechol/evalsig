@@ -7,7 +7,7 @@
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::bootstrap::{self, MIN_UNITS};
-use crate::numeric::{Rng, norm_ppf, sum};
+use crate::numeric::{Rng, norm_ppf, sum, variance};
 
 /// ψ(x, y): 1 if the positive scores higher, ½ on a tie, 0 below.
 pub fn psi(x: f64, y: f64) -> f64 {
@@ -75,19 +75,34 @@ pub struct SoftItem {
 }
 
 /// AUC against a soft reference: Σ s_i(1−s_j)ψ(i,j) / Σ s_i(1−s_j) over all pairs,
-/// i = j included with ψ = ½.
+/// i = j included with ψ = ½. Sorted by score, each item's positive mass meets the
+/// negative mass of every lower score, and half of its own score's, in O(n log n).
 pub fn auc_soft(items: &[SoftItem]) -> Option<f64> {
-    let pair = |a: &SoftItem, b: &SoftItem| a.weight * b.weight * a.share * (1.0 - b.share);
-    let den = sum(items
-        .iter()
-        .flat_map(|a| items.iter().map(move |b| pair(a, b))));
-    (den > 0.0).then(|| {
-        sum(items.iter().flat_map(|a| {
-            items
+    let mut sorted: Vec<&SoftItem> = items.iter().collect();
+    sorted.sort_by(|a, b| a.score.total_cmp(&b.score));
+    let pos = |x: &SoftItem| x.weight * x.share;
+    let neg = |x: &SoftItem| x.weight * (1.0 - x.share);
+    let den = sum(items.iter().map(pos)) * sum(items.iter().map(neg));
+    if den <= 0.0 {
+        return None;
+    }
+    let (mut below, mut num, mut start) = (0.0, Vec::new(), 0);
+    while start < sorted.len() {
+        let end = start
+            + sorted[start..]
                 .iter()
-                .map(move |b| pair(a, b) * psi(a.score, b.score))
-        })) / den
-    })
+                .take_while(|x| x.score == sorted[start].score)
+                .count();
+        let group = &sorted[start..end];
+        let (p, n) = (
+            sum(group.iter().map(|x| pos(x))),
+            sum(group.iter().map(|x| neg(x))),
+        );
+        num.push(p * (below + 0.5 * n));
+        below += n;
+        start = end;
+    }
+    Some(sum(num) / den)
 }
 
 /// A percentile bootstrap interval of the soft AUC, resampling clusters (`cluster[i]`
@@ -128,11 +143,6 @@ pub struct DeLong {
     pub interval: Option<(f64, f64)>,
 }
 
-fn sample_variance(xs: &[f64]) -> f64 {
-    let m = sum(xs.iter().copied()) / xs.len() as f64;
-    sum(xs.iter().map(|x| (x - m) * (x - m))) / (xs.len() as f64 - 1.0)
-}
-
 fn covariance(xs: &[f64], ys: &[f64]) -> f64 {
     let (mx, my) = (
         sum(xs.iter().copied()) / xs.len() as f64,
@@ -162,8 +172,7 @@ pub fn delong(pos: &[f64], neg: &[f64], level: f64) -> Option<DeLong> {
     }
     let (v10, v01) = components(pos, neg);
     let auc = sum(v10.iter().copied()) / v10.len() as f64;
-    let variance =
-        sample_variance(&v10) / pos.len() as f64 + sample_variance(&v01) / neg.len() as f64;
+    let variance = variance(&v10, 1) / pos.len() as f64 + variance(&v01, 1) / neg.len() as f64;
     let interval = (auc > 0.0 && auc < 1.0).then(|| {
         let se = variance.sqrt() / (auc * (1.0 - auc));
         let logit = (auc / (1.0 - auc)).ln();
@@ -214,7 +223,7 @@ pub fn delong_paired(labels: &[bool], a: &[f64], b: &[f64], level: f64) -> Optio
     }
     let ((a10, a01), (b10, b01)) = (components(&ap, &an), components(&bp, &bn));
     let (m, n) = (a10.len() as f64, a01.len() as f64);
-    let var = |x10: &[f64], x01: &[f64]| sample_variance(x10) / m + sample_variance(x01) / n;
+    let var = |x10: &[f64], x01: &[f64]| variance(x10, 1) / m + variance(x01, 1) / n;
     let cov = covariance(&a10, &b10) / m + covariance(&a01, &b01) / n;
     let variance = var(&a10, &a01) + var(&b10, &b01) - 2.0 * cov;
     let (auc_a, auc_b) = (sum(a10.iter().copied()) / m, sum(b10.iter().copied()) / m);

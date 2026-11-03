@@ -42,9 +42,12 @@ fn pool<'l>(labels: &[&'l Label]) -> (Vec<&'l Label>, bool) {
 /// Each rater's vote on one item: their first label replicate, read as positive or
 /// not. Adjudications are not votes.
 pub fn votes<'l>(labels: &[&'l Label], positive: &Rule) -> Vec<(&'l str, bool)> {
-    pool(labels)
-        .0
-        .into_iter()
+    votes_in(&pool(labels).0, positive)
+}
+
+/// The votes among labels already pooled.
+fn votes_in<'l>(pool: &[&'l Label], positive: &Rule) -> Vec<(&'l str, bool)> {
+    pool.iter()
         .filter(|l| l.kind() != LabelKind::Adjudication && l.label_replicate() == 0)
         .filter_map(|l| {
             l.value
@@ -64,7 +67,7 @@ pub fn agreement_stratum(labels: &[&Label], positive: &Rule) -> Option<&'static 
         .copied()
         .filter(|l| l.source == Source::Human)
         .collect();
-    let votes = votes(&human, positive);
+    let votes = votes_in(&human, positive);
     let first = votes.first()?.1;
     (votes.len() >= 2).then(|| {
         if votes.iter().all(|(_, v)| *v == first) {
@@ -91,7 +94,7 @@ pub fn of(labels: &[&Label], positive: &Rule, mode: ReferenceMode) -> Option<Ref
                 model_derived,
             });
     }
-    let votes = votes(labels, positive);
+    let votes = votes_in(&pool, positive);
     if votes.is_empty() {
         return None;
     }

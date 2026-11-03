@@ -117,7 +117,8 @@ pub fn difference_sensitivity(
     DifferenceSensitivity {
         at_low,
         at_high,
-        sign_changes: (at_low > 0.0) != (at_high > 0.0),
+        // A tie at either end is no change of sign.
+        sign_changes: at_low * at_high < 0.0,
     }
 }
 

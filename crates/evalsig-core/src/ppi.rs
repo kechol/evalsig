@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::numeric::{mean, norm_ppf};
+use crate::numeric::{mean, norm_ppf, variance};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Ppi {
@@ -22,12 +22,6 @@ pub struct Ppi {
     pub lambda: f64,
     pub labelled: usize,
     pub unlabelled: usize,
-}
-
-/// Population variance (divisor n).
-fn variance(x: &[f64]) -> f64 {
-    let m = mean(x.iter().copied()).unwrap_or(0.0);
-    x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / x.len() as f64
 }
 
 /// The PPI++ estimate of the mean of y. `labelled` holds (y, f) pairs, `unlabelled`
@@ -57,7 +51,7 @@ pub fn mean_estimate(
             .sum::<f64>()
             / n as f64;
         let all: Vec<f64> = f.iter().chain(unlabelled).copied().collect();
-        let var_f = variance(&all) * all.len() as f64 / (all.len() - 1) as f64;
+        let var_f = variance(&all, 1);
         let denom = (1.0 + n as f64 / big_n as f64) * var_f;
         if denom > 0.0 {
             (cov / denom).clamp(0.0, 1.0)
@@ -67,8 +61,8 @@ pub fn mean_estimate(
     });
     let rectifier: Vec<f64> = y.iter().zip(&f).map(|(a, b)| a - lambda * b).collect();
     let estimate = lambda * mean(unlabelled.iter().copied())? + mean(rectifier.iter().copied())?;
-    let se = (lambda * lambda * variance(unlabelled) / big_n as f64
-        + variance(&rectifier) / n as f64)
+    let se = (lambda * lambda * variance(unlabelled, 0) / big_n as f64
+        + variance(&rectifier, 0) / n as f64)
         .sqrt();
     let z = norm_ppf(0.5 + level / 2.0);
     Some(Ppi {
