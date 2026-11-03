@@ -1,5 +1,6 @@
 //! The `evalsig` command-line interface.
 
+mod agent;
 mod analysis;
 mod checks;
 mod commands;
@@ -15,7 +16,7 @@ mod referee;
 mod schemas;
 mod validate;
 
-use std::io::Write as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -36,6 +37,23 @@ struct Cli {
     /// Project root holding `.evalsig/`.
     #[arg(long, global = true, value_name = "DIR", default_value = ".")]
     project: PathBuf,
+
+    /// Agent mode: one JSON envelope sized for an agent's context (D-018). Also on
+    /// when AI_AGENT is set, the output is not a terminal and no --format is given.
+    #[arg(long, global = true, conflicts_with = "no_agent")]
+    agent: bool,
+
+    /// Never use agent mode (as EVALSIG_AGENT_MODE=0).
+    #[arg(long, global = true)]
+    no_agent: bool,
+
+    /// In agent mode: the first row of each list to show.
+    #[arg(long, global = true, value_name = "N", default_value_t = 0)]
+    cursor: usize,
+
+    /// In agent mode: return text from the evaluated data in `untrusted_content`.
+    #[arg(long, global = true)]
+    include_content: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -210,6 +228,14 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
     }
 }
 
+/// Whether `--format` appears on the command line at all.
+fn requested_format_given(args: &[std::ffi::OsString]) -> bool {
+    args.iter().any(|a| {
+        let a = a.to_string_lossy();
+        a == "--format" || a.starts_with("--format=")
+    })
+}
+
 /// The format requested on the command line, read before full parsing so that usage
 /// errors can be reported in it too.
 fn requested_format(args: &[std::ffi::OsString]) -> Format {
@@ -255,7 +281,14 @@ fn main() -> ExitCode {
                 .trim_start_matches("error: ")
                 .to_owned();
             let err = CliError::usage(first).with_hint("run `evalsig --help` for usage");
-            if format == Format::Json {
+            let has = |flag: &str| args.iter().any(|a| a.to_string_lossy() == flag);
+            let agent_mode = agent::wanted(
+                has("--agent"),
+                has("--no-agent"),
+                requested_format_given(&args),
+                std::io::stdout().is_terminal(),
+            );
+            if format == Format::Json || agent_mode {
                 return report_error(&err, format);
             }
             let _ = std::io::stderr().write_all(message.as_bytes());
@@ -288,11 +321,34 @@ fn main() -> ExitCode {
             Err(err) => report_error(&err, cli.format),
         };
     }
+    let format_given = requested_format_given(&args);
+    if cli.agent && format_given {
+        return report_error(
+            &CliError::usage("--agent prints JSON; leave out --format"),
+            Format::Json,
+        );
+    }
+    let agent_mode = agent::wanted(
+        cli.agent,
+        cli.no_agent,
+        format_given,
+        std::io::stdout().is_terminal(),
+    );
+    if agent_mode {
+        agent::enable(agent::Mode {
+            cursor: cli.cursor,
+            include_content: cli.include_content,
+        });
+    }
+    let format = if agent_mode { Format::Json } else { cli.format };
     match run(&cli) {
-        Ok(out) => {
-            let _ = std::io::stdout().write_all(output::render(&out, cli.format).as_bytes());
+        Ok(mut out) => {
+            if let Some(mode) = agent::active() {
+                agent::shape(&mut out.envelope, mode);
+            }
+            let _ = std::io::stdout().write_all(output::render(&out, format).as_bytes());
             ExitCode::from(out.exit.code())
         }
-        Err(err) => report_error(&err, cli.format),
+        Err(err) => report_error(&err, format),
     }
 }

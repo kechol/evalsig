@@ -21,6 +21,9 @@ pub struct Args {
     /// Draft these conditions (gate.toml).
     #[arg(long, value_name = "FILE")]
     pub draft: Option<PathBuf>,
+    /// Confirm the draft; agent mode requires it (D-018).
+    #[arg(long)]
+    pub yes: bool,
     #[command(subcommand)]
     pub action: Option<Action>,
 }
@@ -116,6 +119,10 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
                 json!({ "approved": approved, "conditions": doc }),
             )))
         }
+        (Some(_), None) if crate::agent::active().is_some() && !args.yes => Err(CliError::usage(
+            "in agent mode a draft changes the procedure and needs confirming",
+        )
+        .with_hint("pass --yes; a person still approves the draft as the referee")),
         (Some(file), None) => draft(root, file),
         (None, None) => Err(CliError::usage("give --draft <gate.toml>, approve or show")),
     }

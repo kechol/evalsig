@@ -144,6 +144,13 @@ impl Provenance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Truncated {
     pub rows_omitted: u64,
+    /// Strings cut to the cell limit.
+    #[serde(default)]
+    pub cells_cut: u64,
+    /// The `--cursor` that shows the next rows, when rows remain after these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<usize>,
+    /// The BLAKE3 reference of the canonical JSON of the full `results`.
     pub hash: String,
 }
 
@@ -158,6 +165,11 @@ pub struct Envelope {
     pub next: Vec<Next>,
     pub provenance: Provenance,
     pub truncated: Option<Truncated>,
+    /// Text from the evaluated data, only on request in agent mode (D-018).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub untrusted_content: Option<Json>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_notice: Option<String>,
 }
 
 impl Envelope {
@@ -171,6 +183,8 @@ impl Envelope {
             next: Vec::new(),
             provenance: Provenance::tool_only(),
             truncated: None,
+            untrusted_content: None,
+            content_notice: None,
         }
     }
 }
