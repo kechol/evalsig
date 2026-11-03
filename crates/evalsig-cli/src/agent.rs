@@ -166,6 +166,7 @@ pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.runs/1", &[]),
     ("evalsig.schema/1", &[]),
     ("evalsig.seal/1", &[]),
+    ("evalsig.skill/1", &[]),
     ("evalsig.split/1", &[]),
     ("evalsig.splits/1", &[]),
     ("evalsig.threshold/1", &[]),

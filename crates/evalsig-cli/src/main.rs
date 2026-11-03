@@ -82,6 +82,16 @@ enum Command {
     },
     /// Leave items out of every analysis, with a reason code (holdout items: the referee).
     Exclude(commands::exclude::Args),
+    /// Print the AGENTS.md snippet or the Claude Code permission template for evalsig.
+    #[command(group(clap::ArgGroup::new("guide").required(true).args(["snippet", "settings"])))]
+    AgentGuide {
+        /// The snippet for AGENTS.md or CLAUDE.md, for agents without Skills.
+        #[arg(long)]
+        snippet: bool,
+        /// A `.claude/settings.json` permission template that guards against accidents.
+        #[arg(long)]
+        settings: bool,
+    },
     /// What a term, metric, verdict, validity check or exit code means.
     Explain {
         /// A glossary identifier, verdict code, validity check or exit code.
@@ -120,6 +130,9 @@ enum Command {
     Runs,
     /// As the referee: encrypt a holdout's labels to the referee's recipient.
     Seal(commands::seal::Args),
+    /// Install the evalsig Agent Skill, or check an installed one against this binary.
+    #[command(subcommand)]
+    Skill(commands::skill::SkillCommand),
     /// Split the items into dev and validation by cluster, and record the split.
     Split(commands::split::Args),
     /// List the recorded dev / validation splits.
@@ -187,6 +200,8 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         }
         Command::Exclude(ref args) => commands::exclude::run(&cli.project, args),
         Command::Explain { ref name } => commands::explain::run(name),
+        Command::Skill(ref cmd) => commands::skill::run(&cli.project, cmd),
+        Command::AgentGuide { .. } => unreachable!("printed before run"),
         Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
@@ -325,6 +340,15 @@ fn main() -> ExitCode {
             }
             Err(err) => report_error(&err, cli.format),
         };
+    }
+    if let Command::AgentGuide { snippet, .. } = &cli.command {
+        let text = if *snippet {
+            commands::skill::snippet()
+        } else {
+            commands::skill::settings()
+        };
+        let _ = std::io::stdout().write_all(text.as_bytes());
+        return ExitCode::SUCCESS;
     }
     if let Command::Schema {
         name, raw: true, ..

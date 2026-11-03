@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(./.evalsig/ledger.jsonl)",
+      "Write(./.evalsig/ledger.jsonl)",
+      "Edit(./.evalsig/config.toml)",
+      "Write(./.evalsig/config.toml)",
+      "Bash(evalsig init:*)",
+      "Bash(evalsig rebuild:*)",
+      "Bash(evalsig referee:*)",
+      "Bash(evalsig preregister approve:*)",
+      "Bash(evalsig seal:*)",
+      "Bash(evalsig split --holdout:*)",
+      "Bash(evalsig exclude --referee:*)",
+      "Bash(evalsig purge:*)",
+      "Bash(evalsig gate serve:*)",
+      "Bash(rm -rf .evalsig:*)"
+    ],
+    "allow": [
+      "Bash(evalsig help:*)",
+      "Bash(evalsig explain:*)",
+      "Bash(evalsig recipes:*)",
+      "Bash(evalsig schema:*)",
+      "Bash(evalsig runs:*)",
+      "Bash(evalsig items:*)",
+      "Bash(evalsig report:*)",
+      "Bash(evalsig compare:*)",
+      "Bash(evalsig trend:*)",
+      "Bash(evalsig power:*)",
+      "Bash(evalsig agree:*)",
+      "Bash(evalsig validate:*)",
+      "Bash(evalsig ledger show:*)",
+      "Bash(evalsig gate submit:*)",
+      "Bash(evalsig preregister --draft:*)",
+      "Bash(evalsig map probe:*)",
+      "Bash(evalsig map draft:*)",
+      "Bash(evalsig map test:*)",
+      "Bash(evalsig capabilities:*)"
+    ],
+    "ask": [
+      "Bash(evalsig map decide:*)"
+    ]
+  },
+  "_note": "For evalsig 0.1.0. This guards against accidents; the protection itself is a referee with other privileges (docs/referee.md). Within the same privileges there are ways around it. map decide records a person's choice, so every run asks."
+}
