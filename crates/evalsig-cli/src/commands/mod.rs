@@ -1,4 +1,5 @@
 pub mod agree;
+pub mod check;
 pub mod compare;
 pub mod import;
 pub mod init;

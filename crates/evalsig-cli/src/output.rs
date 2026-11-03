@@ -314,7 +314,55 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// One test case per condition of a check or gate, failed when it does not hold and
+/// skipped when it could not be decided.
+fn junit_conditions(e: &Envelope, conditions: &[Json]) -> String {
+    let failures = conditions.iter().filter(|c| c["passed"] == false).count();
+    let skipped = conditions.iter().filter(|c| c["passed"].is_null()).count();
+    let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    let _ = writeln!(
+        s,
+        "<testsuites><testsuite name=\"{}\" tests=\"{}\" failures=\"{failures}\" skipped=\"{skipped}\">",
+        xml_escape(&e.schema),
+        conditions.len(),
+    );
+    for c in conditions {
+        let name = format!(
+            "{} {} {}",
+            c["metric"].as_str().unwrap_or("?"),
+            c["rule"].as_str().unwrap_or("?"),
+            c["value"]
+        );
+        let _ = write!(
+            s,
+            "<testcase classname=\"evalsig\" name=\"{}\">",
+            xml_escape(&name)
+        );
+        let detail = format!(
+            "estimate {}, bound {} ({}-sided)",
+            c["estimate"],
+            c["bound"],
+            c["sided"].as_str().unwrap_or("?")
+        );
+        if c["passed"] == false {
+            let _ = write!(s, "<failure message=\"{}\"/>", xml_escape(&detail));
+        } else if c["passed"].is_null() {
+            let _ = write!(
+                s,
+                "<skipped message=\"{}\"/>",
+                xml_escape(&format!("insufficient data: {detail}"))
+            );
+        }
+        s.push_str("</testcase>\n");
+    }
+    s.push_str("</testsuite></testsuites>\n");
+    s
+}
+
 fn junit(e: &Envelope, exit: Exit) -> String {
+    if let Some(conditions) = e.results["conditions"].as_array() {
+        return junit_conditions(e, conditions);
+    }
     let name = e.verdict.as_ref().map_or("ok", |v| v.code.as_str());
     let failed = exit != Exit::Success;
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");

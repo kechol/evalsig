@@ -123,7 +123,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | remaining items | `remaining.json`, `holdout_excluded` | The item IDs the referee leaves to the agent after cutting the holdout; a split made within them has `holdout_excluded` true |
 | seal | `seal` | Encrypting holdout reference labels so only the referee holding the key can use them in `gate`. The labels never enter the agent's environment |
 | conditions | `conditions` | The rules a gate requires. Pass means all hold |
-| check | `check` | An absolute-threshold check with intervals, without preregistration or holdout |
+| check | `check`, `preregistered` | An absolute-threshold check with intervals, without preregistration or holdout. Its output says `preregistered: false` |
 | threat model | — | What the referee protects and what it does not (specification §8.0) |
 | adaptive overfitting | — | Fitting the holdout by trying repeatedly while looking at results |
 | holdout budget | `budget` | The maximum number of queries to a holdout. Counted per sealed holdout in the referee ledger |
