@@ -88,6 +88,8 @@ enum Command {
     Report(commands::report::Args),
     /// List the imported runs.
     Runs,
+    /// As the referee: encrypt a holdout's labels to the referee's recipient.
+    Seal(commands::seal::Args),
     /// Split the items into dev and validation by cluster, and record the split.
     Split(commands::split::Args),
     /// List the recorded dev / validation splits.
@@ -163,6 +165,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),
+        Command::Seal(ref args) => commands::seal::run(&cli.project, args),
         Command::Split(ref args) => commands::split::run(&cli.project, args),
         Command::Threshold(ref args) => commands::power::threshold(&cli.project, args),
         Command::Trend(ref args) => commands::trend::run(&cli.project, args),

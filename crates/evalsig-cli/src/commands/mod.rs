@@ -14,6 +14,7 @@ pub mod rebuild;
 pub mod recipes;
 pub mod report;
 pub mod schema;
+pub mod seal;
 pub mod split;
 pub mod trend;
 pub mod validate;

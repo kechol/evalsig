@@ -86,6 +86,34 @@ impl Referee {
         Ok(Referee { dir })
     }
 
+    pub fn recipient(&self) -> Result<String, CliError> {
+        let p = self.dir.join(RECIPIENT);
+        Ok(std::fs::read_to_string(&p)
+            .map_err(|e| io_error(&p, &e))?
+            .trim()
+            .to_owned())
+    }
+
+    /// The items of a holdout this referee cut, by its hash.
+    pub fn holdout_items(
+        &self,
+        hash: &str,
+    ) -> Result<std::collections::BTreeSet<String>, CliError> {
+        let p = self.path("holdouts").join(format!(
+            "{}.json",
+            hash.strip_prefix("blake3:").unwrap_or(hash)
+        ));
+        let text = std::fs::read_to_string(&p)
+            .map_err(|_| CliError::usage(format!("this referee has cut no holdout {hash}")))?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
+        Ok(v["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i.as_str().map(str::to_owned))
+            .collect())
+    }
+
     pub fn path(&self, sub: &str) -> PathBuf {
         self.dir.join(sub)
     }
