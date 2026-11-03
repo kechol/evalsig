@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use evalsig_core::records::Record;
-use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Kind};
 use evalsig_store::snapshot::{self, Replacement};
@@ -16,7 +15,8 @@ use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output, Warning};
-use crate::project::{Project, io_error};
+use crate::project::{Project, hex, io_error, str_set};
+use crate::provenance;
 use crate::referee::Referee;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
@@ -40,7 +40,8 @@ pub struct Args {
     /// Free text kept in the ledger; required with `--reason other`.
     #[arg(long)]
     pub detail: Option<String>,
-    /// As the referee: exclude holdout items in this referee home.
+    /// As the referee: exclude holdout items in this referee home (default:
+    /// EVALSIG_REFEREE when set).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
 }
@@ -58,7 +59,7 @@ fn item_of(r: &Record) -> Option<&str> {
 /// The items and their set hash, the input of the `exclude` line.
 fn item_set(items: &[String]) -> Result<(BTreeSet<String>, Vec<u8>, String), CliError> {
     let set: BTreeSet<String> = items.iter().cloned().collect();
-    let bytes = to_canonical_bytes(&json!(set)).map_err(CliError::store)?;
+    let bytes = provenance::item_set_bytes(set.iter())?;
     let hash = ContentHash::blake3(&bytes).to_string();
     Ok((set, bytes, hash))
 }
@@ -67,7 +68,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     if args.reason == Reason::Other && args.detail.as_deref().is_none_or(|d| d.trim().is_empty()) {
         return Err(CliError::usage("--reason other needs --detail"));
     }
-    if args.referee.is_some() {
+    let referee_home = args.referee.is_some()
+        || std::env::var_os(crate::referee::ENV).is_some_and(|v| !v.is_empty());
+    if referee_home {
         referee_side(args)
     } else {
         agent_side(root, args)
@@ -85,17 +88,11 @@ fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, CliError> {
         let Some(name) = e.outputs.first() else {
             continue;
         };
-        let p = project.splits_dir().join(format!(
-            "{}.json",
-            name.strip_prefix("blake3:").unwrap_or(name)
-        ));
+        let p = project.splits_dir().join(format!("{}.json", hex(name)));
         let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
         let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
-        let ids = ["dev", "validation"]
-            .iter()
-            .flat_map(|k| v[k].as_array().into_iter().flatten())
-            .filter_map(|i| i.as_str().map(str::to_owned))
-            .collect();
+        let mut ids = str_set(&v["dev"]);
+        ids.extend(str_set(&v["validation"]));
         return Ok(Some(ids));
     }
     Ok(None)
@@ -188,12 +185,7 @@ fn referee_side(args: &Args) -> Result<Output, CliError> {
                 .with_hint("the agent excludes the items it may use, without --referee"),
         );
     }
-    let dir = referee.path("exclusions");
-    std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;
-    let p = dir.join(format!(
-        "{}.json",
-        set_hash.strip_prefix("blake3:").unwrap_or(&set_hash)
-    ));
+    let p = referee.file("exclusions", &set_hash, "json");
     std::fs::write(&p, &bytes).map_err(|e| io_error(&p, &e))?;
     let summary = json!({ "reason": args.reason, "detail": args.detail, "count": items.len() });
     referee.record(Kind::Exclude, vec![set_hash], vec![], summary.clone())?;
@@ -201,5 +193,15 @@ fn referee_side(args: &Args) -> Result<Output, CliError> {
     results["items"] = json!(items);
     let mut envelope = Envelope::new("evalsig.exclude/1", results);
     envelope.provenance.ledger = Some("referee".into());
+    if referee
+        .entries()?
+        .iter()
+        .any(|e| e.kind == Kind::PreregisterApprove)
+    {
+        envelope.warnings.push(Warning {
+            code: "reapproval_needed".into(),
+            message: "approvals pin the holdout's items; gate refuses them, without spending budget, until the conditions are approved again".into(),
+        });
+    }
     Ok(Output::success(envelope))
 }

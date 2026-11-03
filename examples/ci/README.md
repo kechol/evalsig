@@ -28,9 +28,12 @@ The seal protects nothing unless each of these holds (`docs/referee.md`).
 - **The secrets sit in a protected environment.** `EVALSIG_REFEREE_IDENTITY` (the
   contents of the referee's `identity.txt`) and `REFEREE_STATE_DEPLOY_KEY` are
   secrets of the environment `referee`, which requires a reviewer and admits
-  only `main`. Fork pull requests get no secrets; a maintainer approves each run.
-- **One submission at a time.** The `concurrency` group serialises gate runs, so
-  two submissions cannot both read the same budget.
+  only `main`. On `pull_request_target` a fork's pull request runs with the base
+  repository's secrets, so that reviewer is the protection: approve a gate run
+  only after reading the pull request.
+- **One gate run at a time.** The `concurrency` group runs one gate job at a time,
+  so two submissions cannot both read the same budget. GitHub keeps one pending
+  run per group and cancels an older pending one, which then has to be re-run.
 
 ## Setting up
 

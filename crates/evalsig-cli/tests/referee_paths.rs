@@ -160,7 +160,9 @@ fn referee_attribute_rewrite() {
         "{}",
         String::from_utf8_lossy(&out.stdout)
     );
-    assert_eq!(json(&out)["error"]["code"], "does_not_match_approval");
+    // The referee's own state moved: refused until approved again, at no budget.
+    assert_eq!(json(&out)["error"]["code"], "approval_out_of_date");
+    assert_eq!(accesses(&w), 1);
 }
 
 #[test]

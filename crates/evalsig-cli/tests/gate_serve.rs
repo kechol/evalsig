@@ -154,13 +154,16 @@ fn submissions_over_the_socket_and_http_get_the_gate_answer() {
     assert_eq!(code(&out), Some(3));
     assert_eq!(json(&out)["error"]["code"], "does_not_match_approval");
 
-    // The referee keeps the results and copies the agent's ledger head into each line.
+    // The referee keeps the results of judged submissions and copies the agent's ledger
+    // head into each gate line.
     let gates: Vec<Value> = referee_ledger(&w)
         .into_iter()
         .filter(|e| e["kind"] == "gate")
         .collect();
-    assert_eq!(gates.len(), 2);
+    // A refusal after the submission counts leaves a line too, with its code.
+    assert_eq!(gates.len(), 3);
     assert!(gates[0]["summary"]["agent_ledger_head"].is_string());
+    assert_eq!(gates[2]["summary"]["error"], "does_not_match_approval");
     assert_eq!(accesses(&w), 3);
     assert_eq!(
         std::fs::read_dir(w.home.path().join("results"))

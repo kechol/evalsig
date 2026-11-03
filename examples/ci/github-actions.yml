@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  # One submission at a time: the budget is counted in the referee ledger.
+  # One gate run at a time: the budget is counted in the referee ledger. GitHub keeps
+  # one pending run per group and cancels an older pending one; re-run it.
   group: evalsig-referee
   cancel-in-progress: false
 
@@ -98,9 +99,12 @@ jobs:
           cd state
           git config user.name "evalsig referee"
           git config user.email "referee@example.com"
-          git add home/ledger.jsonl home/results home/state
-          git commit -m "gate: ${{ github.repository }}#${{ github.event.pull_request.number }}"
-          git push
+          git add home/ledger.jsonl home/results
+          # A resubmission or a refusal before the budget changes nothing to keep.
+          if ! git diff --cached --quiet; then
+            git commit -m "gate: ${{ github.repository }}#${{ github.event.pull_request.number }}"
+            git push
+          fi
       - name: The gate's exit code is the check's result
         env:
           CODE: ${{ steps.gate.outputs.code }}

@@ -50,6 +50,14 @@ pub fn parse(path: &Path) -> Result<Value, CliError> {
     let toml: toml::Table = toml::from_str(&text)
         .map_err(|e: toml::de::Error| invalid(format!("{}: {e}", path.display())))?;
     let doc = serde_json::to_value(toml).expect("TOML converts to JSON");
+    check(&doc, &path.display().to_string())?;
+    Ok(doc)
+}
+
+/// The checks a draft passes when it is written and again when the referee approves
+/// it, since the agent can write the stored copy: no resolved section, the gate.toml
+/// schema, and a threshold for every condition that compares against one.
+pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
     if doc.get("resolved").is_some() {
         return Err(invalid(
             "a draft has no resolved section; approval writes it",
@@ -59,18 +67,35 @@ pub fn parse(path: &Path) -> Result<Value, CliError> {
     let validator = jsonschema::options()
         .build(&schema)
         .expect("embedded schema compiles");
-    let errors: Vec<String> = validator
-        .iter_errors(&doc)
+    let mut errors: Vec<String> = validator
+        .iter_errors(doc)
         .map(|e| format!("{}: {e}", e.instance_path()))
         .collect();
-    if !errors.is_empty() {
-        return Err(invalid(format!(
-            "{}: {}",
-            path.display(),
-            errors.join("; ")
-        )));
+    for (k, c) in doc["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        if c["rule"] != "pass" && !c["value"].is_number() {
+            errors.push(format!(
+                "/conditions/{k}: rule {} needs a numeric value",
+                c["rule"]
+            ));
+        }
+        // The gate computes intervals by metrics spec §1.1 only; a named method it would
+        // not use is refused rather than ignored.
+        if c["interval"].as_str().is_some_and(|m| m != "auto") {
+            errors.push(format!(
+                "/conditions/{k}: interval {} is not available; use auto",
+                c["interval"]
+            ));
+        }
     }
-    Ok(doc)
+    if !errors.is_empty() {
+        return Err(invalid(format!("{origin}: {}", errors.join("; "))));
+    }
+    Ok(())
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {

@@ -2,13 +2,16 @@
 //! With `--format json` they are written to standard error as
 //! `{"error": {"code", "message", "hint"}}`.
 
+use std::borrow::Cow;
+
 use serde::Serialize;
 
 use crate::exit::Exit;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CliError {
-    pub code: &'static str,
+    /// A literal in this program, or a code relayed from a referee (`gate submit`).
+    pub code: Cow<'static, str>,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
@@ -17,9 +20,9 @@ pub struct CliError {
 }
 
 impl CliError {
-    pub fn new(code: &'static str, message: impl Into<String>, exit: Exit) -> Self {
+    pub fn new(code: impl Into<Cow<'static, str>>, message: impl Into<String>, exit: Exit) -> Self {
         CliError {
-            code,
+            code: code.into(),
             message: message.into(),
             hint: None,
             exit,

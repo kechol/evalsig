@@ -15,7 +15,7 @@ use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output};
-use crate::project::{Project, io_error};
+use crate::project::{Project, hex, io_error};
 use crate::referee::Referee;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -29,10 +29,6 @@ pub struct Args {
     /// The referee's home (default: EVALSIG_REFEREE).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
-}
-
-fn hex(hash: &str) -> &str {
-    hash.strip_prefix("blake3:").unwrap_or(hash)
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
@@ -85,9 +81,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .collect();
     let sealed = seal::seal(&referee.recipient()?, &plaintext)
         .map_err(|e| CliError::new("seal", e.to_string(), Exit::Rejected))?;
-    let path = referee
-        .path("sealed")
-        .join(format!("{}.age", hex(&args.holdout)));
+    let path = referee.file("sealed", &args.holdout, "age");
     std::fs::write(&path, &sealed).map_err(|e| io_error(&path, &e))?;
     let sealed_ref = ContentHash::blake3(&sealed).to_string();
 

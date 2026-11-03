@@ -15,7 +15,7 @@ use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output};
-use crate::project::{Project, io_error};
+use crate::project::{Project, hex, io_error, str_set};
 use crate::provenance::item_set_hash;
 use crate::referee::Referee;
 
@@ -62,6 +62,16 @@ pub struct Args {
     /// The referee's home (default: EVALSIG_REFEREE).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
+}
+
+/// The same mistake gets the same code and exit on either side of the split.
+fn split_error(e: SplitError) -> CliError {
+    match e {
+        SplitError::CrossesCluster { .. } => rejected("split_crosses_cluster", e.to_string()),
+        SplitError::NotAvailable(_) => rejected("holdout_item", e.to_string()),
+        SplitError::Share => CliError::usage(e.to_string()),
+        _ => rejected("split", e.to_string()),
+    }
 }
 
 fn rejected(code: &'static str, message: impl Into<String>) -> CliError {
@@ -161,12 +171,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     let seed = random.then_some(seed);
     let a: Assignment =
-        split::split(&items, within.as_ref(), &method, args.validation).map_err(|e| match e {
-            SplitError::CrossesCluster { .. } => rejected("split_crosses_cluster", e.to_string()),
-            SplitError::NotAvailable(_) => rejected("holdout_item", e.to_string()),
-            SplitError::Share => CliError::usage(e.to_string()),
-            _ => rejected("split", e.to_string()),
-        })?;
+        split::split(&items, within.as_ref(), &method, args.validation).map_err(split_error)?;
     let part = |ids: &[String]| -> Result<Value, CliError> {
         Ok(json!({ "hash": item_set_hash(ids.iter())?, "items": ids.len() }))
     };
@@ -185,10 +190,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     .to_string();
     let dir = project.splits_dir();
     std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;
-    let file_name = format!(
-        "{}.json",
-        name_hash.strip_prefix("blake3:").unwrap_or(&name_hash)
-    );
+    let file_name = format!("{}.json", hex(&name_hash));
     let path = dir.join(&file_name);
     let file = json!({
         "schema": "evalsig.split/1",
@@ -245,14 +247,10 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
             "random",
         )
     };
-    let a = split::split(&items, None, &method, args.share)
-        .map_err(|e| rejected("split", e.to_string()))?;
+    let a = split::split(&items, None, &method, args.share).map_err(split_error)?;
     let (remaining, held) = (a.dev, a.validation);
     let hash = item_set_hash(held.iter())?;
-    let file = referee.path("holdouts").join(format!(
-        "{}.json",
-        hash.strip_prefix("blake3:").unwrap_or(&hash)
-    ));
+    let file = referee.file("holdouts", &hash, "json");
     let mut text = serde_json::to_string_pretty(&json!({
         "schema": "evalsig.holdout/1",
         "holdout": hash,
@@ -334,16 +332,8 @@ pub fn scope(project: &Project, part: Part, hash: Option<&str>) -> Result<Scope,
             .with_hint("run `evalsig split` first")
         })?;
     let name = entry.outputs.first().cloned().unwrap_or_default();
-    let path = project.splits_dir().join(format!(
-        "{}.json",
-        name.strip_prefix("blake3:").unwrap_or(&name)
-    ));
-    let items = read_json(&path)?[key]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|i| i.as_str().map(str::to_owned))
-        .collect();
+    let path = project.splits_dir().join(format!("{}.json", hex(&name)));
+    let items = str_set(&read_json(&path)?[key]);
     Ok(Scope {
         hash: part_hash(&entry).unwrap_or_default(),
         items,

@@ -7,7 +7,9 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use evalsig_adapters::limits::MAX_BYTES;
 use serde::{Deserialize, Serialize};
@@ -68,6 +70,67 @@ struct Answer {
 }
 
 const SOCKET: &str = "gate.sock";
+const HEAD_LIMIT: u64 = 16 * 1024;
+/// How long a connection may take, in all, to send its submission.
+const SEND_DEADLINE: Duration = Duration::from_secs(60);
+/// Connections read at once; more are closed on arrival.
+const MAX_CONNECTIONS: usize = 32;
+/// How long `gate submit` waits for the referee's answer, judging included.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// A stream that fails once its deadline passes, however the bytes trickle in.
+struct Deadline<S> {
+    stream: S,
+    until: Instant,
+}
+
+trait Timed {
+    fn set_timeout(&self, d: Duration) -> std::io::Result<()>;
+}
+
+impl Timed for TcpStream {
+    fn set_timeout(&self, d: Duration) -> std::io::Result<()> {
+        self.set_read_timeout(Some(d))
+    }
+}
+
+#[cfg(unix)]
+impl Timed for std::os::unix::net::UnixStream {
+    fn set_timeout(&self, d: Duration) -> std::io::Result<()> {
+        self.set_read_timeout(Some(d))
+    }
+}
+
+impl<S: Read + Timed> Read for Deadline<S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.stream.set_timeout(left)?;
+        self.stream.read(buf)
+    }
+}
+
+/// A connection slot, given back when the connection ends.
+struct Slot(Arc<AtomicUsize>);
+
+impl Slot {
+    fn take(active: &Arc<AtomicUsize>) -> Option<Slot> {
+        (active.fetch_add(1, Ordering::SeqCst) < MAX_CONNECTIONS)
+            .then(|| Slot(active.clone()))
+            .or_else(|| {
+                active.fetch_sub(1, Ordering::SeqCst);
+                None
+            })
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 const TOKEN: &str = "token";
 
 fn transport(message: impl Into<String>) -> CliError {
@@ -80,17 +143,15 @@ fn answer(root: &Path, referee: &Referee, lock: &Mutex<()>, bytes: &[u8]) -> Ans
     let result = serde_json::from_slice::<Wire>(bytes)
         .map_err(|e| transport(format!("not a submission: {e}")))
         .and_then(|w| {
-            let file = referee.path("state").join("submission.jsonl");
-            std::fs::write(&file, &w.records).map_err(|e| io_error(&file, &e))?;
             judge_request(
                 root,
+                referee,
                 &Request {
                     approved: w.approved,
                     candidate: w.candidate,
-                    records: file,
+                    records: w.records,
                     mapping_hash: w.mapping_hash,
                     agent_ledger_head: w.agent_ledger_head,
-                    referee: Some(referee.path("")),
                 },
             )
         });
@@ -117,14 +178,28 @@ fn http_exchange(
     token: &str,
     handle: impl FnOnce(&[u8]) -> Answer,
 ) -> std::io::Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
+    let mut reader = BufReader::new(Deadline {
+        stream: stream.try_clone()?,
+        until: Instant::now() + SEND_DEADLINE,
+    });
+    // The request line and headers share one small budget, so a client cannot make the
+    // referee buffer much before its token is checked.
+    let mut budget = HEAD_LIMIT;
+    let mut next_line = |reader: &mut BufReader<Deadline<TcpStream>>| -> std::io::Result<String> {
+        let mut l = String::new();
+        let n = reader.by_ref().take(budget).read_line(&mut l)?;
+        budget -= n as u64;
+        if budget == 0 {
+            return Err(std::io::Error::other("request head too large"));
+        }
+        Ok(l)
+    };
+    let line = next_line(&mut reader)?;
     let route_ok = line.starts_with("POST /submit ");
     let (mut length, mut authorized) = (None::<u64>, false);
     loop {
-        let mut h = String::new();
-        if reader.read_line(&mut h)? == 0 || h == "\r\n" || h == "\n" {
+        let h = next_line(&mut reader)?;
+        if h.is_empty() || h == "\r\n" || h == "\n" {
             break;
         }
         let (name, value) = h.split_once(':').unwrap_or((&h, ""));
@@ -169,6 +244,12 @@ fn http_exchange(
 #[cfg(unix)]
 fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, CliError> {
     if path.exists() {
+        if std::os::unix::net::UnixStream::connect(path).is_ok() {
+            return Err(transport(format!(
+                "a gate serve already listens on {}",
+                path.display()
+            )));
+        }
         std::fs::remove_file(path).map_err(|e| io_error(path, &e))?;
     }
     let l = std::os::unix::net::UnixListener::bind(path).map_err(|e| io_error(path, &e))?;
@@ -215,23 +296,52 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
     println!("{listening}");
     let _ = std::io::stdout().flush();
 
+    // Each connection gets its own thread, a slot and a deadline, so slow clients
+    // cannot hold a listener; `lock` and the home's lock still judge one at a time.
+    let active = Arc::new(AtomicUsize::new(0));
     let mut threads = Vec::new();
     if let Some((l, t)) = http {
-        let (referee, root, lock) = (referee.clone(), root.clone(), lock.clone());
+        let (referee, root, lock, active) =
+            (referee.clone(), root.clone(), lock.clone(), active.clone());
+        let t = Arc::new(t);
         threads.push(std::thread::spawn(move || {
             for stream in l.incoming().flatten() {
-                let _ = http_exchange(stream, &t, |b| answer(&root, &referee, &lock, b));
+                let Some(slot) = Slot::take(&active) else {
+                    continue;
+                };
+                let (referee, root, lock, t) =
+                    (referee.clone(), root.clone(), lock.clone(), t.clone());
+                std::thread::spawn(move || {
+                    let _slot = slot;
+                    let _ = stream.set_write_timeout(Some(SEND_DEADLINE));
+                    let _ = http_exchange(stream, &t, |b| answer(&root, &referee, &lock, b));
+                });
             }
         }));
     }
     #[cfg(unix)]
     threads.push(std::thread::spawn(move || {
-        for mut stream in socket.incoming().flatten() {
-            let mut body = Vec::new();
-            if (&mut stream).take(MAX_BYTES).read_to_end(&mut body).is_ok() {
-                let a = answer(&root, &referee, &lock, &body);
-                let _ = stream.write_all(&serde_json::to_vec(&a).expect("answer serializes"));
-            }
+        for stream in socket.incoming().flatten() {
+            let Some(slot) = Slot::take(&active) else {
+                continue;
+            };
+            let (referee, root, lock) = (referee.clone(), root.clone(), lock.clone());
+            std::thread::spawn(move || {
+                let _slot = slot;
+                let _ = stream.set_write_timeout(Some(SEND_DEADLINE));
+                let Ok(mut writer) = stream.try_clone() else {
+                    return;
+                };
+                let mut body = Vec::new();
+                let mut reader = Deadline {
+                    stream,
+                    until: Instant::now() + SEND_DEADLINE,
+                };
+                if (&mut reader).take(MAX_BYTES).read_to_end(&mut body).is_ok() {
+                    let a = answer(&root, &referee, &lock, &body);
+                    let _ = writer.write_all(&serde_json::to_vec(&a).expect("answer serializes"));
+                }
+            });
         }
     }));
     for t in threads {
@@ -249,7 +359,7 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
         candidate: candidate.to_owned(),
         records: std::fs::read_to_string(records).map_err(|e| io_error(records, &e))?,
         mapping_hash: s.mapping_hash.clone(),
-        agent_ledger_head: s.agent_ledger_head(),
+        agent_ledger_head: s.agent_ledger_head()?,
     };
     let body = serde_json::to_vec(&wire).expect("submission serializes");
     let reply = match (&args.socket, &args.url) {
@@ -265,12 +375,7 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
         .unwrap_or(Exit::Rejected);
     if let Some(e) = a.body.get("error") {
         let text = |k: &str| e[k].as_str().unwrap_or_default().to_owned();
-        // The process exits right after printing, so the leaked code lives as long as needed.
-        let mut err = CliError::new(
-            Box::leak(text("code").into_boxed_str()),
-            text("message"),
-            exit,
-        );
+        let mut err = CliError::new(text("code"), text("message"), exit);
         err.hint = e["hint"].as_str().map(str::to_owned);
         return Err(err);
     }
@@ -294,6 +399,8 @@ fn token_for(args: &SubmitArgs) -> Result<String, CliError> {
 fn send_socket(path: &Path, body: &[u8]) -> Result<Vec<u8>, CliError> {
     let mut s = std::os::unix::net::UnixStream::connect(path)
         .map_err(|e| transport(format!("cannot reach {}: {e}", path.display())))?;
+    s.set_read_timeout(Some(ANSWER_TIMEOUT))
+        .map_err(|e| transport(e.to_string()))?;
     s.write_all(body).map_err(|e| transport(e.to_string()))?;
     s.shutdown(std::net::Shutdown::Write)
         .map_err(|e| transport(e.to_string()))?;
@@ -320,8 +427,14 @@ fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, CliError> {
             ))
             .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port")
         })?;
-    let mut s =
-        TcpStream::connect(addr).map_err(|e| transport(format!("cannot reach {url}: {e}")))?;
+    let target = std::net::ToSocketAddrs::to_socket_addrs(addr)
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| CliError::usage(format!("{url}: not a host and port")))?;
+    let mut s = TcpStream::connect_timeout(&target, Duration::from_secs(10))
+        .map_err(|e| transport(format!("cannot reach {url}: {e}")))?;
+    s.set_read_timeout(Some(ANSWER_TIMEOUT))
+        .map_err(|e| transport(e.to_string()))?;
     write!(
         s,
         "POST /submit HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

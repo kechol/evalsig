@@ -1,13 +1,14 @@
 //! `evalsig preregister approve <draft>`: the referee resolves every setting the
 //! draft leaves open, pins what the gate will rely on by hash and writes
-//! `approved/<hash>.toml`, the only file `gate` reads (SPEC §8.3). The Ladder's step
-//! and first best wait for D-015.
+//! `approved/<hash>.toml`, the only file `gate` reads (SPEC §8.3). It fixes no Ladder
+//! step or first best (D-015 is Proposed).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_core::bootstrap::required_resamples;
 use evalsig_core::config::Config;
+use evalsig_core::gate::{Sided, interval_level};
 use evalsig_core::power;
 use evalsig_core::records::{Judgment, Label, Record};
 use evalsig_core::report;
@@ -21,7 +22,7 @@ use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output, Warning, round_numbers};
-use crate::project::{Project, io_error};
+use crate::project::{Project, hex, io_error};
 use crate::referee::Referee;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -47,10 +48,6 @@ fn rejected(message: impl Into<String>) -> CliError {
     CliError::new("invalid_conditions", message, Exit::Rejected)
 }
 
-fn hex(h: &str) -> &str {
-    h.strip_prefix("blake3:").unwrap_or(h)
-}
-
 pub fn canonical_hash(v: &Value) -> Result<String, CliError> {
     Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(CliError::store)?).to_string())
 }
@@ -70,6 +67,7 @@ fn draft(dir: &Path, hash: &str) -> Result<Value, CliError> {
             path.display()
         )));
     }
+    crate::commands::preregister::check(&doc, &path.display().to_string())?;
     Ok(doc)
 }
 
@@ -118,7 +116,7 @@ pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
         .unwrap_or(evalsig_core::records::DEFAULT_TASK)
         .to_owned();
     let baseline = doc["compare"]["baseline"].as_str().map(str::to_owned);
-    let budget = doc["holdout"]["budget"].as_u64().unwrap_or(5) as u32;
+    let budget = budget(&doc) as u32;
     let resolved = resolve(&doc, &config, &d, &task, baseline.as_deref(), &held, budget)?;
     let mapping_hash = match &args.mapping {
         Some(p) => {
@@ -139,15 +137,12 @@ pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
                 && e.summary.get("holdout").and_then(Value::as_str) == Some(args.holdout.as_str()))
             .count()
     );
-    r["ladder"] = json!("the step and the first best await D-015");
     doc["resolved"] = r;
     // TOML has no null: unset values are left out, before hashing, so the approved
     // file reads back to the same document.
     strip_nulls(&mut doc);
     let approved = canonical_hash(&doc)?;
-    let path = referee
-        .path("approved")
-        .join(format!("{}.toml", hex(&approved)));
+    let path = referee.file("approved", &approved, "toml");
     let toml = toml::to_string(&doc).map_err(|e| rejected(e.to_string()))?;
     std::fs::write(&path, toml).map_err(|e| io_error(&path, &e))?;
 
@@ -227,8 +222,22 @@ fn resolve(
     let level = doc["conditions"][0]["level"]
         .as_f64()
         .unwrap_or(config.stats.level);
-    let per_submission = 1.0 - (1.0 - level) / f64::from(budget.max(1));
-    let alpha = 1.0 - per_submission;
+    let per_submission = interval_level(level, budget, Sided::Two);
+    // The bootstrap must reach the tail of the strictest condition, at its own level
+    // and sidedness, as the gate will judge it.
+    let alpha = doc["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            let sided = if c["sided"] == "one" {
+                Sided::One
+            } else {
+                Sided::Two
+            };
+            1.0 - interval_level(c["level"].as_f64().unwrap_or(level), budget, sided)
+        })
+        .fold(1.0 - per_submission, f64::min);
     let mode = doc["reference"]["mode"]
         .as_str()
         .map_or_else(|| json!(config.reference.mode), |m| json!(m));
@@ -271,21 +280,11 @@ fn resolve(
 
 /// The baseline's records, canonical and sorted, by hash.
 pub fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
-    let mut lines: Vec<Vec<u8>> = d
-        .records
-        .iter()
-        .filter(|r| match r {
-            Record::Run(x) => x.run_id == run,
-            Record::Judgment(j) => j.run_id == run,
-            _ => false,
-        })
-        .map(|r| {
-            to_canonical_bytes(&serde_json::to_value(r).expect("records serialize"))
-                .map_err(CliError::store)
-        })
-        .collect::<Result<_, _>>()?;
-    lines.sort();
-    Ok(ContentHash::blake3(&lines.concat()).to_string())
+    crate::data::records_hash(d.records.iter().filter(|r| match r {
+        Record::Run(x) => x.run_id == run,
+        Record::Judgment(j) => j.run_id == run,
+        _ => false,
+    }))
 }
 
 /// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
@@ -409,12 +408,25 @@ fn strip_nulls(v: &mut Value) {
     }
 }
 
+/// The holdout budget of approved or draft conditions (SPEC §8.4: 5 by default).
+pub fn budget(doc: &Value) -> u64 {
+    doc["holdout"]["budget"].as_u64().unwrap_or(5)
+}
+
 /// `preregister show <approved>`: the approved conditions as gate reads them, checked
 /// against their hash.
 pub fn load(referee: &Referee, approved: &str) -> Result<Value, CliError> {
-    let path = referee
-        .path("approved")
-        .join(format!("{}.toml", hex(approved)));
+    // The hash names a file, and gate serve takes it from the network: only a well-formed
+    // BLAKE3 reference may reach the path.
+    if !approved
+        .parse::<ContentHash>()
+        .is_ok_and(|h| h.to_string().starts_with("blake3:"))
+    {
+        return Err(CliError::usage(format!(
+            "{approved:?} is not an approved hash (blake3:<64 hex>)"
+        )));
+    }
+    let path = referee.file("approved", approved, "toml");
     let text = std::fs::read_to_string(&path)
         .map_err(|_| CliError::usage(format!("no approved conditions {approved}")))?;
     let table: toml::Table =

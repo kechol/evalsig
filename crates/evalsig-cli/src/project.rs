@@ -142,6 +142,20 @@ impl Project {
     }
 }
 
+/// The strings of a JSON array, such as a file's item IDs.
+pub fn str_set(v: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|i| i.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The hex digest of a `blake3:` reference, as files named by the hash use it.
+pub fn hex(h: &str) -> &str {
+    h.strip_prefix("blake3:").unwrap_or(h)
+}
+
 pub fn io_error(path: &Path, e: &std::io::Error) -> CliError {
     CliError::new("io", format!("{}: {e}", path.display()), Exit::Blocked)
 }

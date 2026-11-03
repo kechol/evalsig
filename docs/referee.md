@@ -98,6 +98,9 @@ ledger.
   <home>/gate.sock`, `chmod 0710 <home>` and `chmod 0660 <home>/gate.sock`.
   The referee keeps its identity, token and ledger at 0600 and its
   directories at 0700, so the group reaches the socket and nothing else.
+  `gate serve` creates the socket 0600 at each start, so run the `chgrp` and
+  `chmod` of the socket after every start. A second `gate serve` on a home
+  whose socket answers refuses to start.
 - `evalsig gate submit --approved <hash> --candidate <run> --records <file>`
   with `--socket <home>/gate.sock`, or with `--url http://127.0.0.1:<port>`
   and `--token-file <file>` (or `EVALSIG_GATE_TOKEN`), prints the same answer

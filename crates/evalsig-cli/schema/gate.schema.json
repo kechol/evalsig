@@ -222,7 +222,7 @@
        "delong"
       ],
       "default": "auto",
-      "description": "auto chooses by metrics spec §1.1. Approval refuses bootstrap for rate conditions with five or fewer events"
+      "description": "auto chooses by metrics spec §1.1. This version accepts auto only; a draft naming another method is refused"
      },
      "source": {
       "enum": [

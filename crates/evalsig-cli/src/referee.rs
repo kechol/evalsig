@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, Output};
-use crate::project::{actor, io_error, now};
+use crate::project::{actor, hex, io_error, now, str_set};
 
 pub const ENV: &str = "EVALSIG_REFEREE";
 const IDENTITY: &str = "identity.txt";
@@ -75,6 +75,13 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
             dir.display()
         )));
     }
+    // The home is made private, so it must be the referee's own: new or empty.
+    if std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some()) {
+        return Err(CliError::usage(format!(
+            "{} is not empty; a referee home starts in a new or empty directory",
+            dir.display()
+        )));
+    }
     std::fs::create_dir_all(dir).map_err(|e| io_error(dir, &e))?;
     private(dir)?;
     for sub in SUBDIRS {
@@ -98,12 +105,20 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
 
 fn item_ids(p: &Path, text: &str) -> Result<BTreeSet<String>, CliError> {
     let v: Value = serde_json::from_str(text).map_err(|e| CliError::invalid_input(p, e))?;
-    Ok(v["items"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|i| i.as_str().map(str::to_owned))
-        .collect())
+    Ok(str_set(&v["items"]))
+}
+
+/// The items named by the `exclude` lines of the referee ledger.
+fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, CliError> {
+    let mut out = BTreeSet::new();
+    for e in entries.iter().filter(|e| e.kind == Kind::Exclude) {
+        let Some(h) = e.inputs.first() else { continue };
+        let p = referee.file("exclusions", h, "json");
+        let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
+        out.extend(str_set(&v));
+    }
+    Ok(out)
 }
 
 impl Referee {
@@ -141,13 +156,19 @@ impl Referee {
     /// The items of a holdout this referee cut, by its hash, less the items the
     /// referee excluded (D-027).
     pub fn holdout_items(&self, hash: &str) -> Result<BTreeSet<String>, CliError> {
-        let p = self.path("holdouts").join(format!(
-            "{}.json",
-            hash.strip_prefix("blake3:").unwrap_or(hash)
-        ));
+        self.holdout_items_in(hash, &self.entries()?)
+    }
+
+    /// As `holdout_items`, with the referee ledger already read.
+    pub fn holdout_items_in(
+        &self,
+        hash: &str,
+        entries: &[Entry],
+    ) -> Result<BTreeSet<String>, CliError> {
+        let p = self.file("holdouts", hash, "json");
         let text = std::fs::read_to_string(&p)
             .map_err(|_| CliError::usage(format!("this referee has cut no holdout {hash}")))?;
-        let excluded = self.excluded()?;
+        let excluded = excluded(self, entries)?;
         Ok(item_ids(&p, &text)?
             .into_iter()
             .filter(|i| !excluded.contains(i))
@@ -166,29 +187,27 @@ impl Referee {
         Ok(out)
     }
 
-    /// The items named by the `exclude` lines of the referee ledger.
-    fn excluded(&self) -> Result<BTreeSet<String>, CliError> {
-        let mut out = BTreeSet::new();
-        for e in self.entries()?.iter().filter(|e| e.kind == Kind::Exclude) {
-            let Some(h) = e.inputs.first() else { continue };
-            let p = self
-                .path("exclusions")
-                .join(format!("{}.json", h.strip_prefix("blake3:").unwrap_or(h)));
-            let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
-            let v: Value =
-                serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
-            out.extend(
-                v.as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|i| i.as_str().map(str::to_owned)),
-            );
-        }
-        Ok(out)
-    }
-
     pub fn path(&self, sub: &str) -> PathBuf {
         self.dir.join(sub)
+    }
+
+    /// `<sub>/<hex>.<ext>` in the home, for a file named by a hash.
+    pub fn file(&self, sub: &str, hash: &str, ext: &str) -> PathBuf {
+        self.dir.join(sub).join(format!("{}.{ext}", hex(hash)))
+    }
+
+    /// An exclusive lock on the home, held while the guard lives: one budget-changing
+    /// operation at a time, whichever process runs it.
+    pub fn lock(&self) -> Result<std::fs::File, CliError> {
+        let p = self.path("state").join("gate.lock");
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&p)
+            .map_err(|e| io_error(&p, &e))?;
+        f.lock().map_err(|e| io_error(&p, &e))?;
+        Ok(f)
     }
 
     pub fn ledger_path(&self) -> PathBuf {
@@ -229,9 +248,7 @@ impl Referee {
         .map_err(CliError::store)
         .and_then(|e| private(&self.ledger_path()).map(|()| e))
     }
-}
 
-impl Referee {
     /// Whether the agent could read the key: the home lies inside the project, or the
     /// identity is readable by group or others (D-014).
     pub fn seal_void(&self, project: &crate::project::Project) -> bool {

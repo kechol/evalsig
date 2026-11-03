@@ -17,6 +17,21 @@ use crate::error::CliError;
 use crate::exit::Exit;
 use crate::project::Project;
 
+/// The name of a set of records: the BLAKE3 reference of their canonical lines,
+/// sorted and concatenated, so the order of a file does not matter.
+pub fn records_hash<'a>(records: impl Iterator<Item = &'a Record>) -> Result<String, CliError> {
+    let mut lines = records
+        .map(|r| {
+            evalsig_store::canonical::to_canonical_bytes(
+                &serde_json::to_value(r).expect("records serialize"),
+            )
+            .map_err(CliError::store)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    lines.sort();
+    Ok(ContentHash::blake3(&lines.concat()).to_string())
+}
+
 pub struct Data {
     pub records: Vec<Record>,
     pub snapshots: Vec<ContentHash>,
