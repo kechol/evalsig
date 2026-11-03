@@ -79,7 +79,7 @@ Cut and seal the holdout on the referee side before the agent sees the data:
 | Form | Referee | Agent submits with | Conditions |
 |---|---|---|---|
 | Local | `evalsig gate serve` under a separate OS user that owns the key, the referee ledger and `approved/` | `evalsig gate submit` over a Unix socket, or token HTTP on 127.0.0.1 | The agent's user cannot read the referee user's files |
-| CI | A workflow job with the key in an environment-protected secret runs `evalsig gate` and posts the result | A pull request carrying the candidate's records | The workflow and `approved/` come from the base branch (`pull_request_target` with a base-ref checkout, or a required check in another repository); the referee ledger and state live where pull requests cannot write (a protected branch or an outside store); fork pull requests get no secret. See `examples/ci/` (T-090) |
+| CI | A workflow job with the key in an environment-protected secret runs `evalsig gate` and posts the result | A pull request; a job without secrets turns its evaluation into records | The workflow and the approved hash come from the base branch (`pull_request_target` with a base-ref checkout); pull request code never runs in the job that holds the key; the referee's project and home (`approved/`, the ledger, the seals) live where pull requests cannot write, such as a separate repository; fork pull requests get no secret. See `examples/ci/` |
 | Remote | `gate serve --http <port>` on another machine | `gate submit --url` with a token, through a tunnel to the referee's 127.0.0.1 port (for example `ssh -L`) | As local, plus the tunnel's own authentication |
 
 Running `gate` with the agent's own privileges, key included, makes the seal

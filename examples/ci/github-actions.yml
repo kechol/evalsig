@@ -1,0 +1,107 @@
+# Evaluate a pull request with promptfoo and let evalsig decide on the sealed
+# holdout (SPEC §8.5, docs/referee.md). Preconditions are in examples/ci/README.md.
+#
+# - The workflow runs from the base branch's definition (pull_request_target), so
+#   a pull request cannot change it.
+# - Pull request code runs only in the `candidate` job, which has no secrets and a
+#   read-only token. It hands over data (records/1 JSONL), never programs.
+# - The `gate` job runs in the protected environment `referee`. It reads the
+#   approved hash from the base branch and the referee's project and home from a
+#   separate state repository the pull request cannot write, writes the identity
+#   from a secret only for the gate step, and pushes the referee ledger back.
+name: evalsig-gate
+
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One submission at a time: the budget is counted in the referee ledger.
+  group: evalsig-referee
+  cancel-in-progress: false
+
+env:
+  EVALSIG_VERSION: 0.1.0
+  PROMPTFOO_VERSION: 0.124.1
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
+      - run: cargo install --locked evalsig --version "$EVALSIG_VERSION"
+      - name: Evaluate the candidate
+        run: npx --yes "promptfoo@$PROMPTFOO_VERSION" eval -c pr/promptfooconfig.yaml -o out.json --repeat 3
+      - name: Convert to records/1
+        run: |
+          evalsig --project work init
+          evalsig --project work import --adapter promptfoo out.json
+          evalsig --project work export --to jsonl --out export
+          mkdir candidate
+          cat export/runs.jsonl export/judgments.jsonl > candidate/records.jsonl
+          evalsig --project work --format json runs | jq -r '.results.runs[-1].run_id' > candidate/run
+      - name: Absolute criteria on the pull request's own records (not preregistered)
+        run: evalsig --project work --format md check pr/check.toml --run "$(cat candidate/run)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate
+          path: candidate/
+          retention-days: 1
+
+  gate:
+    needs: candidate
+    runs-on: ubuntu-latest
+    environment: referee
+    steps:
+      - name: The approved hash, from the base branch only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+          sparse-checkout: .evalsig-gate
+      - name: The referee's project and home, from the state repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: example-org/evalsig-referee-state
+          ssh-key: ${{ secrets.REFEREE_STATE_DEPLOY_KEY }}
+          path: state
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate
+          path: candidate
+      - run: cargo install --locked evalsig --version "$EVALSIG_VERSION"
+      - name: gate
+        id: gate
+        env:
+          REFEREE_IDENTITY: ${{ secrets.EVALSIG_REFEREE_IDENTITY }}
+        run: |
+          umask 077
+          printf '%s\n' "$REFEREE_IDENTITY" > state/home/identity.txt
+          set +e
+          evalsig --project state/project --format md gate \
+            --approved "$(cat base/.evalsig-gate/approved)" \
+            --candidate "$(cat candidate/run)" \
+            --records candidate/records.jsonl \
+            --referee state/home >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          rm -f state/home/identity.txt
+      - name: Keep the referee ledger and results
+        run: |
+          cd state
+          git config user.name "evalsig referee"
+          git config user.email "referee@example.com"
+          git add home/ledger.jsonl home/results home/state
+          git commit -m "gate: ${{ github.repository }}#${{ github.event.pull_request.number }}"
+          git push
+      - name: The gate's exit code is the check's result
+        env:
+          CODE: ${{ steps.gate.outputs.code }}
+        run: exit "$CODE"
