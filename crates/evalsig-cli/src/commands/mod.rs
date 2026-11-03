@@ -3,6 +3,7 @@ pub mod approve;
 pub mod check;
 pub mod compare;
 pub mod exclude;
+pub mod explain;
 pub mod export;
 pub mod gate;
 pub mod gate_serve;

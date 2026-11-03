@@ -59,6 +59,46 @@ impl VerdictCode {
         VerdictCode::BudgetExhausted,
     ];
 
+    /// What the code means and what may be said about it (agent-interface spec §2.3).
+    pub fn meaning(self) -> &'static str {
+        match self {
+            VerdictCode::Pass => "every approved condition holds; say the conditions were met",
+            VerdictCode::Fail => "a condition does not hold; say which condition was not met",
+            VerdictCode::Improved => {
+                "the interval of the difference excludes 0 on the better side and the point difference reaches the minimum effect; say it improved, with the interval"
+            }
+            VerdictCode::Negligible => {
+                "the interval lies within the minimum effect, or the difference is real but small; say there is no practical difference, neither improved nor worsened"
+            }
+            VerdictCode::Worsened => {
+                "the interval of the difference excludes 0 on the worse side; say it worsened, with the interval"
+            }
+            VerdictCode::Indistinguishable => {
+                "none of the above: the interval crosses 0; say the difference cannot be told apart, neither improved nor worsened"
+            }
+            VerdictCode::Drifted => {
+                "over time, a period's interval left the baseline period's; say which period and the interval"
+            }
+            VerdictCode::Stable => "over time, no period left the baseline period",
+            VerdictCode::HumanParity => {
+                "the system agrees with people as well as people do (alternative annotator test); quote the winning rate"
+            }
+            VerdictCode::BelowHuman => "the system does not agree with people as well as people do",
+            VerdictCode::InsufficientData => {
+                "too few items to decide; quote the required count from the power command in next"
+            }
+            VerdictCode::Blocked => {
+                "a validity check or a referee check stopped the command; quote the reason and how to clear it (the gate has no override)"
+            }
+            VerdictCode::NeedsDecisions => {
+                "a mapping draft has decisions a person must make; show the choices and their effects and ask, without choosing"
+            }
+            VerdictCode::BudgetExhausted => {
+                "the holdout's budget is spent; say so and ask a person to decide on the budget"
+            }
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             VerdictCode::Pass => "pass",

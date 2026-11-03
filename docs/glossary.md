@@ -19,6 +19,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | item | `item` | One object being judged. An Inspect sample or a promptfoo test case |
 | stratum | `stratum` | A grouping of items to report separately (language, difficulty, customer). An item may have several |
 | weight | `weight` | Weight that maps the item back to the population. Default 1 |
+| missing rate | `missing_rate` | Share of judgments that are missing, every reason counted. A gate condition on the holdout |
 | reference label | `label` | A judgment treated as correct. Its `source` says whether a human, a model or a panel produced it |
 | rater | `rater` | The human or model that produced a reference label. Also called annotator |
 | system under test | `system` | What produces judgments (a model, prompt and rule combination). Has a version |
@@ -31,6 +32,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | decision rule | `decision` | From which judgment value a judgment counts as positive, e.g. `score_at_least = 0.5`. Separate from the label-side `positive` |
 | label inclusion probability | `label_inclusion_prob` | When humans check only some items, the probability that this item received a human label |
 | preference | `preference` | A record comparing the outputs of two arms on the same item and saying which is better |
+| win rate | `win_rate` | An arm's mean preference score (1 preferred, ½ tie, 0 not), averaged over each item's raters and then over items; the interval resamples items |
 | feature | `feature` | A rule, aspect or assertion that fired inside a judgment, with whether it fired and its strength |
 | content | `content` | Text such as the input, the output and a grader's reasoning |
 | run | `run` | One import unit: the judgments of one system version on one dataset |
@@ -51,6 +53,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | false alarm rate | `false_alarm_rate` (F) | Share of negatives the system judged positive. Same as false positive rate |
 | false negative / false positive | — | A missed positive / a negative judged positive |
 | precision | `precision` | Share of positive judgments that were actually positive. Depends on prevalence |
+| accuracy | `accuracy` | Share of items on which the system's judgment equals the reference label. With a soft reference, the expected share |
 | sensitivity index | `dprime` (d′) | How well positives and negatives are told apart. d′ = z(H) − z(F) |
 | criterion | `criterion` (c) | Where the system starts saying "positive". c = −(z(H) + z(F))/2. Negative means liberal. Distinct from gate `conditions` |
 | calibration | `calibration` | How well scores read as probabilities match outcomes. Brier score and reliability diagram |
@@ -69,6 +72,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | Term | Identifier | Meaning |
 |---|---|---|
 | replicate disagreement | `replicate_disagreement` | Share of items whose replicates disagree. A repeatability measure |
+| kappa versus reference | `kappa_vs_reference` | Cohen's κ between a system's judgments and the reference labels |
 | noise floor | `noise_floor` | How much a metric moves when the same configuration is simply re-run. Included in the intervals and shown as a diagnostic, not used separately in verdicts |
 | reference mode | `reference.mode` | How several human labels become a reference: `single` (one rater or adjudication), `majority`, `soft` (share of raters saying positive) or `latent` (Dawid-Skene; needs three or more raters per item) |
 | rater design | `rater_design` | `nested` (different raters per item) or `crossed` (the same few raters label many items). Changes the estimand. Raters are not resampled |

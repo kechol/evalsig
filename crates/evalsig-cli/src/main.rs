@@ -7,6 +7,7 @@ mod commands;
 mod data;
 mod error;
 mod exit;
+mod help;
 mod mapped;
 mod markdown;
 mod output;
@@ -81,6 +82,11 @@ enum Command {
     },
     /// Leave items out of every analysis, with a reason code (holdout items: the referee).
     Exclude(commands::exclude::Args),
+    /// What a term, metric, verdict, validity check or exit code means.
+    Explain {
+        /// A glossary identifier, verdict code, validity check or exit code.
+        name: String,
+    },
     /// Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere.
     Export(commands::export::Args),
     /// As the referee: judge a candidate on the sealed holdout under approved conditions.
@@ -118,7 +124,8 @@ enum Command {
     Split(commands::split::Args),
     /// List the recorded dev / validation splits.
     Splits,
-    /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`).
+    /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`,
+    /// `envelope`).
     Schema {
         name: String,
         /// Print only the schema document, without the envelope.
@@ -128,9 +135,11 @@ enum Command {
         #[arg(long, value_name = "LANG", conflicts_with = "raw")]
         emit: Option<String>,
     },
-    /// Steps to obtain the information evalsig needs from a source.
-    #[command(subcommand)]
-    Recipes(commands::recipes::RecipesCommand),
+    /// The steps of common tasks, and how to get what evalsig needs from a source.
+    Recipes {
+        #[command(subcommand)]
+        recipe: Option<commands::recipes::RecipesCommand>,
+    },
     /// Run validity checks only: on a records file, or on the imported data.
     Validate {
         /// Check this `records/1` file instead of the project's data.
@@ -177,6 +186,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
             commands::list::capabilities(&cli.project, run.as_deref())
         }
         Command::Exclude(ref args) => commands::exclude::run(&cli.project, args),
+        Command::Explain { ref name } => commands::explain::run(name),
         Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
@@ -197,7 +207,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Threshold(ref args) => commands::power::threshold(&cli.project, args),
         Command::Trend(ref args) => commands::trend::run(&cli.project, args),
         Command::Splits => commands::split::list(&cli.project),
-        Command::Recipes(ref cmd) => commands::recipes::run(cmd),
+        Command::Recipes { ref recipe } => commands::recipes::run(recipe.as_ref()),
         Command::Validate {
             records: Some(ref records),
             list_checks,
@@ -265,6 +275,13 @@ fn report_error(err: &CliError, format: Format) -> ExitCode {
 fn main() -> ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let format = requested_format(&args);
+    // `help --json` describes the parser itself, so it is answered before parsing.
+    if args.get(1).is_some_and(|a| a == "help") && args.iter().any(|a| a == "--json") {
+        use clap::CommandFactory as _;
+        let out = output::Output::success(help::envelope(&Cli::command()));
+        let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
+        return ExitCode::SUCCESS;
+    }
     let cli = match Cli::try_parse_from(&args) {
         Ok(cli) => cli,
         Err(e) => {

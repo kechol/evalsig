@@ -1,4 +1,5 @@
-//! `evalsig recipes acquire <source>`: how to obtain what evalsig needs from a source.
+//! `evalsig recipes [name]`: the steps of common tasks, and how to obtain what evalsig
+//! needs from a source (agent-interface spec §2.6).
 
 use clap::{Subcommand, ValueEnum};
 use serde_json::json;
@@ -16,9 +17,77 @@ pub enum Source {
 
 #[derive(Debug, Subcommand)]
 pub enum RecipesCommand {
+    /// Compare a new version with the current one.
+    Compare,
+    /// How many items a question needs.
+    SampleSize,
+    /// Decide adoption on a sealed holdout with preregistered conditions.
+    Gate,
+    /// Improve a system while looking at evaluations, without fitting the holdout.
+    ImproveLoop,
+    /// Use evalsig to judge a DSPy program's optimisation.
+    Dspy,
     /// Steps to get judgments, replicates and labels out of a source.
     Acquire { source: Source },
 }
+
+/// Every task recipe by name, with its steps.
+const TASKS: [(&str, &str, &[&str]); 5] = [
+    (
+        "compare",
+        "Compare a new version with the current one",
+        &[
+            "Import both runs' records: evalsig import baseline.jsonl candidate.jsonl",
+            "Compare them on their common items: evalsig compare <baseline-run> <candidate-run>",
+            "Quote verdict.code and the interval of the difference; do not recompute numbers",
+            "indistinguishable or negligible is not an improvement; for too few items run the power command in next",
+        ],
+    ),
+    (
+        "sample-size",
+        "How many items a question needs",
+        &[
+            "To show a rate stays below u with zero events: evalsig power --zero-events-below <u>",
+            "To estimate a rate to a half-width: evalsig power --rate <p> --half-width <w>",
+            "To detect a paired difference: evalsig power --delta <d> --discordance <psi> --power 0.8",
+            "For clustered items add --cluster-size <m> --icc <rho>; for a gate add --budget <B> --one-sided",
+            "To see whether approved conditions can pass: evalsig power --gate gate.toml",
+        ],
+    ),
+    (
+        "gate",
+        "Decide adoption on a sealed holdout with preregistered conditions",
+        &[
+            "As the referee: evalsig referee init <home>, then evalsig split --holdout --referee <home> --out remaining.json",
+            "Give the agent remaining.json only; seal the holdout: evalsig seal --holdout <hash> --referee <home> --agent-project <dir>",
+            "Draft the conditions: evalsig preregister --draft gate.toml (in agent mode add --yes)",
+            "A person approves as the referee: evalsig preregister approve <draft> --holdout <hash> --from <dir> --referee <home>",
+            "Submit: evalsig gate submit --approved <hash> --candidate <run> --records <file> --socket <home>/gate.sock",
+            "Quote verdict.code and the budget left; people read the result in the referee ledger",
+        ],
+    ),
+    (
+        "improve-loop",
+        "Improve a system while looking at evaluations, without fitting the holdout",
+        &[
+            "Split the remaining items: evalsig split --within remaining.json",
+            "Look at errors on dev only; never ask for holdout labels or rewrite approved conditions",
+            "Check a candidate on validation: evalsig compare <baseline> <candidate> --split validation",
+            "Submit only when validation shows improved; each submission spends budget",
+            "On fail go back to dev; on budget_exhausted stop and report to a person",
+        ],
+    ),
+    (
+        "dspy",
+        "Use evalsig to judge a DSPy program's optimisation",
+        &[
+            "Run the program before and after optimisation on the same dev items, with replicates (several seeds)",
+            "Write each run's judgments as records/1: evalsig schema records --emit python",
+            "Compare on dev while optimising, then on validation: evalsig compare <before> <after> --split validation",
+            "Keep the holdout for the gate recipe; the optimiser must not see it",
+        ],
+    ),
+];
 
 fn steps(source: Source) -> &'static [&'static str] {
     match source {
@@ -51,8 +120,37 @@ fn steps(source: Source) -> &'static [&'static str] {
     }
 }
 
-pub fn run(cmd: &RecipesCommand) -> Result<Output, CliError> {
-    let RecipesCommand::Acquire { source } = cmd;
+fn task(name: &str) -> Output {
+    let (_, about, steps) = TASKS
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .expect("every task subcommand has a recipe");
+    Output::success(Envelope::new(
+        "evalsig.recipes/1",
+        json!({"recipe": name, "about": about, "steps": steps}),
+    ))
+}
+
+pub fn run(cmd: Option<&RecipesCommand>) -> Result<Output, CliError> {
+    let source = match cmd {
+        None => {
+            let list: Vec<_> = TASKS
+                .iter()
+                .map(|(n, about, _)| json!({"recipe": n, "about": about}))
+                .chain(std::iter::once(json!({"recipe": "acquire <source>", "about": "Steps to get judgments, replicates and labels out of a source"})))
+                .collect();
+            return Ok(Output::success(Envelope::new(
+                "evalsig.recipes/1",
+                json!({"recipes": list}),
+            )));
+        }
+        Some(RecipesCommand::Compare) => return Ok(task("compare")),
+        Some(RecipesCommand::SampleSize) => return Ok(task("sample-size")),
+        Some(RecipesCommand::Gate) => return Ok(task("gate")),
+        Some(RecipesCommand::ImproveLoop) => return Ok(task("improve-loop")),
+        Some(RecipesCommand::Dspy) => return Ok(task("dspy")),
+        Some(RecipesCommand::Acquire { source }) => source,
+    };
     let name = source
         .to_possible_value()
         .expect("no skipped variants")
