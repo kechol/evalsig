@@ -212,6 +212,15 @@ fn every_listed_content_field_is_withheld() {
         given["untrusted_content"]["/items/0/strata"],
         json!({"channel": "chat"})
     );
+    // Per-stratum results are keyed by the strata's own values.
+    let by = stdout_json(
+        &as_agent(p.path())
+            .args(["report", "triage-v1", "--by", "channel"])
+            .output()
+            .unwrap(),
+    );
+    assert!(by["results"].get("by").is_none(), "{}", by["results"]);
+    assert!(by["results"]["metrics"].is_array());
     // The values a mapping draft quotes as choices.
     let out = p.path().join("mapping.toml");
     let draft = stdout_json(

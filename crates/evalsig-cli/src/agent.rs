@@ -124,22 +124,23 @@ fn cut_cells(v: &mut Value, cells: &mut u64) {
 
 /// The fields that carry text from the evaluated data, for every envelope schema. In
 /// agent mode they leave `results` wherever they occur: returned apart on request,
-/// or withheld. Identifiers (item, run, rater) stay, since every answer needs them.
+/// or withheld. Identifiers (item, run, rater, system) stay, since every answer needs
+/// them.
 /// A schema missing here has its whole `results` treated as content (a test lists
 /// every schema the code writes).
 pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.agree/1", &[]),
     ("evalsig.capabilities/1", &[]),
     ("evalsig.check/1", &[]),
-    ("evalsig.compare/1", &[]),
+    ("evalsig.compare/1", &["by"]),
     ("evalsig.exclude/1", &[]),
     ("evalsig.explain/1", &[]),
     ("evalsig.export/1", &[]),
     ("evalsig.gate/1", &[]),
     ("evalsig.help/1", &[]),
     ("evalsig.holdout/1", &[]),
-    // Issue messages quote the offending values.
-    ("evalsig.import/1", &["message"]),
+    // Issue messages quote the offending values; paths can hold the data's own keys.
+    ("evalsig.import/1", &["message", "path"]),
     ("evalsig.init/1", &[]),
     ("evalsig.items/1", &["strata"]),
     ("evalsig.ledger.anchor/1", &[]),
@@ -160,7 +161,8 @@ pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.recipes/1", &[]),
     ("evalsig.referee/1", &[]),
     ("evalsig.remaining/1", &[]),
-    ("evalsig.report/1", &[]),
+    // Per-stratum results are keyed by the strata's own values.
+    ("evalsig.report/1", &["by"]),
     ("evalsig.runs/1", &[]),
     ("evalsig.schema/1", &[]),
     ("evalsig.seal/1", &[]),
@@ -168,7 +170,7 @@ pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.splits/1", &[]),
     ("evalsig.threshold/1", &[]),
     ("evalsig.trend/1", &[]),
-    ("evalsig.validate/1", &["message"]),
+    ("evalsig.validate/1", &["message", "path"]),
     ("evalsig.verify/1", &[]),
     ("evalsig.version/1", &[]),
 ];
