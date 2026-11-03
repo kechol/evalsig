@@ -446,3 +446,58 @@ after the entry is `Accepted`.
   readable or pinnable, SPEC §5.2).
 - Consequences: changing a field or the path grammar is `mapping/2`. Shapes the
   subset cannot express still need a converter (`import --converter`).
+
+## D-017 Alternative annotator test parameters
+
+- Status: Proposed
+- Date: 2026-11-03
+- Context: `agree --parity` answers whether a system could replace one of the
+  human raters (metrics spec §9.4). The spec gives ε = 0.1, a winning rate of
+  0.5 to pass and the null "the system is worse by ε or more", but asks for
+  the agreement measure, the default ε and the minimum counts to be checked
+  against the source, Calderon, Reichart and Dror, "The Alternative Annotator
+  Test for LLM-as-a-Judge" (ACL 2025, arXiv:2501.10970), before
+  implementation. The authors' reference procedure (the `alt_test` function
+  in the example notebook of github.com/nitaytech/alttest, read on
+  2026-11-03) settles these; the repository has no licence, so evalsig takes
+  the procedure, not the code or the data.
+- Decision (proposed):
+  - For each human rater j with enough items, and each item i that j and at
+    least one other human labelled: the score of a labeller on i is its
+    agreement with the other humans on i, the share of them it matches for
+    binary and nominal labels, minus the root-mean-square difference for
+    ordinal and score labels. W_sys,i = 1 when the system's score is at
+    least j's, W_j,i = 1 when j's score is at least the system's; ties count
+    for both.
+  - Per rater, a one-sided one-sample t-test of d_i = W_j,i − W_sys,i with
+    H0: mean(d) ≥ ε against mean(d) < ε. Rejecting H0 means the system wins
+    against j. The burden of proof stays with the system.
+  - Benjamini-Yekutieli over the raters at q = 0.05. The winning rate ω is
+    the share of tested raters the system wins against; `human_parity` when
+    ω ≥ 0.5, `below_human` otherwise. The advantage probability ρ, the mean
+    over raters of mean(W_sys), is reported beside ω for choosing between
+    systems.
+  - ε defaults to 0.1, the paper's rule of thumb for crowd raters and the
+    strictest of its three (experts 0.2, skilled raters 0.15); the setting
+    `agree.parity_epsilon` accepts other values and the output states the ε
+    used.
+  - A rater with fewer than 30 items shared with other humans is not tested
+    and is listed as skipped; with fewer than two tested raters the verdict
+    is `insufficient_data`. Three or more human raters are recommended;
+    with two the same procedure runs (each is compared with the other) and
+    the output warns that the result is less reliable. This replaces the
+    spec's separate two-rater bootstrap variant.
+  - The reference case comes from an independent implementation in
+    `scripts/reference_values.py` on synthetic labels, since the authors'
+    data carry no licence.
+- Alternatives: the code's default ε = 0.2 (not taken: it is the expert-rater
+  value and makes parity easier to claim for the crowd-labelled sets most
+  users have); a Wilcoxon signed-rank test below 30 items, which the paper
+  mentions (not taken: the reference procedure skips such raters instead,
+  and one rule is easier to state); the spec's two-rater paired bootstrap
+  (not taken: the paper's procedure already covers two raters and one
+  method keeps the human–human and system–human comparisons alike).
+- Consequences: a parity claim needs about 30 shared items per rater, so
+  small label sets return `insufficient_data` rather than a weak verdict.
+  Changing ε changes the verdict, so it is part of what a report records.
+  Agreement for ordinal labels uses the RMSE score, not weighted κ.
