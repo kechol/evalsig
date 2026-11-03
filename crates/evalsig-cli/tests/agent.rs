@@ -98,7 +98,10 @@ fn lists_page_with_a_cursor_and_say_what_was_left_out() {
             .output()
             .unwrap(),
     );
-    assert_eq!(next["results"]["items"][0], full["results"]["items"][50]);
+    assert_eq!(
+        next["results"]["items"][0]["item_id"],
+        full["results"]["items"][50]["item_id"]
+    );
     // --format json is never cut.
     assert_eq!(full["results"]["items"].as_array().unwrap().len(), 300);
     assert!(full["truncated"].is_null());
@@ -106,24 +109,30 @@ fn lists_page_with_a_cursor_and_say_what_was_left_out() {
 
 #[test]
 fn long_cells_and_large_envelopes_are_cut() {
+    // Sixty records whose over-long IDs each give an import issue quoting the value.
     let long = "x".repeat(800);
     let rows: String = (0..60)
         .map(|i| {
             format!(
                 "{}\n",
-                json!({"record": "item", "item_id": format!("i-{i:02}"), "strata": {"note": long}})
+                json!({"record": "run", "run_id": format!("r-{i:02}"), "system": {"id": long, "version": "1"}, "value_semantics": "decision", "output_type": "binary"})
             )
         })
         .collect();
-    let p = project(&rows);
-    let v = stdout_json(&as_agent(p.path()).arg("items").output().unwrap());
+    let p = tempfile::tempdir().unwrap();
+    evalsig(p.path()).arg("init").assert().success();
+    let f = p.path().join("long.jsonl");
+    std::fs::write(&f, rows).unwrap();
+    let out = as_agent(p.path()).arg("import").arg(&f).output().unwrap();
+    assert_eq!(out.status.code(), Some(5));
+    let v = stdout_json(&out);
     let t = &v["truncated"];
     assert!(t["cells_cut"].as_u64().unwrap() > 0, "{t}");
-    let note = v["results"]["items"][0]["strata"]["note"].as_str().unwrap();
-    assert_eq!(note.chars().count(), 501);
-    assert!(note.ends_with('…'));
+    let message = v["results"]["issues"][0]["message"].as_str().unwrap();
+    assert_eq!(message.chars().count(), 501);
+    assert!(message.ends_with('…'));
     // Fifty rows of 500-character cells exceed 20 KB, so fewer rows are shown.
-    assert!(v["results"]["items"].as_array().unwrap().len() < 50);
+    assert!(v["results"]["issues"].as_array().unwrap().len() < 50);
     assert!(serde_json::to_vec(&v).unwrap().len() <= 20 * 1024);
 }
 
@@ -170,6 +179,39 @@ fn evaluated_text_is_withheld_or_returned_apart() {
             .iter()
             .all(|p| p.get("values").is_none())
     );
+}
+
+#[test]
+fn every_listed_content_field_is_withheld() {
+    let p = synthetic();
+    // Item strata are the evaluated data's own text.
+    let items = stdout_json(&as_agent(p.path()).arg("items").output().unwrap());
+    assert!(
+        items["results"]["items"][0].get("strata").is_none(),
+        "{}",
+        items["results"]["items"][0]
+    );
+    let given = stdout_json(
+        &as_agent(p.path())
+            .args(["--include-content", "items"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        given["untrusted_content"]["/items/0/strata"],
+        json!({"channel": "chat"})
+    );
+    // The values a mapping draft quotes as choices.
+    let out = p.path().join("mapping.toml");
+    let draft = stdout_json(
+        &as_agent(p.path())
+            .args(["map", "draft", SYNTHETIC, "--out"])
+            .arg(&out)
+            .output()
+            .unwrap(),
+    );
+    let text = serde_json::to_string(&draft["results"]).unwrap();
+    assert!(!text.contains("\"values\""), "{text}");
 }
 
 #[test]

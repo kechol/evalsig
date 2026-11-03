@@ -47,15 +47,19 @@ pub fn wanted(agent: bool, no_agent: bool, format_given: bool, terminal: bool) -
 /// Shape an envelope for an agent: evaluated text out of `results`, row, cell and
 /// size limits, and `truncated` saying what was left out.
 pub fn shape(e: &mut Envelope, mode: Mode) {
-    separate_content(e, mode);
-    let full = e.results.clone();
-    let hash = to_canonical_bytes(&full)
+    // The hash names the results as `--format json` prints them, content included.
+    let hash = to_canonical_bytes(&e.results)
         .map(|b| ContentHash::blake3(&b).to_string())
         .unwrap_or_default();
+    let full = e.results.clone();
+    let warnings = e.warnings.clone();
     let mut rows = ROWS;
     loop {
         let mut cut = Cut::default();
         e.results = page(&full, mode.cursor, rows, &mut cut);
+        e.warnings = warnings.clone();
+        // Content is taken from the rows shown, so its pointers name those rows.
+        separate_content(e, mode);
         cut_cells(&mut e.results, &mut cut.cells);
         e.truncated = (cut.omitted > 0 || cut.cells > 0).then(|| Truncated {
             rows_omitted: cut.omitted,
@@ -115,23 +119,22 @@ fn cut_cells(v: &mut Value, cells: &mut u64) {
     }
 }
 
-/// Values taken from the evaluated data leave `results`: returned apart, on request,
-/// or withheld.
+/// The fields that carry text from the evaluated data, by envelope schema. In agent
+/// mode they leave `results` wherever they occur: returned apart on request, or
+/// withheld. Identifiers (item, run, rater) stay, since every answer needs them.
+pub const CONTENT_FIELDS: [(&str, &[&str]); 4] = [
+    ("evalsig.items/1", &["strata"]),
+    ("evalsig.map.probe/1", &["values"]),
+    ("evalsig.map.draft/1", &["values"]),
+    ("evalsig.map.test/1", &["values", "invalid_examples"]),
+];
+
 fn separate_content(e: &mut Envelope, mode: Mode) {
-    if e.schema != "evalsig.map.probe/1" {
+    let Some((_, keys)) = CONTENT_FIELDS.iter().find(|(s, _)| *s == e.schema) else {
         return;
-    }
+    };
     let mut taken = Map::new();
-    for p in e.results["probe"]["paths"]
-        .as_array_mut()
-        .into_iter()
-        .flatten()
-    {
-        if let Some(values) = p.as_object_mut().and_then(|o| o.remove("values")) {
-            let path = p["path"].as_str().unwrap_or_default().to_owned();
-            taken.insert(path, values);
-        }
-    }
+    take(&mut e.results, keys, "", &mut taken);
     if taken.is_empty() {
         return;
     }
@@ -141,7 +144,29 @@ fn separate_content(e: &mut Envelope, mode: Mode) {
     } else {
         e.warnings.push(Warning {
             code: "content_withheld".into(),
-            message: "example values come from the evaluated data; pass --include-content to receive them in untrusted_content".into(),
+            message: "some values come from the evaluated data; pass --include-content to receive them in untrusted_content".into(),
         });
+    }
+}
+
+/// Remove `keys` at any depth, keyed in `taken` by their JSON pointer in `results`.
+fn take(v: &mut Value, keys: &[&str], at: &str, taken: &mut Map<String, Value>) {
+    match v {
+        Value::Object(o) => {
+            for k in keys {
+                if let Some(x) = o.remove(*k) {
+                    taken.insert(format!("{at}/{k}"), x);
+                }
+            }
+            for (k, x) in o.iter_mut() {
+                take(x, keys, &format!("{at}/{k}"), taken);
+            }
+        }
+        Value::Array(a) => {
+            for (i, x) in a.iter_mut().enumerate() {
+                take(x, keys, &format!("{at}/{i}"), taken);
+            }
+        }
+        _ => {}
     }
 }
