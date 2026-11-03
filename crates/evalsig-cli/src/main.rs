@@ -82,6 +82,8 @@ enum Command {
     },
     /// Leave items out of every analysis, with a reason code (holdout items: the referee).
     Exclude(commands::exclude::Args),
+    /// Serve the local web dashboard on 127.0.0.1, behind a per-launch token (D-019).
+    Dashboard(commands::dashboard::Args),
     /// Print the AGENTS.md snippet or the Claude Code permission template for evalsig.
     #[command(group(clap::ArgGroup::new("guide").required(true).args(["snippet", "settings"])))]
     AgentGuide {
@@ -200,6 +202,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         }
         Command::Exclude(ref args) => commands::exclude::run(&cli.project, args),
         Command::Explain { ref name } => commands::explain::run(name),
+        Command::Dashboard(ref args) => commands::dashboard::run(&cli.project, args),
         Command::Skill(ref cmd) => commands::skill::run(&cli.project, cmd),
         Command::AgentGuide { .. } => unreachable!("printed before run"),
         Command::Export(ref args) => commands::export::run(&cli.project, args),

@@ -2,6 +2,7 @@ pub mod agree;
 pub mod approve;
 pub mod check;
 pub mod compare;
+pub mod dashboard;
 pub mod exclude;
 pub mod explain;
 pub mod export;
