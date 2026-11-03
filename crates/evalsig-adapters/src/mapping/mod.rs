@@ -777,6 +777,13 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
 
 // ---- Applying ------------------------------------------------------------------
 
+impl Compiled {
+    /// Whether the source is JSON (rather than CSV).
+    pub fn reads_json(&self) -> bool {
+        self.format != Format::Csv
+    }
+}
+
 /// What a mapping needs from the importer.
 pub trait Host {
     fn arg(&self, name: &str) -> Option<&str>;

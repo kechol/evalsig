@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
+use evalsig_adapters::limits::{self, LimitError, Limits};
 use evalsig_adapters::{csv, table};
 use evalsig_core::config::ContentMode;
 use evalsig_core::records::{GraderRef, Record};
@@ -77,6 +78,49 @@ pub struct Args {
     /// Show what would be imported without writing anything.
     #[arg(long)]
     pub dry_run: bool,
+    /// Refuse any file, or decompressed archive, larger than this (bytes, or with a
+    /// K, M or G suffix).
+    #[arg(long, value_name = "SIZE", default_value = "1G", value_parser = parse_size)]
+    pub max_bytes: u64,
+}
+
+/// Bytes with an optional binary K, M or G suffix.
+fn parse_size(s: &str) -> Result<u64, String> {
+    let (digits, shift) = match s.strip_suffix(['K', 'M', 'G']) {
+        Some(d) => (
+            d,
+            match &s[s.len() - 1..] {
+                "K" => 10,
+                "M" => 20,
+                _ => 30,
+            },
+        ),
+        None => (s, 0),
+    };
+    let n: u64 = digits
+        .parse()
+        .map_err(|_| format!("{s:?} is not a size such as 1048576, 512M or 2G"))?;
+    n.checked_shl(shift)
+        .filter(|v| v >> shift == n)
+        .ok_or_else(|| format!("{s} is too large"))
+}
+
+/// A file read within the limits, JSON checked for depth before parsing.
+fn read_within(path: &Path, limits: &Limits, json: bool) -> Result<Vec<u8>, CliError> {
+    let refused = |e: LimitError| match e {
+        LimitError::Io(io) => io_error(path, &io),
+        other => CliError::new(
+            "input_limit",
+            format!("{}: {other}", path.display()),
+            Exit::Rejected,
+        )
+        .with_hint("raise --max-bytes if the file is trusted"),
+    };
+    let bytes = limits::read_file(path, limits).map_err(refused)?;
+    if json {
+        limits::check_json_depth(&bytes, limits).map_err(refused)?;
+    }
+    Ok(bytes)
 }
 
 const MAX_ISSUES: usize = 50;
@@ -144,7 +188,16 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))?;
     let via = mapped::resolve(root, &config, args.mapping.as_deref(), args.from.as_deref())?;
     let store = project.objects();
-    let mut bodies = mapped::Bodies::new(&args.args, (!args.dry_run).then_some(&store), &config)?;
+    let limits = Limits {
+        max_bytes: args.max_bytes,
+        ..Limits::default()
+    };
+    let mut bodies = mapped::Bodies::new(
+        &args.args,
+        (!args.dry_run).then_some(&store),
+        &config,
+        limits,
+    )?;
     let files = match &via {
         Some(v) if args.files.is_empty() => v.files.clone(),
         _ => args.files.clone(),
@@ -159,7 +212,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             Some(_) => None,
             None => Some(adapter_for(path, args.adapter)?),
         };
-        let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
+        let json = match (&via, adapter) {
+            (Some(v), _) => v.compiled.reads_json(),
+            (None, a) => a == Some(AdapterArg::Records),
+        };
+        let bytes = read_within(path, &limits, json)?;
         sources.push(SourceFile {
             path: path.display().to_string(),
             hash: ContentHash::blake3(&bytes),

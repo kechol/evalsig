@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use evalsig_adapters::limits::{self, Limits};
 use evalsig_adapters::mapping::{self, Compiled, Host, MapError};
 use evalsig_core::config::{Config, ContentMode};
 use evalsig_core::records::Record;
@@ -135,6 +136,7 @@ pub struct Bodies<'s> {
     store: Option<&'s ObjectStore>,
     mode: ContentMode,
     redactor: Redactor,
+    limits: Limits,
     pub joined: Vec<SourceFile>,
     pub contents: Vec<Value>,
     pub redactions: Vec<Redaction>,
@@ -145,6 +147,7 @@ impl<'s> Bodies<'s> {
         args: &[String],
         store: Option<&'s ObjectStore>,
         config: &Config,
+        limits: Limits,
     ) -> Result<Bodies<'s>, CliError> {
         let args = args
             .iter()
@@ -164,6 +167,7 @@ impl<'s> Bodies<'s> {
             store,
             mode: config.store.content,
             redactor,
+            limits,
             joined: Vec::new(),
             contents: Vec::new(),
             redactions: Vec::new(),
@@ -177,7 +181,9 @@ impl Host for Bodies<'_> {
     }
 
     fn read(&mut self, file: &str) -> Result<Vec<u8>, String> {
-        let bytes = std::fs::read(file).map_err(|e| format!("{file}: {e}"))?;
+        let bytes = limits::read_file(Path::new(file), &self.limits)
+            .and_then(|b| limits::check_json_depth(&b, &self.limits).map(|()| b))
+            .map_err(|e| format!("{file}: {e}"))?;
         if !self.joined.iter().any(|s| s.path == file) {
             self.joined.push(SourceFile {
                 path: file.to_owned(),
