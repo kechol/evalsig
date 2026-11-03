@@ -92,12 +92,12 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
 
 /// The format requested on the command line, read before full parsing so that usage
 /// errors can be reported in it too.
-fn requested_format(args: &[String]) -> Format {
-    let mut it = args.iter();
+fn requested_format(args: &[std::ffi::OsString]) -> Format {
+    let mut it = args.iter().map(|a| a.to_string_lossy());
     while let Some(a) = it.next() {
         let value = match a.strip_prefix("--format=") {
             Some(v) => Some(v.to_owned()),
-            None if a == "--format" => it.next().cloned(),
+            None if a == "--format" => it.next().map(|v| v.into_owned()),
             None => None,
         };
         if let Some(v) = value {
@@ -117,7 +117,7 @@ fn report_error(err: &CliError, format: Format) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let format = requested_format(&args);
     let cli = match Cli::try_parse_from(&args) {
         Ok(cli) => cli,

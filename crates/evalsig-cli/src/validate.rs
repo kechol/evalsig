@@ -55,23 +55,19 @@ impl RecordValidator {
 
     /// Check one line of JSONL; the record if it conforms, its issues otherwise.
     pub fn check_line(&self, line_no: usize, line: &str) -> Result<Record, Vec<Issue>> {
-        match Canonical::parse(line) {
-            Ok(c) => self.check_value(line_no, c.into_json()),
-            Err(e) => {
-                let code = match e {
-                    CanonicalError::DuplicateKey(_) | CanonicalError::DuplicateKeyAfterNfc(_) => {
-                        "json.duplicate_key"
-                    }
-                    CanonicalError::IntegerOutOfRange(_) => "json.integer_range",
-                    CanonicalError::Json(_) | CanonicalError::NonFinite => "json.invalid",
-                };
-                Err(vec![issue(line_no, code, "", e.to_string())])
-            }
-        }
+        let canonical = Canonical::parse(line).map_err(|e| canonical_issue(line_no, &e))?;
+        self.check_canonical(line_no, canonical.into_json())
     }
 
-    /// Check a record object that is already parsed (for example a CSV row).
+    /// Check a record object built from another format (for example a CSV row). It
+    /// is canonicalized first, so strings are NFC and integers are range-checked as
+    /// for JSONL.
     pub fn check_value(&self, line_no: usize, value: Value) -> Result<Record, Vec<Issue>> {
+        let canonical = Canonical::from_value(value).map_err(|e| canonical_issue(line_no, &e))?;
+        self.check_canonical(line_no, canonical.into_json())
+    }
+
+    fn check_canonical(&self, line_no: usize, value: Value) -> Result<Record, Vec<Issue>> {
         let one = |code: &str, path: &str, message: String| {
             Err(vec![issue(line_no, code, path, message)])
         };
@@ -115,6 +111,17 @@ impl RecordValidator {
         }
         Record::from_value(value).map_err(|e| vec![issue(line_no, e.code(), "", e.to_string())])
     }
+}
+
+fn canonical_issue(line: usize, e: &CanonicalError) -> Vec<Issue> {
+    let code = match e {
+        CanonicalError::DuplicateKey(_) | CanonicalError::DuplicateKeyAfterNfc(_) => {
+            "json.duplicate_key"
+        }
+        CanonicalError::IntegerOutOfRange(_) => "json.integer_range",
+        CanonicalError::Json(_) | CanonicalError::NonFinite => "json.invalid",
+    };
+    vec![issue(line, code, "", e.to_string())]
 }
 
 fn issue(line: usize, code: &str, path: &str, message: String) -> Issue {

@@ -68,14 +68,21 @@ impl ObjectStore {
             ruzstd::encoding::compress_to_vec(bytes, ruzstd::encoding::CompressionLevel::Fastest);
         // Write to a temporary file in the same directory and rename, so a crash never
         // leaves a truncated object under its final name.
-        let mut tmp = tempfile_in(dir)?;
-        tmp.1.write_all(&compressed)?;
-        tmp.1.sync_all()?;
-        drop(tmp.1);
-        match fs::rename(&tmp.0, &path) {
-            Ok(()) => Ok((hash, true)),
+        let (tmp_path, mut tmp) = tempfile_in(dir)?;
+        let written = tmp.write_all(&compressed).and_then(|()| tmp.sync_all());
+        drop(tmp);
+        if let Err(e) = written {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e.into());
+        }
+        match fs::rename(&tmp_path, &path) {
+            Ok(()) => {
+                // Make the new name durable before a ledger line refers to it.
+                sync_dir(dir)?;
+                Ok((hash, true))
+            }
             Err(e) => {
-                let _ = fs::remove_file(&tmp.0);
+                let _ = fs::remove_file(&tmp_path);
                 if path.is_file() {
                     Ok((hash, false))
                 } else {
@@ -137,6 +144,16 @@ impl ObjectStore {
         out.sort();
         Ok(out)
     }
+}
+
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    fs::File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 fn tempfile_in(dir: &Path) -> io::Result<(PathBuf, fs::File)> {

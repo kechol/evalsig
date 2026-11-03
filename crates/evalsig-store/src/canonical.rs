@@ -63,6 +63,11 @@ impl Canonical {
     /// Parse JSON text, rejecting duplicate keys (also after NFC normalization),
     /// integers beyond ±(2^53 − 1), NaN and infinities.
     pub fn parse(text: &str) -> Result<Canonical, CanonicalError> {
+        // serde_json turns integer literals beyond u64 into doubles; catch them from
+        // the text so every integer literal follows the same range rule.
+        if let Some(lit) = huge_integer_literal(text) {
+            return Err(CanonicalError::IntegerOutOfRange(lit.to_owned()));
+        }
         let mut de = serde_json::Deserializer::from_str(text);
         let raw = Raw::deserialize(&mut de)?;
         de.end()?;
@@ -112,10 +117,9 @@ impl Canonical {
                     .collect::<Result<_, _>>()?,
             ),
             Raw::Object(kv) => {
-                for (i, (k, _)) in kv.iter().enumerate() {
-                    if kv[..i].iter().any(|(e, _)| e == k) {
-                        return Err(CanonicalError::DuplicateKey(k.clone()));
-                    }
+                let mut seen = std::collections::HashSet::with_capacity(kv.len());
+                if let Some((k, _)) = kv.iter().find(|(k, _)| !seen.insert(k.as_str())) {
+                    return Err(CanonicalError::DuplicateKey(k.clone()));
                 }
                 object(
                     kv.into_iter()
@@ -182,6 +186,48 @@ impl Canonical {
             }
         }
     }
+}
+
+/// The first integer literal (no fraction, no exponent) outside strings whose
+/// magnitude exceeds u64, which serde_json would silently read as a double.
+fn huge_integer_literal(text: &str) -> Option<&str> {
+    let b = text.as_bytes();
+    let (mut i, mut in_str) = (0, false);
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            match c {
+                b'\\' => i += 1,
+                b'"' => in_str = false,
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_str = true;
+            i += 1;
+            continue;
+        }
+        if c == b'-' || c.is_ascii_digit() {
+            let start = i;
+            while i < b.len() && matches!(b[i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+                i += 1;
+            }
+            let lit = &text[start..i];
+            let digits = lit.trim_start_matches('-');
+            if !digits.is_empty()
+                && digits.bytes().all(|d| d.is_ascii_digit())
+                && digits.len() >= 20
+                && digits.parse::<u64>().is_err()
+            {
+                return Some(lit);
+            }
+            continue;
+        }
+        i += 1;
+    }
+    None
 }
 
 fn int(i: i128) -> Result<Canonical, CanonicalError> {
@@ -385,6 +431,16 @@ mod tests {
             write_number(x, &mut s);
             assert_eq!(s, want, "{x}");
         }
+    }
+
+    #[test]
+    fn integer_literals_beyond_u64_are_out_of_range() {
+        assert!(matches!(
+            Canonical::parse(r#"{"w":18446744073709551616}"#),
+            Err(CanonicalError::IntegerOutOfRange(_))
+        ));
+        assert!(Canonical::parse(r#"{"w":1e20,"s":"18446744073709551616"}"#).is_ok());
+        assert!(Canonical::parse("[-0.5, 12, -3]").is_ok());
     }
 
     #[test]

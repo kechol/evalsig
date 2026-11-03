@@ -122,6 +122,11 @@
    "reason": "outside the IEEE 754 exact range"
   },
   {
+   "name": "integer_beyond_u64",
+   "input": "{\"x\": 18446744073709551616}",
+   "reason": "outside the IEEE 754 exact range"
+  },
+  {
    "name": "lone_surrogate",
    "input": "{\"x\": \"\\ud800\"}",
    "reason": "surrogates not allowed"

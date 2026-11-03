@@ -44,7 +44,9 @@ fn every_invalid_vector_is_rejected_for_its_reason() {
         let ok = match name {
             "duplicate_key" => matches!(err, CanonicalError::DuplicateKey(_)),
             "duplicate_key_after_nfc" => matches!(err, CanonicalError::DuplicateKeyAfterNfc(_)),
-            "integer_outside_exact_range" => matches!(err, CanonicalError::IntegerOutOfRange(_)),
+            "integer_outside_exact_range" | "integer_beyond_u64" => {
+                matches!(err, CanonicalError::IntegerOutOfRange(_))
+            }
             "nan_literal" | "infinity_literal" | "lone_surrogate" => {
                 matches!(err, CanonicalError::Json(_))
             }

@@ -198,3 +198,69 @@ fn csv_rows_get_the_schema_checks() {
     assert_eq!(v["results"]["issues"][0]["line"], 2);
     assert_eq!(v["results"]["issues"][0]["code"], "schema.format");
 }
+
+#[test]
+fn csv_rows_are_normalized_like_jsonl() {
+    let dir = project();
+    let csv = dir.path().join("j.csv");
+    std::fs::write(
+        &csv,
+        "item_id,run_id,output_type,value\n\u{e9},r,binary,true\ne\u{301},r,binary,false\n",
+    )
+    .unwrap();
+    let v = json(
+        &evalsig(dir.path())
+            .arg("import")
+            .arg(&csv)
+            .assert()
+            .code(5)
+            .get_output()
+            .stdout,
+    );
+    assert_eq!(v["results"]["issues"][0]["code"], "record.duplicate_key");
+    let big = dir.path().join("big.csv");
+    std::fs::write(
+        &big,
+        "item_id,run_id,output_type,value\na,r,score,9007199254740993\n",
+    )
+    .unwrap();
+    let v = json(
+        &evalsig(dir.path())
+            .arg("import")
+            .arg(&big)
+            .assert()
+            .code(5)
+            .get_output()
+            .stdout,
+    );
+    assert_eq!(v["results"]["issues"][0]["code"], "json.integer_range");
+}
+
+#[test]
+fn empty_overrides_are_usage_errors() {
+    let dir = project();
+    evalsig(dir.path())
+        .args(["import", RECORDS, "--system-version", ""])
+        .assert()
+        .code(64);
+    evalsig(dir.path())
+        .args(["import", RECORDS, "--grader", "judge@"])
+        .assert()
+        .code(64);
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_arguments_do_not_panic() {
+    use std::os::unix::ffi::OsStrExt;
+    let dir = project();
+    let name = std::ffi::OsStr::from_bytes(b"\xff.csv");
+    let out = evalsig(dir.path())
+        .arg("import")
+        .arg(dir.path().join(name))
+        .assert()
+        .get_output()
+        .clone();
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
+    assert_ne!(out.status.code(), Some(101));
+}

@@ -7,7 +7,7 @@
 //! from several processes still produce one valid chain.
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -243,10 +243,10 @@ pub fn append(
         .open(path)?;
     file.lock()?;
     let result = append_locked(&mut file, side, kind, new);
-    let unlock = file.unlock();
-    let entry = result?;
-    unlock?;
-    Ok(entry)
+    // The entry is on disk once append_locked returns; closing the file releases the
+    // lock even if an explicit unlock fails, so that failure must not fail the append.
+    let _ = file.unlock();
+    result
 }
 
 fn append_locked(
@@ -255,7 +255,6 @@ fn append_locked(
     kind: Kind,
     new: NewEntry,
 ) -> Result<Entry, LedgerError> {
-    file.seek(SeekFrom::Start(0))?;
     let last = last_entry(file)?;
     let mut entry = Entry {
         seq: last.as_ref().map_or(0, |e| e.seq + 1),
@@ -278,16 +277,54 @@ fn append_locked(
     Ok(entry)
 }
 
-fn last_entry(file: &File) -> Result<Option<Entry>, LedgerError> {
-    let mut last = None;
-    for (i, line) in BufReader::new(file).lines().enumerate() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        last = Some(parse_line(&line, i + 1)?);
+/// The last entry, read from the end of the file. A ledger whose last line has no
+/// newline was torn by an interrupted write or edited by hand; appending to it would
+/// glue two entries together, so it is refused.
+fn last_entry(file: &mut File) -> Result<Option<Entry>, LedgerError> {
+    const CHUNK: u64 = 64 * 1024;
+    let len = file.seek(SeekFrom::End(0))?;
+    if len == 0 {
+        return Ok(None);
     }
-    Ok(last)
+    let mut tail = Vec::new();
+    let mut start = len;
+    loop {
+        let from = start.saturating_sub(CHUNK);
+        let mut buf = vec![0; (start - from) as usize];
+        file.seek(SeekFrom::Start(from))?;
+        file.read_exact(&mut buf)?;
+        buf.extend_from_slice(&tail);
+        tail = buf;
+        start = from;
+        if tail.last() != Some(&b'\n') {
+            return Err(LedgerError::Parse {
+                line: 0,
+                message: "the last line is incomplete (interrupted write?); repair the file before appending".into(),
+            });
+        }
+        let body = &tail[..tail.len() - 1];
+        let trimmed = body
+            .iter()
+            .rposition(|b| !b.is_ascii_whitespace())
+            .map_or(&body[..0], |e| &body[..=e]);
+        if let Some(nl) = trimmed.iter().rposition(|b| *b == b'\n') {
+            return parse_bytes(&trimmed[nl + 1..]).map(Some);
+        }
+        if start == 0 {
+            return if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                parse_bytes(trimmed).map(Some)
+            };
+        }
+    }
+}
+
+fn parse_bytes(line: &[u8]) -> Result<Entry, LedgerError> {
+    serde_json::from_slice(line).map_err(|e| LedgerError::Parse {
+        line: 0,
+        message: format!("last line: {e}"),
+    })
 }
 
 fn parse_line(line: &str, n: usize) -> Result<Entry, LedgerError> {
@@ -428,6 +465,37 @@ mod tests {
         ok.summary.insert("auc".into(), serde_json::json!("0.81"));
         ok.summary.insert("items".into(), serde_json::json!(1200));
         assert!(append(&path, LedgerSide::Agent, Kind::Report, ok).is_ok());
+    }
+
+    #[test]
+    fn a_torn_last_line_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+        append(&path, LedgerSide::Agent, Kind::Import, new("x")).unwrap();
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str("{\"seq\":1,\"ts\"");
+        std::fs::write(&path, &text).unwrap();
+        assert!(matches!(
+            append(&path, LedgerSide::Agent, Kind::Report, new("x")),
+            Err(LedgerError::Parse { .. })
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn long_ledgers_append_from_the_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+        let mut big = new("x");
+        big.summary
+            .insert("note".into(), serde_json::json!("y".repeat(70_000)));
+        append(&path, LedgerSide::Agent, Kind::Import, big).unwrap();
+        for _ in 0..3 {
+            append(&path, LedgerSide::Agent, Kind::Report, new("x")).unwrap();
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(verify(&text, Some(LedgerSide::Agent)).is_empty());
+        assert_eq!(read(&path).unwrap().len(), 4);
     }
 
     #[test]

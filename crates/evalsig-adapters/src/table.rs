@@ -191,8 +191,9 @@ fn map_value(
                 _ => Ok(json!(i)),
             }
         }
-        Some(OutputType::Score) => number()
-            .map(|f| json!(f))
+        Some(OutputType::Score) => integer()
+            .map(|i| json!(i))
+            .or_else(|| number().map(|f| json!(f)))
             .ok_or_else(|| not("a finite number")),
         None => boolean()
             .map(Value::Bool)

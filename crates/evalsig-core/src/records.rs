@@ -368,8 +368,9 @@ impl<'de> Deserialize<'de> for Value {
                     .map_err(|_| E::custom("integer out of range"))
             }
             fn visit_f64<E>(self, f: f64) -> Result<Value, E> {
-                // Exact for |f| < 2^63; larger integral floats stay floats.
-                if f.fract() == 0.0 && f.abs() < 9.2e18 {
+                // Only integral values a double holds exactly as an integer (|f| ≤ 2^53 − 1)
+                // become integers; canonical integers are limited to that range.
+                if f.fract() == 0.0 && f.abs() <= 9_007_199_254_740_991.0 {
                     Ok(Value::Int(f as i64))
                 } else {
                     Ok(Value::Float(f))

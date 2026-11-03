@@ -40,6 +40,7 @@ INVALID = [
     ("duplicate_key", '{"a": 1, "a": 2}', "duplicate key"),
     ("duplicate_key_after_nfc", '{"\\u00e9": 1, "e\\u0301": 2}', "duplicate key after NFC normalization"),
     ("integer_outside_exact_range", '{"x": 9007199254740993}', "outside the IEEE 754 exact range"),
+    ("integer_beyond_u64", '{"x": 18446744073709551616}', "outside the IEEE 754 exact range"),
     ("lone_surrogate", '{"x": "\\ud800"}', "surrogates not allowed"),
 ]
 

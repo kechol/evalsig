@@ -120,6 +120,10 @@ fn candidates<'a>(
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    let grader = parse_grader(args.grader.as_deref())?;
+    if args.system_version.as_deref() == Some("") {
+        return Err(CliError::usage("--system-version cannot be empty"));
+    }
     let project = Project::open(root)?;
     project.config()?;
     let validator = RecordValidator::new();
@@ -151,7 +155,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         }
     }
     let mut warnings = Vec::new();
-    apply_overrides(&mut records, args, &mut warnings)?;
+    apply_overrides(
+        &mut records,
+        args.system_version.as_deref(),
+        grader.as_ref(),
+        &mut warnings,
+    );
     for key in rows::dedup_and_conflicts(&mut records) {
         issues.push((
             "<snapshot>".into(),
@@ -241,46 +250,48 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     Ok(Output::success(envelope))
 }
 
+/// `<id>[@<version>]`, both parts non-empty when present.
+fn parse_grader(arg: Option<&str>) -> Result<Option<(String, Option<String>)>, CliError> {
+    let Some(g) = arg else { return Ok(None) };
+    let (id, version) = match g.split_once('@') {
+        Some((i, v)) => (i, Some(v)),
+        None => (g, None),
+    };
+    if id.is_empty() || version == Some("") {
+        return Err(CliError::usage(
+            "--grader takes <id>[@<version>] with non-empty parts",
+        ));
+    }
+    Ok(Some((id.to_owned(), version.map(str::to_owned))))
+}
+
 fn apply_overrides(
     records: &mut [Record],
-    args: &Args,
+    system_version: Option<&str>,
+    grader: Option<&(String, Option<String>)>,
     warnings: &mut Vec<Warning>,
-) -> Result<(), CliError> {
-    let grader = match &args.grader {
-        Some(g) => {
-            let (id, version) = match g.split_once('@') {
-                Some((i, v)) => (i, Some(v.to_owned())),
-                None => (g.as_str(), None),
-            };
-            if id.is_empty() {
-                return Err(CliError::usage("--grader needs an id: <id>[@<version>]"));
-            }
-            Some((id.to_owned(), version))
-        }
-        None => None,
-    };
+) {
     let mut runs = 0;
     for r in records.iter_mut() {
         if let Record::Run(run) = r {
             runs += 1;
-            if let Some(v) = &args.system_version {
-                run.system.version = v.clone();
+            if let Some(v) = system_version {
+                run.system.version = v.to_owned();
             }
-            if let Some((id, version)) = &grader {
+            if let Some((id, version)) = grader {
                 let g = run.grader.get_or_insert_with(GraderRef::default);
                 g.id = Some(id.clone());
                 g.version = version.clone();
             }
         }
     }
-    if runs == 0 && (args.system_version.is_some() || grader.is_some()) {
+    if runs == 0 && (system_version.is_some() || grader.is_some()) {
         warnings.push(Warning {
             code: "override_without_run".into(),
             message: "--system-version and --grader apply to run records, and none were imported"
                 .into(),
         });
     }
-    Ok(())
 }
 
 fn counts(records: &[Record]) -> BTreeMap<&'static str, u64> {

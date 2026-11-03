@@ -245,13 +245,17 @@ fn table_columns(v: &Json) -> Option<Vec<String>> {
     Some(cols)
 }
 
+/// A Markdown table cell: one line, pipes escaped, structured values in a code
+/// span whose fence is longer than any backtick run inside.
 fn md_cell(v: &Json) -> String {
     let cell = if v.is_object() || v.is_array() {
-        format!("`{v}`")
+        let text = v.to_string();
+        let fence = if text.contains('`') { "``" } else { "`" };
+        format!("{fence}{text}{fence}")
     } else {
         scalar(v)
     };
-    cell.replace('|', "\\|")
+    cell.replace(['\n', '\r'], " ").replace('|', "\\|")
 }
 
 fn xml_escape(s: &str) -> String {
@@ -354,6 +358,9 @@ fn write_text_fields(s: &mut String, m: &Map<String, Json>, depth: usize) {
                 for r in &rows {
                     let _ = writeln!(s, "{}", line(r.iter().map(String::as_str).collect()));
                 }
+            }
+            Json::Array(xs) if xs.is_empty() => {
+                let _ = writeln!(s, "{pad}{k}: (none)");
             }
             Json::Array(xs) if xs.iter().all(|x| !x.is_object() && !x.is_array()) => {
                 let items: Vec<String> = xs.iter().map(scalar).collect();
