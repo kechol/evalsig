@@ -105,3 +105,38 @@ fn options_shape_the_report() {
         .assert()
         .code(64);
 }
+
+#[test]
+fn reference_agreement_strata_split_the_synthetic_items() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    std::fs::write(
+        dir.path().join(".evalsig/config.toml"),
+        include_str!("../../../examples/synthetic/config.toml"),
+    )
+    .unwrap();
+    let records = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/synthetic/records.jsonl"
+    );
+    evalsig(dir.path())
+        .args(["import", records])
+        .assert()
+        .success();
+    let v = json(evalsig(dir.path()).args(["report", "triage-v1", "--by", "reference_agreement"]));
+    let by = v["results"]["by"].as_object().unwrap();
+    assert_eq!(by.keys().collect::<Vec<_>>(), ["split", "unanimous"]);
+    let n = |stratum: &str| {
+        by[stratum]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["metric"] == "accuracy")
+            .unwrap()["n"]
+            .as_f64()
+            .unwrap()
+    };
+    // 75 of the 300 synthetic items have two human raters; only they are stratified.
+    assert_eq!(n("split") + n("unanimous"), 75.0);
+    assert!(n("split") > 0.0 && n("unanimous") > 0.0);
+}

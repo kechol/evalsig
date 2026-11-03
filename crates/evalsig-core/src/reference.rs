@@ -54,6 +54,27 @@ pub fn votes<'l>(labels: &[&'l Label], positive: &Rule) -> Vec<(&'l str, bool)> 
         .collect()
 }
 
+/// The stratum `reference_agreement` (metrics spec §9.6).
+pub const AGREEMENT_STRATUM: &str = "reference_agreement";
+
+/// `unanimous` or `split` for an item that two or more human raters voted on.
+pub fn agreement_stratum(labels: &[&Label], positive: &Rule) -> Option<&'static str> {
+    let human: Vec<&Label> = labels
+        .iter()
+        .copied()
+        .filter(|l| l.source == Source::Human)
+        .collect();
+    let votes = votes(&human, positive);
+    let first = votes.first()?.1;
+    (votes.len() >= 2).then(|| {
+        if votes.iter().all(|(_, v)| *v == first) {
+            "unanimous"
+        } else {
+            "split"
+        }
+    })
+}
+
 /// The reference of one item from the latest revision of its labels. Human labels
 /// are used when there are any; adjudications decide under `single` and are left out
 /// of the votes otherwise, as are later label replicates of the same rater.

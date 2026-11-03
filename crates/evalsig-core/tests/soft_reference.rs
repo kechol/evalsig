@@ -244,3 +244,29 @@ fn kappa_vs_reference_averages_kappa_against_each_rater() {
     );
     assert!((mean - 1.0 / 6.0).abs() < TOL);
 }
+
+#[test]
+fn items_split_by_agreement_get_their_own_metrics() {
+    let rs = records();
+    let p = parts(&rs);
+    let s = Settings {
+        by: Some("reference_agreement".into()),
+        ..settings(ReferenceMode::Soft)
+    };
+    let r = report::build(p.run, &p.judgments, &p.items, &p.labels, &s).unwrap();
+    let value = |stratum: &str, name: &str| {
+        r.by[stratum]
+            .iter()
+            .find(|m| m.metric == name)
+            .unwrap()
+            .value
+            .unwrap()
+    };
+    assert_eq!(r.by.keys().collect::<Vec<_>>(), ["split", "unanimous"]);
+    // Split: q1 (s 2/3, judged positive) and q2 (s 1/2, positive).
+    assert!((value("split", "accuracy") - 7.0 / 12.0).abs() < TOL);
+    assert!((value("split", "hit_rate") - 1.0).abs() < TOL);
+    // Unanimous: q3 (negative, judged negative) and q4 (positive, judged negative).
+    assert!((value("unanimous", "accuracy") - 0.5).abs() < TOL);
+    assert!(value("unanimous", "hit_rate").abs() < TOL);
+}

@@ -338,6 +338,12 @@ pub fn prepare<'a>(
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
             weight: item.map_or(1.0, |i| i.weight()),
             stratum: s.by.as_ref().and_then(|name| {
+                if name == reference::AGREEMENT_STRATUM {
+                    return positive
+                        .as_ref()
+                        .and_then(|p| reference::agreement_stratum(&item_labels, p))
+                        .map(str::to_owned);
+                }
                 item.and_then(|i| i.strata.as_ref())
                     .and_then(|m| m.get(name))
                     .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
