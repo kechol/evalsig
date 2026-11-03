@@ -33,3 +33,19 @@ pub fn raw(name: &str) -> Result<String, CliError> {
     lookup(name)?;
     Ok(schemas::by_name(name).expect("looked up above").to_owned())
 }
+
+/// A writer module for `records`, for `--emit`.
+pub fn emit(name: &str, lang: &str) -> Result<String, CliError> {
+    if name != "records" {
+        return Err(CliError::usage(
+            "--emit writes records/1 writers; use `schema records --emit <lang>`",
+        ));
+    }
+    schemas::WRITERS
+        .iter()
+        .find(|(l, _)| *l == lang)
+        .map(|(_, text)| (*text).to_owned())
+        .ok_or_else(|| {
+            CliError::usage(format!("no writer for {lang:?}")).with_hint("python or typescript")
+        })
+}

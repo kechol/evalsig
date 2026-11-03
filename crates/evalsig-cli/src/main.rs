@@ -82,7 +82,13 @@ enum Command {
         /// Print only the schema document, without the envelope.
         #[arg(long)]
         raw: bool,
+        /// Print a standard-library-only records/1 writer instead (python, typescript).
+        #[arg(long, value_name = "LANG", conflicts_with = "raw")]
+        emit: Option<String>,
     },
+    /// Steps to obtain the information evalsig needs from a source.
+    #[command(subcommand)]
+    Recipes(commands::recipes::RecipesCommand),
     /// Run validity checks only: on a records file, or on the imported data.
     Validate {
         /// Check this `records/1` file instead of the project's data.
@@ -125,7 +131,8 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Rebuild => commands::rebuild::run(&cli.project),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
-        Command::Schema { ref name, raw: _ } => commands::schema::run(name),
+        Command::Schema { ref name, .. } => commands::schema::run(name),
+        Command::Recipes(ref cmd) => commands::recipes::run(cmd),
         Command::Validate {
             records: Some(ref records),
             list_checks,
@@ -208,7 +215,24 @@ fn main() -> ExitCode {
             return ExitCode::from(Exit::Usage.code());
         }
     };
-    if let Command::Schema { name, raw: true } = &cli.command {
+    if let Command::Schema {
+        name,
+        emit: Some(lang),
+        ..
+    } = &cli.command
+    {
+        return match commands::schema::emit(name, lang) {
+            Ok(text) => {
+                let _ = std::io::stdout().write_all(text.as_bytes());
+                ExitCode::SUCCESS
+            }
+            Err(err) => report_error(&err, cli.format),
+        };
+    }
+    if let Command::Schema {
+        name, raw: true, ..
+    } = &cli.command
+    {
         return match commands::schema::raw(name) {
             Ok(text) => {
                 let _ = std::io::stdout().write_all(text.as_bytes());

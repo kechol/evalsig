@@ -7,6 +7,7 @@ pub mod map;
 pub mod migrate;
 pub mod purge;
 pub mod rebuild;
+pub mod recipes;
 pub mod report;
 pub mod schema;
 pub mod validate;
