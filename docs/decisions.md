@@ -913,3 +913,37 @@ after the entry is `Accepted`.
   have to be kept in step).
 - Consequences: an agent that needs every row pages with `--cursor` or asks
   for `--format json`. `--cursor` has no effect outside agent mode.
+
+## D-019 Dashboard stack and access control
+
+- Status: Accepted
+- Date: 2026-11-04
+- Context: `evalsig dashboard` serves read-only pages of the same results the
+  CLI computes, to one person on their machine (SPEC §11). It must not be
+  reachable by other sites through the browser (DNS rebinding) and must show
+  exactly the CLI's numbers. The planned stack was axum, tokio, rust-embed and
+  maud; `gate serve` has since been built on the standard library (D-014).
+- Decision:
+  - The server is the standard library's: one thread per connection, GET
+    only, bound to 127.0.0.1. It accepts a request only when its Host header
+    is `127.0.0.1:<port>` or `localhost:<port>` and its URL carries the token
+    made at each launch (32 random bytes, hex, compared in constant time);
+    other requests get 403 or 421 and no page. Responses carry
+    `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
+    img-src data:` and `X-Content-Type-Options: nosniff`.
+  - Pages and charts are rendered on the server by `evalsig-dashboard` from
+    the CLI's result JSON: HTML through an escaping writer, charts as SVG.
+    The browser computes nothing and loads nothing from outside; no
+    JavaScript is needed for the v1 screens (folding uses `<details>`).
+  - The dashboard reads the project's canonical snapshots and never writes;
+    it does not open the SQLite working copy.
+  - The static HTML report (`report --format html`) uses the same renderer
+    and embeds its data as `<script type="application/json">`.
+- Alternatives: axum with tokio (not taken: about a hundred more crates and
+  an async runtime for a single-user, read-only, loopback server whose
+  requests the standard library handles); maud (not taken: a macro DSL for
+  a few templates that an escaping writer covers); rust-embed (not taken:
+  `include_str!` embeds the few assets).
+- Consequences: no new dependencies. The HTTP handling is minimal by design
+  and must stay GET-only and loopback-only; anything more (uploads, label
+  editing in v2) needs this entry revisited.
