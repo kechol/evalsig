@@ -28,6 +28,8 @@ pub enum AdapterArg {
     Records,
     /// A CSV whose columns are record field names.
     Csv,
+    /// Inspect logs: `.eval` archives or `.json` logs.
+    Inspect,
 }
 
 impl AdapterArg {
@@ -132,6 +134,7 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
     match path.extension().and_then(|e| e.to_str()) {
         Some("jsonl" | "json") => Ok(AdapterArg::Records),
         Some("csv") => Ok(AdapterArg::Csv),
+        Some("eval") => Ok(AdapterArg::Inspect),
         _ => Err(
             CliError::usage(format!("cannot tell the format of {}", path.display()))
                 .with_hint("pass --adapter records or --adapter csv"),
@@ -172,6 +175,7 @@ fn candidates<'a>(
                 .map(|(line, v)| (line, Candidate::Row(v)))
                 .collect())
         }
+        AdapterArg::Inspect => unreachable!("Inspect logs are read with their bodies"),
     }
 }
 
@@ -213,7 +217,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             None => Some(adapter_for(path, args.adapter)?),
         };
         let json = match (&via, adapter) {
-            (Some(v), _) => v.compiled.reads_json(),
+            (Some(v), _) => v.reads_json(),
             (None, a) => a == Some(AdapterArg::Records),
         };
         let bytes = read_within(path, &limits, json)?;
@@ -235,6 +239,17 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         }
         let adapter = adapter.expect("chosen above when there is no mapping");
         adapters.insert(adapter);
+        if adapter == AdapterArg::Inspect {
+            let file = path.display().to_string();
+            let options = evalsig_adapters::inspect::Options::default();
+            for (row, value) in mapped::inspect_log(path, &bytes, &options, &mut bodies)? {
+                match validator.check_value(row, value) {
+                    Ok(r) => records.push(r),
+                    Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
+                }
+            }
+            continue;
+        }
         let text =
             String::from_utf8(bytes).map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
         for (line, candidate) in candidates(adapter, &text, path, args.row)? {

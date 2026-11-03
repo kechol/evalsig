@@ -1,12 +1,13 @@
-//! Imports through a declarative mapping: `import --mapping <file>` and
-//! `import --from <name>` (D-011).
+//! Imports through a declarative mapping or a harness adapter: `import --mapping
+//! <file>`, `import --from <name>` (D-011) and Inspect logs.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use evalsig_adapters::inspect;
 use evalsig_adapters::limits::{self, Limits};
 use evalsig_adapters::mapping::{self, Compiled, Host, MapError};
-use evalsig_core::config::{Config, ContentMode};
+use evalsig_core::config::{Adapter, Config, ContentMode};
 use evalsig_core::records::Record;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::content::{self, Redaction, Redactor};
@@ -20,9 +21,15 @@ use crate::exit::Exit;
 use crate::project::io_error;
 use crate::validate::Issue;
 
-/// The mapping an import goes through.
+/// How the files of an import become records.
+pub enum Reader {
+    Mapping(Box<Compiled>),
+    Inspect(inspect::Options),
+}
+
+/// The mapping or adapter an import goes through.
 pub struct Via {
-    pub compiled: Compiled,
+    pub reader: Reader,
     /// The provenance `mapping`: the file's hash, or the canonical `[[import]]` block's.
     pub hash: ContentHash,
     pub adapter: String,
@@ -79,7 +86,7 @@ pub fn resolve(
                 .map_err(|e| invalid(format!("{}: {e}", path.display())))?;
             Via {
                 adapter: format!("mapping:{}", compiled.name),
-                compiled,
+                reader: Reader::Mapping(Box::new(compiled)),
                 hash: ContentHash::blake3(&bytes),
                 files: Vec::new(),
             }
@@ -102,24 +109,40 @@ pub fn resolve(
                         ),
                     )
                 })?;
-            let compiled = mapping::from_import(block).map_err(invalid)?;
+            let reader = match block.adapter {
+                Adapter::Inspect => Reader::Inspect(inspect::Options {
+                    score: block.score.clone(),
+                    value_map: block
+                        .value_map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::to_value(v).expect("serializes")))
+                        .collect(),
+                    value_semantics: block
+                        .value_semantics
+                        .and_then(|v| serde_json::to_value(v).ok())
+                        .and_then(|v| v.as_str().map(str::to_owned)),
+                }),
+                _ => Reader::Mapping(Box::new(mapping::from_import(block).map_err(invalid)?)),
+            };
             let canonical = to_canonical_bytes(&serde_json::to_value(block).expect("serializes"))
                 .map_err(CliError::store)?;
             Via {
                 adapter: format!("import:{name}"),
-                compiled,
+                reader,
                 hash: ContentHash::blake3(&canonical),
                 files: expand(root, &block.path)?,
             }
         }
         (None, None) => return Ok(None),
     };
-    if !via.compiled.undecided.is_empty() {
+    if let Reader::Mapping(c) = &via.reader
+        && !c.undecided.is_empty()
+    {
         return Err(CliError::new(
             "undecided_mapping",
             format!(
                 "the mapping still says DECIDE at {}",
-                via.compiled.undecided.join(", ")
+                c.undecided.join(", ")
             ),
             Exit::Blocked,
         )
@@ -222,8 +245,14 @@ pub fn apply(
     bytes: &[u8],
     host: &mut Bodies<'_>,
 ) -> Result<(mapping::Numbered, Vec<Issue>), CliError> {
-    let rows = mapping::rows(&via.compiled, bytes).map_err(|e| CliError::invalid_input(path, e))?;
-    let (records, issues) = mapping::apply(&via.compiled, &rows, host).map_err(|e| match e {
+    let compiled = match &via.reader {
+        Reader::Mapping(c) => c,
+        Reader::Inspect(options) => {
+            return Ok((inspect_log(path, bytes, options, host)?, Vec::new()));
+        }
+    };
+    let rows = mapping::rows(compiled, bytes).map_err(|e| CliError::invalid_input(path, e))?;
+    let (records, issues) = mapping::apply(compiled, &rows, host).map_err(|e| match e {
         MapError::Unexpected { .. } => CliError::new(
             "unexpected_source",
             format!("{}: {e}", path.display()),
@@ -241,4 +270,33 @@ pub fn apply(
         })
         .collect();
     Ok((records, issues))
+}
+
+impl Via {
+    /// Whether the files are JSON to check for depth before reading (archives and
+    /// Inspect logs check their own entries).
+    pub fn reads_json(&self) -> bool {
+        match &self.reader {
+            Reader::Mapping(c) => c.reads_json(),
+            Reader::Inspect(_) => false,
+        }
+    }
+}
+
+/// The records of an Inspect log: a `.eval` archive, or a `.json` log otherwise.
+pub fn inspect_log(
+    path: &Path,
+    bytes: &[u8],
+    options: &inspect::Options,
+    host: &mut Bodies<'_>,
+) -> Result<mapping::Numbered, CliError> {
+    let zip = path.extension().is_some_and(|x| x == "eval");
+    let failed = |e: inspect::InspectError| CliError::invalid_input(path, e);
+    let (log, samples) = inspect::read_log(bytes, zip, &host.limits).map_err(failed)?;
+    let records = inspect::records(&log, &samples, options, host).map_err(failed)?;
+    Ok(records
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| (i + 1, r))
+        .collect())
 }
