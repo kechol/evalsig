@@ -1,6 +1,7 @@
 //! Data types, metrics and validity checks for evalsig (pure computation, no I/O).
 
 pub mod bootstrap;
+pub mod capabilities;
 pub mod checks;
 pub mod compare;
 pub mod config;

@@ -175,3 +175,189 @@ fn a_draft_leaves_every_decision_and_decide_fills_them() {
         .assert()
         .code(64);
 }
+
+fn map_test(mapping: &Path, file: &Path, code: i32) -> Value {
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .args(["--format", "json", "map", "test"])
+        .arg(mapping)
+        .arg(file)
+        .args(["--arg", "run-id=triage-v1", "--arg"])
+        .arg(format!(
+            "labels={}",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/custom-harness/labels.sample.json")
+                .display()
+        ))
+        .assert()
+        .code(code)
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+fn example(rel: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples")
+        .join(rel)
+}
+
+#[test]
+fn shape_shifted_records_give_fixed_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let rows: Vec<Value> = std::fs::read_to_string(example("custom-harness/run-log.sample.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let write = |name: &str, rs: Vec<Value>| {
+        let path = dir.path().join(name);
+        let text: Vec<String> = rs.iter().map(|r| r.to_string()).collect();
+        std::fs::write(&path, text.join("\n")).unwrap();
+        path
+    };
+    let deeper = write(
+        "deeper.jsonl",
+        rows.iter()
+            .map(|r| {
+                let mut r = r.clone();
+                let runs = r.as_object_mut().unwrap().remove("runs").unwrap();
+                r["result"] = serde_json::json!({ "runs": runs });
+                r
+            })
+            .collect(),
+    );
+    let array = write(
+        "array.jsonl",
+        rows.iter()
+            .map(|r| {
+                let mut r = r.clone();
+                let runs: Vec<Value> = r["runs"].as_object().unwrap().values().cloned().collect();
+                r["runs"] = Value::Array(runs);
+                r
+            })
+            .collect(),
+    );
+    let moved = write(
+        "moved.jsonl",
+        rows.iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if let Some(Value::Object(m)) = r.as_object_mut().unwrap().remove("missing") {
+                    for (k, v) in m {
+                        r["runs"][k] = serde_json::json!({ "error": v });
+                    }
+                }
+                r
+            })
+            .collect(),
+    );
+    let duplicated = write(
+        "duplicated.jsonl",
+        rows.iter().chain(&rows[..1]).cloned().collect(),
+    );
+    let mapping = example("mapping.toml");
+    let counts = |v: &Value| {
+        let r = &v["results"];
+        (
+            r["coverage"]["mapped"].as_u64().unwrap(),
+            r["integrity"]["duplicate_judgments"].as_u64().unwrap(),
+            r["values"]["missing"]["invalid_output"]
+                .as_u64()
+                .unwrap_or(0),
+            r["unused_paths"].clone(),
+        )
+    };
+    assert_eq!(
+        counts(&map_test(&mapping, &deeper, 0)),
+        (
+            3,
+            0,
+            5,
+            serde_json::json!(["$.result.runs.a.level", "$.result.runs.b.level"])
+        )
+    );
+    assert_eq!(
+        counts(&map_test(&mapping, &array, 0)),
+        (3, 0, 5, serde_json::json!(["$.runs[*].level"]))
+    );
+    assert_eq!(
+        counts(&map_test(&mapping, &moved, 0)),
+        (3, 0, 1, serde_json::json!(["$.runs.b.error"]))
+    );
+    assert_eq!(
+        counts(&map_test(&mapping, &duplicated, 0)),
+        (4, 2, 0, serde_json::json!([]))
+    );
+}
+
+#[test]
+fn test_expectations_are_checked() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = dir.path().join("mapping.toml");
+    std::fs::copy(example("mapping.toml"), &mapping).unwrap();
+    let log = example("custom-harness/run-log.sample.jsonl");
+    let row: Value = serde_json::from_str(
+        std::fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .nth(1)
+            .unwrap(),
+    )
+    .unwrap();
+    // The converter script's records for this row are the expectation.
+    let expected: Vec<Value> = std::fs::read_to_string(example("custom-harness/records.out.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|r| r["record"] == "run" || r["item_id"] == "priority:t-0002")
+        .collect();
+    let case = serde_json::json!({"input": row, "records": expected});
+    std::fs::write(dir.path().join("mapping.tests.jsonl"), format!("{case}\n")).unwrap();
+    let v = map_test(&mapping, &log, 0);
+    assert_eq!(v["results"]["tests"]["passed"], 1);
+    let mut wrong = case.clone();
+    wrong["records"][0]["run_id"] = Value::String("other".into());
+    std::fs::write(dir.path().join("mapping.tests.jsonl"), format!("{wrong}\n")).unwrap();
+    let v = map_test(&mapping, &log, 1);
+    assert_eq!(v["verdict"]["code"], "fail");
+}
+
+#[test]
+fn capabilities_name_what_the_data_lack() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(example("custom-harness/records.out.jsonl"))
+        .assert()
+        .success();
+    let out = evalsig(dir.path())
+        .args(["capabilities", "--run", "triage-v1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    let c = &v["results"]["capabilities"];
+    let available: Vec<&str> = c["available"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    assert!(available.contains(&"hit_rate") && available.contains(&"replicate_disagreement"));
+    let missing: Vec<&str> = c["unavailable"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["missing"].as_str().unwrap())
+        .collect();
+    assert!(missing.contains(&"input_ref") && missing.contains(&"occurred_at"));
+    evalsig(dir.path())
+        .args(["capabilities", "--run", "nope"])
+        .assert()
+        .code(64);
+}

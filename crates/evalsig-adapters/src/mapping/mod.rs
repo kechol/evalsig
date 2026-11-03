@@ -782,6 +782,11 @@ impl Compiled {
     pub fn reads_json(&self) -> bool {
         self.format != Format::Csv
     }
+
+    /// Whether the mapping maps reference labels.
+    pub fn maps_labels(&self) -> bool {
+        self.label.is_some()
+    }
 }
 
 /// What a mapping needs from the importer.

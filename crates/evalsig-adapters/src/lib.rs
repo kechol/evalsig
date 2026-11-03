@@ -5,6 +5,7 @@ pub mod draft;
 pub mod inspect;
 pub mod limits;
 pub mod mapping;
+pub mod maptest;
 pub mod probe;
 pub mod promptfoo;
 pub mod table;

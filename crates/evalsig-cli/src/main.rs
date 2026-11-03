@@ -50,6 +50,12 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// The analyses the imported data allow, and what to add for the others.
+    Capabilities {
+        /// Only this run.
+        #[arg(long)]
+        run: Option<String>,
+    },
     /// Read records into a snapshot and record the import in the ledger.
     Import(commands::import::Args),
     /// List the imported items.
@@ -107,6 +113,9 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Compare(ref args) => commands::compare::run(&cli.project, args),
+        Command::Capabilities { ref run } => {
+            commands::list::capabilities(&cli.project, run.as_deref())
+        }
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),

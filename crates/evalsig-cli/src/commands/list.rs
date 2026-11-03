@@ -98,3 +98,20 @@ pub fn items(root: &Path) -> Result<Output, CliError> {
         &d.snapshots,
     ))
 }
+
+/// `evalsig capabilities [--run]`: the analyses the imported data allow, and what to
+/// add for the others.
+pub fn capabilities(root: &Path, run: Option<&str>) -> Result<Output, CliError> {
+    let project = Project::open(root)?;
+    let d = data::load(&project)?;
+    if let Some(r) = run {
+        d.run(r)?;
+    }
+    let c = evalsig_core::capabilities::of(&d.records, run);
+    let mut envelope = Envelope::new(
+        "evalsig.capabilities/1",
+        serde_json::json!({"run": run, "capabilities": c}),
+    );
+    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    Ok(Output::success(envelope))
+}

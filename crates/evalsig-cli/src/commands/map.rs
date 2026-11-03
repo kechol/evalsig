@@ -3,18 +3,22 @@
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
-use evalsig_adapters::draft;
 use evalsig_adapters::limits::Limits;
-use evalsig_adapters::mapping;
 use evalsig_adapters::probe::{self, Shape};
+use evalsig_adapters::{draft, mapping, maptest};
+use evalsig_core::capabilities;
+use evalsig_core::config::Config;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Kind};
 use serde_json::json;
 
 use crate::commands::import::parse_size;
 use crate::error::CliError;
+use crate::exit::Exit;
+use crate::mapped::Bodies;
 use crate::output::{Envelope, Next, Output, Verdict, VerdictCode};
 use crate::project::{Project, io_error};
+use crate::validate::RecordValidator;
 
 #[derive(Debug, Subcommand)]
 pub enum MapCommand {
@@ -39,6 +43,18 @@ pub enum MapCommand {
         /// Replace an existing file.
         #[arg(long)]
         force: bool,
+        #[arg(long, value_name = "SIZE", default_value = "1G", value_parser = parse_size)]
+        max_bytes: u64,
+    },
+    /// Show what a mapping loses on a file: coverage, unused paths, key integrity,
+    /// value distribution, capabilities, and `<mapping>.tests.jsonl` expectations.
+    Test {
+        mapping: PathBuf,
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// A value the mapping reads with `{ arg = "NAME" }`; repeat for several.
+        #[arg(long = "arg", value_name = "NAME=VALUE")]
+        args: Vec<String>,
         #[arg(long, value_name = "SIZE", default_value = "1G", value_parser = parse_size)]
         max_bytes: u64,
     },
@@ -166,6 +182,12 @@ pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, CliError> {
             by,
             mapping,
         } => decide(root, id, choice, by, mapping),
+        MapCommand::Test {
+            mapping,
+            files,
+            args,
+            max_bytes,
+        } => test(mapping, files, args, *max_bytes),
     }
 }
 
@@ -213,4 +235,100 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
         }];
     }
     Ok(Output::success(envelope))
+}
+
+fn test(
+    path: &Path,
+    files: &[PathBuf],
+    args: &[String],
+    max_bytes: u64,
+) -> Result<Output, CliError> {
+    let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
+    let compiled = mapping::parse(&text)
+        .and_then(|m| mapping::compile(&m))
+        .map_err(|e| {
+            CliError::new(
+                "invalid_mapping",
+                format!("{}: {e}", path.display()),
+                Exit::Rejected,
+            )
+        })?;
+    if !compiled.undecided.is_empty() {
+        return Err(CliError::new(
+            "undecided_mapping",
+            format!(
+                "the mapping still says DECIDE at {}",
+                compiled.undecided.join(", ")
+            ),
+            Exit::Blocked,
+        )
+        .with_hint("decide them with `evalsig map decide`"));
+    }
+    let limits = Limits {
+        max_bytes,
+        ..Limits::default()
+    };
+    let config = Config::default();
+    let mut host = Bodies::new(args, None, &config, limits)?;
+    let (mut rows, mut records, mut issues) = (Vec::new(), Vec::new(), Vec::new());
+    for file in files {
+        let bytes = evalsig_adapters::limits::read_file(file, &limits)
+            .map_err(|e| CliError::invalid_input(file, e))?;
+        // Rows are numbered across the files.
+        let base = rows.len();
+        let these =
+            mapping::rows(&compiled, &bytes).map_err(|e| CliError::invalid_input(file, e))?;
+        let (r, i) = mapping::apply(&compiled, &these, &mut host)
+            .map_err(|e| CliError::invalid_input(file, e))?;
+        records.extend(r.into_iter().map(|(n, v)| (base + n, v)));
+        issues.extend(i.into_iter().map(|mut x| {
+            x.row += base;
+            x
+        }));
+        rows.extend(these.into_iter().map(|(n, v)| (base + n, v)));
+    }
+    let report = maptest::report(&rows, &records, &issues, compiled.maps_labels(), &text);
+    let validator = RecordValidator::new();
+    let mut valid = Vec::new();
+    let mut invalid = 0;
+    for (n, v) in records {
+        match validator.check_value(n, v) {
+            Ok(r) => valid.push(r),
+            Err(_) => invalid += 1,
+        }
+    }
+    let tests_path = path.with_extension("tests.jsonl");
+    let cases = match std::fs::read_to_string(&tests_path) {
+        Ok(t) => Some(
+            maptest::cases(&compiled, &t, &mut host)
+                .map_err(|e| CliError::invalid_input(&tests_path, e))?,
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io_error(&tests_path, &e)),
+    };
+    let failed = cases.as_ref().is_some_and(|c| !c.failures.is_empty());
+    let mut envelope = Envelope::new(
+        "evalsig.map.test/1",
+        json!({
+            "mapping": path.display().to_string(),
+            "coverage": report.coverage,
+            "unused_paths": report.unused_paths,
+            "integrity": report.integrity,
+            "values": report.values,
+            "invalid_records": invalid,
+            "capabilities": capabilities::of(&valid, None),
+            "tests": cases,
+        }),
+    );
+    if !failed {
+        return Ok(Output::success(envelope));
+    }
+    envelope.verdict = Some(Verdict {
+        code: VerdictCode::Fail,
+        text: format!("Some expectations in {} do not hold.", tests_path.display()),
+    });
+    Ok(Output {
+        envelope,
+        exit: Exit::Failed,
+    })
 }
