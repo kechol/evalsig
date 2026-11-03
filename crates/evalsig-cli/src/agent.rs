@@ -8,6 +8,7 @@ use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use serde_json::{Map, Value};
 
+use crate::error::CliError;
 use crate::output::{Envelope, Truncated, Warning};
 
 pub const ROWS: usize = 50;
@@ -80,6 +81,53 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
     }
 }
 
+/// Quoted text in a message: errors quote the values that caused them, and those can
+/// come from the evaluated data.
+fn redact_quotes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut quoted = false;
+    for c in text.chars() {
+        match (c, quoted) {
+            ('"', false) => {
+                quoted = true;
+                out.push_str("\"…");
+            }
+            ('"', true) => {
+                quoted = false;
+                out.push('"');
+            }
+            (_, true) => {}
+            (c, false) => out.push(c),
+        }
+    }
+    out
+}
+
+/// An error as agent mode prints it: quoted values withheld from the message, and
+/// the message as written in `untrusted_content` on request (D-018).
+pub fn error_json(err: &CliError, include_content: bool) -> String {
+    let message = redact_quotes(&err.message);
+    let mut v = serde_json::json!({ "error": {
+        "code": err.code,
+        "message": message,
+        "hint": err.hint,
+    }});
+    if message != err.message {
+        if include_content {
+            v["untrusted_content"] = serde_json::json!({ "/error/message": err.message });
+            v["content_notice"] = NOTICE.into();
+        } else {
+            v["warnings"] = serde_json::json!([{
+                "code": "content_withheld",
+                "message": "quoted values come from the input; pass --include-content to receive the full message in untrusted_content",
+            }]);
+        }
+    }
+    let mut s = v.to_string();
+    s.push('\n');
+    s
+}
+
 #[derive(Default)]
 struct Cut {
     omitted: u64,
@@ -87,22 +135,43 @@ struct Cut {
     more: bool,
 }
 
-/// The top-level arrays of `results`, each shown from `cursor` for at most `rows`.
+/// The top-level arrays of `results`, each shown from `cursor` for at most `rows`;
+/// arrays nested deeper show their first `rows`, so a large inner list cannot keep the
+/// envelope over the limit.
 fn page(results: &Value, cursor: usize, rows: usize, cut: &mut Cut) -> Value {
-    let mut window = |a: &[Value]| -> Value {
-        let shown: Vec<Value> = a.iter().skip(cursor).take(rows).cloned().collect();
+    fn cap(v: &Value, rows: usize, cut: &mut Cut) -> Value {
+        match v {
+            Value::Array(a) => {
+                cut.omitted += a.len().saturating_sub(rows) as u64;
+                Value::Array(a.iter().take(rows).map(|x| cap(x, rows, cut)).collect())
+            }
+            Value::Object(o) => Value::Object(
+                o.iter()
+                    .map(|(k, x)| (k.clone(), cap(x, rows, cut)))
+                    .collect::<Map<_, _>>(),
+            ),
+            other => other.clone(),
+        }
+    }
+    let window = |a: &[Value], cut: &mut Cut| -> Value {
+        let shown: Vec<Value> = a
+            .iter()
+            .skip(cursor)
+            .take(rows)
+            .map(|x| cap(x, rows, cut))
+            .collect();
         cut.omitted += (a.len() - shown.len()) as u64;
         cut.more |= a.len() > cursor + rows;
         Value::Array(shown)
     };
     match results {
-        Value::Array(a) => window(a),
+        Value::Array(a) => window(a, cut),
         Value::Object(o) => Value::Object(
             o.iter()
                 .map(|(k, v)| {
                     let v = match v {
-                        Value::Array(a) => window(a),
-                        other => other.clone(),
+                        Value::Array(a) => window(a, cut),
+                        other => cap(other, rows, cut),
                     };
                     (k.clone(), v)
                 })
@@ -175,7 +244,8 @@ pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.threshold/1", &[]),
     ("evalsig.trend/1", &[]),
     ("evalsig.validate/1", &["message", "path"]),
-    ("evalsig.verify/1", &[]),
+    // A mismatch echoes the verified results, content included.
+    ("evalsig.verify/1", &["saved", "recomputed", "path"]),
     ("evalsig.version/1", &[]),
 ];
 
@@ -202,17 +272,22 @@ fn separate_content(e: &mut Envelope, mode: Mode) {
     }
 }
 
+/// A key as one JSON pointer segment (RFC 6901).
+fn pointer(key: &str) -> String {
+    key.replace('~', "~0").replace('/', "~1")
+}
+
 /// Remove `keys` at any depth, keyed in `taken` by their JSON pointer in `results`.
 fn take(v: &mut Value, keys: &[&str], at: &str, taken: &mut Map<String, Value>) {
     match v {
         Value::Object(o) => {
             for k in keys {
                 if let Some(x) = o.remove(*k) {
-                    taken.insert(format!("{at}/{k}"), x);
+                    taken.insert(format!("{at}/{}", pointer(k)), x);
                 }
             }
             for (k, x) in o.iter_mut() {
-                take(x, keys, &format!("{at}/{k}"), taken);
+                take(x, keys, &format!("{at}/{}", pointer(k)), taken);
             }
         }
         Value::Array(a) => {

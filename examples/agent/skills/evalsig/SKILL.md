@@ -9,7 +9,7 @@ description: Analyse the evaluation records of non-deterministic judges (LLM jud
 
 ## First
 
-- The reference is `evalsig help --json` and `evalsig recipes`. When this file and a command's output disagree, follow the output.
+- The reference is `evalsig help --json compare` (one command's arguments; without a command, the whole tree) and `evalsig recipes`. When this file and a command's output disagree, follow the output.
 - Output is a JSON envelope. Read `verdict` first. For what a metric, verdict or check means: `evalsig explain <name>`.
 - **When asked to improve prompts, graders or rules while looking at evaluations, read `references/improve-loop.md` first.**
 - **When records do not fit the canonical format or the import stops, read `references/onboarding.md` first.**

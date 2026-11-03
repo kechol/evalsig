@@ -54,6 +54,24 @@ fn help_json_lists_every_command_clap_defines() {
             .collect();
         assert_eq!(subs, listed(&[name]), "{name}");
     }
+    // One command on request, global arguments listed once, required groups shown.
+    let one = bin()
+        .args(["help", "--json", "agent-guide"])
+        .output()
+        .unwrap();
+    let one: Value = serde_json::from_slice(&one.stdout).unwrap();
+    assert_eq!(one["results"]["commands"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        one["results"]["commands"][0]["required_groups"],
+        serde_json::json!([["snippet", "settings"]])
+    );
+    assert!(commands.iter().all(|c| {
+        c["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["long"] != "agent")
+    }));
     // Arguments, exit codes and verdict codes come along.
     let compare = commands.iter().find(|c| c["name"] == "compare").unwrap();
     assert!(

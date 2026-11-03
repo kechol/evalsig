@@ -304,7 +304,14 @@ fn main() -> ExitCode {
     }
     if first_word.as_deref() == Some("help") && args.iter().any(|a| a == "--json") {
         use clap::CommandFactory as _;
-        let out = output::Output::success(help::envelope(&Cli::command()));
+        let path: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .skip_while(|a| a != "help")
+            .skip(1)
+            .filter(|a| !a.starts_with('-'))
+            .collect();
+        let out = output::Output::success(help::envelope(&Cli::command(), &path));
         let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
         return ExitCode::SUCCESS;
     }
@@ -331,7 +338,12 @@ fn main() -> ExitCode {
                 requested_format_given(&args),
                 std::io::stdout().is_terminal(),
             );
-            if format == Format::Json || agent_mode {
+            if agent_mode {
+                let text = agent::error_json(&err, has("--include-content"));
+                let _ = std::io::stderr().write_all(text.as_bytes());
+                return ExitCode::from(err.exit.code());
+            }
+            if format == Format::Json {
                 return report_error(&err, format);
             }
             let _ = std::io::stderr().write_all(message.as_bytes());
@@ -397,11 +409,23 @@ fn main() -> ExitCode {
     let format = if agent_mode { Format::Json } else { cli.format };
     match run(&cli) {
         Ok(mut out) => {
-            if let Some(m) = mode {
-                agent::shape(&mut out.envelope, m);
-            }
-            let _ = std::io::stdout().write_all(output::render(&out, format).as_bytes());
+            let text = match mode {
+                // Compact JSON: the size limit is measured on what is printed.
+                Some(m) => {
+                    agent::shape(&mut out.envelope, m);
+                    let mut t = serde_json::to_string(&out.envelope).expect("envelope serializes");
+                    t.push('\n');
+                    t
+                }
+                None => output::render(&out, format),
+            };
+            let _ = std::io::stdout().write_all(text.as_bytes());
             ExitCode::from(out.exit.code())
+        }
+        Err(err) if mode.is_some() => {
+            let text = agent::error_json(&err, cli.include_content);
+            let _ = std::io::stderr().write_all(text.as_bytes());
+            ExitCode::from(err.exit.code())
         }
         Err(err) => report_error(&err, format),
     }

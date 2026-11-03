@@ -18,11 +18,11 @@ evalsig ledger show --last 5
 
 ## Steps
 
-1. Look at errors on dev only: `evalsig report <baseline-run> --items`, limited to the dev split's items. Only dev is yours to read item by item.
+1. Look at errors on dev only: `evalsig compare <baseline> <candidate> --split dev --items --format jsonl`. Only dev is yours to read item by item.
 2. Make a candidate: change the prompt, grader or rules. If the grader's version changes, say so in the report; the referee stops candidates graded by another grader than the approved one.
 3. Run the candidate's evaluation in your harness on every item, holdout items included, and `evalsig import` it. The referee refuses a candidate that leaves holdout items out.
 4. Check on validation: `evalsig compare <baseline> <candidate> --split validation`.
-   - Submit on `improved`. Do not submit on `negligible` or `worsened`. On `indistinguishable`, submit only if the point difference reaches the minimum effect (validation is for exploring; the referee controls the error).
+   - Submit only on `improved`. On `indistinguishable`, `negligible` or `worsened`, go back to dev: none of them is an improvement, and each submission spends budget.
    - Comparisons are counted. When the `validation_uses` warning appears, tell a person it is time to rebuild the validation split.
    - Try a few well-founded changes rather than many small ones.
 5. Submit to the referee: `evalsig gate submit --approved <hash> --candidate <run> --records <file> --socket <path>` (or `--url` with `--token-file`).
