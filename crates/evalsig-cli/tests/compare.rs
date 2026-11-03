@@ -260,3 +260,101 @@ fn preference_records_add_the_win_rate_and_position_checks() {
     assert!(codes.contains(&"no_swapped_pairs"), "{codes:?}");
     assert_eq!(v["results"]["preference"]["win_rate"]["value"], 0.0);
 }
+
+#[test]
+fn validation_uses_count_recorded_comparisons_of_the_same_split() {
+    let dir = project();
+    let config = dir.path().join(".evalsig/config.toml");
+    let text = std::fs::read_to_string(&config)
+        .unwrap()
+        .replace("[compare]\n", "[compare]\nvalidation_warn_after = 2\n");
+    std::fs::write(&config, text).unwrap();
+    let uses = |v: &Value| v["results"]["validation_uses"].as_u64().unwrap();
+    let warned = |v: &Value| {
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "validation_uses")
+    };
+    let first = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    assert_eq!(uses(&first), 1);
+    // A scratch comparison reports the count it would have but does not add to it.
+    let scratch =
+        json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2", "--scratch"]));
+    assert_eq!(uses(&scratch), 2);
+    let second = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    let third = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    assert_eq!((uses(&second), uses(&third)), (2, 3));
+    assert!(!warned(&second) && warned(&third));
+    assert_eq!(first["results"]["split"], third["results"]["split"]);
+
+    // verify recounts from the ledger lines before the saved comparison.
+    let saved = dir.path().join(".evalsig/reports").join(format!(
+        "{}.json",
+        second["provenance"]["output"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("blake3:")
+            .unwrap()
+    ));
+    let v = json(evalsig(dir.path()).arg("verify").arg(&saved));
+    assert_eq!(
+        v["results"]["match"], true,
+        "{}",
+        v["results"]["mismatches"]
+    );
+}
+
+#[test]
+fn unpaired_and_sequential_comparisons() {
+    let dir = project();
+    let v = json(evalsig(dir.path()).args([
+        "compare",
+        "triage-v1",
+        "triage-v2",
+        "--unpaired",
+        "--scratch",
+    ]));
+    assert_eq!(v["results"]["paired"], false);
+    let m = &v["results"]["metrics"][0];
+    // Soft references make the counts weighted: each arm's clusters are resampled.
+    assert_eq!(m["interval"], "bootstrap");
+    assert!(m["ci"][0].as_f64().unwrap() <= m["delta"].as_f64().unwrap());
+
+    let v = json(evalsig(dir.path()).args([
+        "compare",
+        "triage-v1",
+        "triage-v2",
+        "--sequential",
+        "--scratch",
+    ]));
+    let seq = &v["results"]["sequential"];
+    assert_eq!(seq["order_seed"], v["provenance"]["seed"]);
+    let acc = seq["metrics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["metric"] == "accuracy")
+        .unwrap();
+    let (lo, hi) = (
+        acc["confidence_sequence"][0].as_f64().unwrap(),
+        acc["confidence_sequence"][1].as_f64().unwrap(),
+    );
+    let d = acc["delta"].as_f64().unwrap();
+    assert!(lo <= d && d <= hi);
+    // The sequence is wider than the fixed-n interval of the same difference.
+    let fixed = &v["results"]["metrics"][0]["ci"];
+    assert!(hi - lo > fixed[1].as_f64().unwrap() - fixed[0].as_f64().unwrap());
+
+    evalsig(dir.path())
+        .args([
+            "compare",
+            "triage-v1",
+            "triage-v2",
+            "--unpaired",
+            "--sequential",
+        ])
+        .assert()
+        .failure();
+}

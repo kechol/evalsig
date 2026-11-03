@@ -126,7 +126,9 @@
       "new_false_alarms": 7.0,
       "new_hits": 9.0
     },
-    "value_semantics": "decision"
+    "value_semantics": "decision",
+    "split": "blake3:c2d71da9665db76b3edfc54465b45c39e2609699ea2072a8f4b9e0c29e512345",
+    "validation_uses": 1
   },
   "warnings": [
     {
@@ -171,7 +173,7 @@
       },
       "command": "compare"
     },
-    "output": "blake3:d3998ffdf82e5cdc53a5c4dba556ea62ea31b00c81967aedb5b2832205a846c0"
+    "output": "blake3:4ab5b479be099fff7c68e1029f409e60c89f02ec49578b83b9cb7f00e59caafc"
   },
   "truncated": null
 }

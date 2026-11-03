@@ -25,5 +25,6 @@ pub mod roc;
 pub mod rules;
 pub mod score;
 pub mod sdt;
+pub mod sequential;
 pub mod time;
 pub mod validity;

@@ -413,6 +413,48 @@ def bradley_terry_cases():
     return out
 
 
+def prpl_eb_cs(xs, alpha, c=0.5):
+    """Predictable plug-in empirical-Bernstein confidence sequence for a mean in [0, 1]
+    (Waudby-Smith & Ramdas 2024, Theorem 2), intersected over time and with [0, 1]."""
+    log_term = math.log(2 / alpha)
+    mu_prev, var_prev = 0.5, 0.25
+    sum_x = sum_sq = 0.0
+    lam_sum = lam_x = pen = 0.0
+    lo, hi = 0.0, 1.0
+    out = []
+    for k, x in enumerate(xs):
+        t = k + 1
+        lam = min(math.sqrt(2 * log_term / (var_prev * t * math.log(1 + t))), c)
+        v = 4 * (x - mu_prev) ** 2
+        psi = (-math.log(1 - lam) - lam) / 4
+        lam_sum += lam
+        lam_x += lam * x
+        pen += v * psi
+        centre, radius = lam_x / lam_sum, (log_term + pen) / lam_sum
+        lo, hi = max(lo, centre - radius), min(hi, centre + radius)
+        out.append((lo, max(hi, lo)))
+        sum_x += x
+        mu = (0.5 + sum_x) / (t + 1)
+        sum_sq += (x - mu) ** 2
+        mu_prev, var_prev = mu, (0.25 + sum_sq) / (t + 1)
+    return out
+
+
+def confidence_sequence_cases():
+    rng = np.random.default_rng(20261105)
+    out = []
+    for name, xs in (("bernoulli_0.7", (rng.random(200) < 0.7).astype(float)),
+                     ("beta_2_5", rng.beta(2, 5, 200))):
+        xs = [r(v) for v in xs]
+        cs = prpl_eb_cs(xs, 0.05)
+        out.append({
+            "input": {"name": name, "x": xs, "level": 0.95},
+            "source": "closed (Waudby-Smith & Ramdas 2024 PrPl-EB, Theorem 2, c = 1/2)",
+            "expected": {f"t{t}": [r(cs[t - 1][0]), r(cs[t - 1][1])] for t in (1, 10, 50, 200)},
+        })
+    return out
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -714,6 +756,7 @@ def main():
             "agreement_ordinal": agreement_ordinal_cases(),
             "ppi_mean": ppi_cases(),
             "bradley_terry": bradley_terry_cases(),
+            "confidence_sequence": confidence_sequence_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

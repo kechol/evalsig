@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::Kind;
+use evalsig_store::ledger::{self, Kind};
 use serde_json::{Value, json};
 
 use crate::commands::{compare, report};
@@ -81,7 +81,29 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .map_err(|e| invalid(format!("cannot recompute this result: {e}")))?;
     let recomputed = match &request {
         Request::Report(a) => report::compute(&d, &config, a)?.results,
-        Request::Compare(a) => compare::compute(&d, &config, a)?.results,
+        Request::Compare(a) => {
+            let mut c = compare::compute(&d, &config, a)?;
+            // The use count comes from the ledger lines before the one naming this
+            // output (all of them for an unrecorded comparison).
+            let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+            let before = entries
+                .iter()
+                .position(|e| {
+                    e.outputs
+                        .iter()
+                        .any(|o| Some(o.as_str()) == prov["output"].as_str())
+                })
+                .unwrap_or(entries.len());
+            if saved["results"].get("validation_uses").is_some() {
+                compare::count_uses(
+                    &mut c.results,
+                    &mut Vec::new(),
+                    &entries[..before],
+                    config.compare.validation_warn_after,
+                );
+            }
+            c.results
+        }
     };
     let mut mismatches = Vec::new();
     differences("", &saved["results"], &recomputed, &mut mismatches);

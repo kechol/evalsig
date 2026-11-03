@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
-use crate::numeric::{Rng, norm_ppf, sum};
+use crate::interval::newcombe;
+use crate::numeric::{Rng, mean, norm_ppf, sum};
 use crate::paired::{self, Discordant, Transition, Verdict};
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
 
@@ -286,6 +287,245 @@ fn metric_delta(
         p_value,
         p_method,
         verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
+    }
+}
+
+/// Welch's t interval for the difference of two means, with its two-sided p-value.
+fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
+    use statrs::distribution::{ContinuousCDF, StudentsT};
+    let (na, nb) = (a.len() as f64, b.len() as f64);
+    if na < 2.0 || nb < 2.0 {
+        return None;
+    }
+    let (ma, mb) = (mean(a.iter().copied())?, mean(b.iter().copied())?);
+    let var = |x: &[f64], m: f64| sum(x.iter().map(|v| (v - m).powi(2))) / (x.len() - 1) as f64;
+    let (sa, sb) = (var(a, ma) / na, var(b, mb) / nb);
+    let se = (sa + sb).sqrt();
+    if se == 0.0 {
+        return None;
+    }
+    let df = (sa + sb).powi(2) / (sa * sa / (na - 1.0) + sb * sb / (nb - 1.0));
+    let t = StudentsT::new(0.0, 1.0, df).ok()?;
+    let q = t.inverse_cdf(0.5 + level / 2.0);
+    let d = mb - ma;
+    let p = 2.0 * (1.0 - t.cdf((d / se).abs()));
+    Some(((d - q * se, d + q * se), p))
+}
+
+/// Compare two runs whose item sets need not overlap, as independent samples
+/// (metrics spec §7.3): Newcombe's interval for rates of 0/1 items, Welch's t for
+/// mean scores of unit-weight items, otherwise a bootstrap that resamples each arm's
+/// clusters separately. Items in both arms count in both.
+pub fn unpaired(a: &Prepared<'_>, b: &Prepared<'_>, o: &Options) -> Comparison {
+    let b_ids = b.metric_ids();
+    let ids: Vec<MetricId> = a
+        .metric_ids()
+        .into_iter()
+        .filter(|m| b_ids.contains(m))
+        .collect();
+    let independent = a.independent() && b.independent();
+    let z = norm_ppf(0.5 + o.level / 2.0);
+    let metrics = ids
+        .iter()
+        .map(|&id| {
+            let sign = if id.higher_is_better() { 1.0 } else { -1.0 };
+            let keep = |v: BTreeMap<String, ItemValue>| -> BTreeMap<String, ItemValue> {
+                v.into_iter()
+                    .filter(|(k, _)| !o.excluded.contains(k))
+                    .collect()
+            };
+            let [pa, wa, ba] = values_of(a, id).map(keep);
+            let [pb, wb, bb] = values_of(b, id).map(keep);
+            let all = |v: &BTreeMap<String, ItemValue>| -> Option<f64> {
+                let keys: Vec<&str> = v.keys().map(String::as_str).collect();
+                ratio(v, &keys)
+            };
+            let (base, cand) = (all(&pa), all(&pb));
+            let delta = base.zip(cand).map(|(x, y)| sign * (y - x));
+            let has_system_missing = a.system_missing().0 + b.system_missing().0 > 0;
+            let missing_bounds = if has_system_missing && id != MetricId::Precision {
+                let d = |x: &BTreeMap<String, ItemValue>, y: &BTreeMap<String, ItemValue>| {
+                    all(x).zip(all(y)).map(|(x, y)| sign * (y - x))
+                };
+                d(&ba, &wb)
+                    .zip(d(&wa, &bb))
+                    .map(|(x, y)| (x.min(y), x.max(y)))
+            } else {
+                None
+            };
+            let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
+            let integral = pa
+                .values()
+                .chain(pb.values())
+                .all(|v| v.numerator.fract() == 0.0 && v.denominator.fract() == 0.0);
+            let unit = |v: &BTreeMap<String, ItemValue>| {
+                v.iter()
+                    .all(|(k, x)| x.denominator == 1.0 && x.cluster == *k)
+            };
+            let points = |v: &BTreeMap<String, ItemValue>| -> Vec<f64> {
+                v.values().map(|x| x.numerator).collect()
+            };
+            let orient = |(lo, hi): (f64, f64)| if sign > 0.0 { (lo, hi) } else { (-hi, -lo) };
+            let (ci, interval, resamples, p_value, p_method) = if delta.is_none() {
+                (None, "none", None, None, "none")
+            } else if independent && integral && id.is_paired_proportion() {
+                let k = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.numerator));
+                let n = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.denominator));
+                // newcombe gives p_first − p_second; candidate minus baseline here.
+                let ci = newcombe(k(&pb), n(&pb), k(&pa), n(&pa), z);
+                (Some(orient(ci)), "newcombe", None, None, "none")
+            } else if id == MetricId::MeanScore && unit(&pa) && unit(&pb) {
+                match welch(&points(&pa), &points(&pb), o.level) {
+                    Some((ci, p)) => (Some(orient(ci)), "welch", None, Some(p), "welch_t"),
+                    None => (None, "too_few_units", None, None, "none"),
+                }
+            } else {
+                let clusters = |v: &BTreeMap<String, ItemValue>| -> Vec<[f64; 2]> {
+                    let mut c: BTreeMap<&str, [f64; 2]> = BTreeMap::new();
+                    for x in v.values() {
+                        let e = c.entry(x.cluster.as_str()).or_default();
+                        e[0] += x.numerator;
+                        e[1] += x.denominator;
+                    }
+                    c.into_values().collect()
+                };
+                let (ca, cb) = (clusters(&pa), clusters(&pb));
+                if ca.len() < bootstrap::MIN_UNITS || cb.len() < bootstrap::MIN_UNITS {
+                    (None, "too_few_units", None, None, "none")
+                } else {
+                    let mut rng = Rng::new(o.seed);
+                    let mut reps = Vec::with_capacity(o.bootstrap as usize);
+                    let draw = |c: &[[f64; 2]], rng: &mut Rng| -> Option<f64> {
+                        let mut t = [0.0; 2];
+                        for _ in 0..c.len() {
+                            let g = c[rng.below(c.len() as u64) as usize];
+                            t[0] += g[0];
+                            t[1] += g[1];
+                        }
+                        (t[1] > 0.0).then(|| t[0] / t[1])
+                    };
+                    for _ in 0..o.bootstrap {
+                        if let (Some(x), Some(y)) = (draw(&ca, &mut rng), draw(&cb, &mut rng)) {
+                            reps.push(sign * (y - x));
+                        }
+                    }
+                    let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
+                    (
+                        bootstrap::percentile_interval(reps, o.level),
+                        "bootstrap",
+                        Some(o.bootstrap),
+                        p,
+                        "bootstrap",
+                    )
+                }
+            };
+            MetricDelta {
+                metric: id.name(),
+                direction: if id.higher_is_better() {
+                    "higher_is_better"
+                } else {
+                    "lower_is_better"
+                },
+                baseline: base,
+                candidate: cand,
+                delta,
+                ci,
+                interval,
+                resamples,
+                min_effect,
+                missing_bounds,
+                p_value,
+                p_method,
+                verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
+            }
+        })
+        .collect();
+    let (ja, jb) = (a.judged(), b.judged());
+    Comparison {
+        n_used: ja.len() + jb.len(),
+        n_unpaired: 0,
+        metrics,
+        transition: None,
+    }
+}
+
+/// A paired difference monitored with a confidence sequence (metrics spec §7.2).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SequentialDelta {
+    pub metric: &'static str,
+    pub direction: &'static str,
+    /// Paired items in the order they were added.
+    pub n: usize,
+    pub delta: Option<f64>,
+    /// The confidence sequence after the last item; valid at every earlier look too.
+    pub confidence_sequence: Option<(f64, f64)>,
+    pub min_effect: f64,
+    pub verdict: Verdict,
+}
+
+/// Paired differences of each metric whose item values lie in [0, 1], added in an
+/// order shuffled by the seed, with the confidence sequence of their mean. An item
+/// counts where both arms give it a positive denominator; its value is the ratio.
+pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec<SequentialDelta> {
+    let a = base.prepared;
+    let b_ids = b.metric_ids();
+    a.metric_ids()
+        .into_iter()
+        .filter(|m| b_ids.contains(m))
+        .filter_map(|id| {
+            let sign = if id.higher_is_better() { 1.0 } else { -1.0 };
+            let (pa, pb) = (&base.values[&id][0], &values_of(b, id)[0]);
+            let value = |v: &ItemValue| v.numerator / v.denominator;
+            let mut ds: Vec<f64> = pa
+                .iter()
+                .filter(|(k, x)| !o.excluded.contains(*k) && x.denominator > 0.0)
+                .filter_map(|(k, x)| {
+                    pb.get(k)
+                        .filter(|y| y.denominator > 0.0)
+                        .map(|y| (value(x), value(y)))
+                })
+                .map(|(x, y)| sign * (y - x))
+                .collect();
+            let bounded = pa
+                .values()
+                .chain(pb.values())
+                .filter(|v| v.denominator > 0.0)
+                .all(|v| (0.0..=1.0).contains(&value(v)));
+            if !bounded {
+                return None;
+            }
+            let mut rng = Rng::new(o.seed);
+            for i in (1..ds.len()).rev() {
+                ds.swap(i, rng.below(i as u64 + 1) as usize);
+            }
+            let delta = mean(ds.iter().copied());
+            let cs = crate::sequential::difference(&ds, o.level).last().copied();
+            let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
+            Some(SequentialDelta {
+                metric: id.name(),
+                direction: if id.higher_is_better() {
+                    "higher_is_better"
+                } else {
+                    "lower_is_better"
+                },
+                n: ds.len(),
+                delta,
+                confidence_sequence: cs,
+                min_effect,
+                verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(cs), min_effect),
+            })
+        })
+        .collect()
+}
+
+/// A period's trend label against the baseline period: `drifted` when the interval of
+/// the unpaired difference excludes 0, `stable` otherwise, `insufficient_data` without
+/// an interval (metrics spec §7.3).
+pub fn drift(d: &MetricDelta) -> &'static str {
+    match d.ci {
+        None => "insufficient_data",
+        Some((lo, hi)) if lo > 0.0 || hi < 0.0 => "drifted",
+        Some(_) => "stable",
     }
 }
 

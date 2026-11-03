@@ -12,6 +12,9 @@ use evalsig_core::preference;
 use evalsig_core::records::{Item, Label, Preference, Record, Run};
 use evalsig_core::report::{self, Prepared};
 use evalsig_core::validity;
+use evalsig_store::canonical::to_canonical_bytes;
+use evalsig_store::hash::ContentHash;
+use evalsig_store::ledger::{self, Entry, Kind};
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
@@ -43,6 +46,16 @@ pub struct Args {
     /// Do not record the comparison in the ledger.
     #[arg(long)]
     pub scratch: bool,
+    /// Compare the arms as independent samples whose items need not overlap
+    /// (Newcombe, Welch or a bootstrap per arm).
+    #[arg(long, conflicts_with = "sequential")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unpaired: bool,
+    /// Also add the paired items one by one in a seeded order and report the
+    /// confidence sequence, which stays valid however often it is inspected.
+    #[arg(long)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sequential: bool,
     #[command(flatten)]
     pub dataset: DatasetArgs,
     #[command(flatten)]
@@ -157,6 +170,42 @@ fn preference_json(
     }))
 }
 
+/// The hash of the item set a comparison evaluates (the baseline's judged items):
+/// the canonical JSON array of the sorted item IDs, as a BLAKE3 reference.
+fn split_hash<'a>(items: impl Iterator<Item = &'a String>) -> Result<String, CliError> {
+    let ids: Vec<&String> = items.collect();
+    let bytes = to_canonical_bytes(&json!(ids)).map_err(CliError::store)?;
+    Ok(ContentHash::blake3(&bytes).to_string())
+}
+
+/// How many recorded comparisons used this split, counting the one being made
+/// (metrics spec §7.2). `entries` are the ledger lines before it.
+pub fn validation_uses(entries: &[Entry], split: &str) -> u64 {
+    1 + entries
+        .iter()
+        .filter(|e| {
+            e.kind == Kind::Compare && e.summary.get("split").and_then(Value::as_str) == Some(split)
+        })
+        .count() as u64
+}
+
+/// Add `validation_uses` to the results and warn past the configured limit.
+pub fn count_uses(results: &mut Value, warnings: &mut Vec<Warning>, entries: &[Entry], limit: u32) {
+    let Some(split) = results["split"].as_str() else {
+        return;
+    };
+    let uses = validation_uses(entries, split);
+    results["validation_uses"] = json!(uses);
+    if uses > u64::from(limit) {
+        warnings.push(Warning {
+            code: "validation_uses".into(),
+            message: format!(
+                "this split has been compared on {uses} times (limit {limit}); time to re-split the validation data"
+            ),
+        });
+    }
+}
+
 /// What a comparison computes from data and configuration alone; `verify` repeats it.
 pub struct Computed {
     pub results: Value,
@@ -182,6 +231,7 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     let overrides = checks::overrides(args.dataset, args.arms);
     let mut findings = validity::dataset(&d.records, &overrides);
     let mut comparisons = Vec::new();
+    let mut sequences = Vec::new();
     for cand_id in &args.candidates {
         let (cand_run, cand) = prepare(cand_id)?;
         if (cand.semantics(), cand.output_type(), cand.rule())
@@ -206,7 +256,11 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
             cand.system_missing(),
             &overrides,
         ));
-        let (excluded, input_findings) = changed_inputs(&items, &base, &cand, &overrides);
+        let (excluded, input_findings) = if args.unpaired {
+            (BTreeSet::new(), Vec::new())
+        } else {
+            changed_inputs(&items, &base, &cand, &overrides)
+        };
         findings.extend(input_findings);
         let options = Options {
             level: settings.level,
@@ -215,7 +269,14 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
             min_effect: config.compare.min_effect.clone(),
             excluded: excluded.clone(),
         };
-        let c = compare::compare(&baseline, &cand, &options);
+        let c = if args.unpaired {
+            compare::unpaired(&base, &cand, &options)
+        } else {
+            compare::compare(&baseline, &cand, &options)
+        };
+        let seq = args
+            .sequential
+            .then(|| compare::sequential(&baseline, &cand, &options));
         if c.n_unpaired > 0 {
             findings.push(
                 Finding::new(
@@ -229,6 +290,7 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
                 .with_count(c.n_unpaired),
             );
         }
+        sequences.push(seq);
         comparisons.push((cand_id.clone(), cand, c, excluded.len()));
     }
     let all: Vec<Comparison> = comparisons.iter().map(|(_, _, c, _)| c.clone()).collect();
@@ -265,8 +327,15 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     let base_judged = base.judged();
     let list: Vec<Value> = comparisons
         .iter()
-        .map(|(id, cand, c, changed)| {
+        .zip(&sequences)
+        .map(|((id, cand, c, changed), seq)| {
             let mut v = comparison_json(&args.baseline, id, c, primary, *changed);
+            if let Some(s) = seq {
+                v["sequential"] = json!({ "order_seed": settings.seed, "metrics": s });
+            }
+            if args.unpaired {
+                v["paired"] = Value::Bool(false);
+            }
             if let Some(p) = pref.get(id.as_str()) {
                 v["preference"] = p.clone();
             }
@@ -286,6 +355,7 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
         })
         .collect();
     let common = json!({
+        "split": split_hash(base.judged().keys())?,
         "value_semantics": base.semantics(),
         "positive": base.positive(),
         "decision": base.rule(),
@@ -346,7 +416,14 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let c = compute(&d, &config, args)?;
+    let mut c = compute(&d, &config, args)?;
+    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    count_uses(
+        &mut c.results,
+        &mut c.warnings,
+        &entries,
+        config.compare.validation_warn_after,
+    );
     let mut envelope = Envelope::new("evalsig.compare/1", c.results);
     envelope.verdict = c.verdict;
     envelope.warnings = c.warnings;
@@ -358,6 +435,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "baseline": args.baseline,
             "candidates": args.candidates,
             "metric": envelope.results["primary_metric"],
+            "split": envelope.results["split"],
             "verdict": envelope.verdict.as_ref().map(|v| v.code),
         });
         provenance::finish(
