@@ -17,6 +17,7 @@ use crate::exit::Exit;
 use crate::output::{Envelope, Output};
 use crate::project::{Project, io_error};
 use crate::provenance::item_set_hash;
+use crate::referee::Referee;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum MethodArg {
@@ -44,10 +45,23 @@ pub struct Args {
     /// A JSON object mapping each item ID to "dev" or "validation".
     #[arg(long, value_name = "FILE")]
     pub assign: Option<PathBuf>,
-    /// The judge's remaining.json: split only these items, leaving the sealed
+    /// The referee's remaining.json: split only these items, leaving the sealed
     /// holdout out.
     #[arg(long, value_name = "FILE")]
     pub within: Option<PathBuf>,
+    /// As the referee: cut the holdout from all items and write the remaining item
+    /// IDs, without labels, for the agent.
+    #[arg(long, conflicts_with_all = ["within", "assign"], requires = "out")]
+    pub holdout: bool,
+    /// With --holdout: the share of the items, by whole clusters, held out.
+    #[arg(long, default_value_t = 0.2, value_name = "SHARE")]
+    pub share: f64,
+    /// With --holdout: where to write remaining.json for the agent.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<PathBuf>,
+    /// The referee's home (default: EVALSIG_REFEREE).
+    #[arg(long, value_name = "DIR")]
+    pub referee: Option<PathBuf>,
 }
 
 fn rejected(code: &'static str, message: impl Into<String>) -> CliError {
@@ -104,6 +118,9 @@ fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, CliError> {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    if args.holdout {
+        return holdout(root, args);
+    }
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
@@ -199,6 +216,81 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         vec![name_hash],
         summary,
     )?;
+    Ok(Output::success(envelope))
+}
+
+/// `split --holdout`, the referee's carve-out (SPEC §8.1, D-022): whole clusters to
+/// the holdout, recorded in the referee ledger by the holdout's item-set hash, which
+/// names the holdout and its budget; the agent gets the other item IDs only.
+fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
+    let referee = Referee::open(args.referee.as_deref())?;
+    let project = Project::open(root)?;
+    let config = project.config()?;
+    let d = data::load(&project)?;
+    let items: Vec<&Item> = d.items().into_values().collect();
+    let use_time = match args.method {
+        Some(MethodArg::Time) => true,
+        Some(MethodArg::Random) => false,
+        None => items.iter().all(|i| i.occurred_at.is_some()),
+    };
+    let seed = args.seed.or(config.stats.seed).unwrap_or(0);
+    let (method, name) = if use_time {
+        (Method::Time, "time")
+    } else {
+        (
+            Method::Random {
+                seed,
+                stratum: args.stratum.clone(),
+            },
+            "random",
+        )
+    };
+    let a = split::split(&items, None, &method, args.share)
+        .map_err(|e| rejected("split", e.to_string()))?;
+    let (remaining, held) = (a.dev, a.validation);
+    let hash = item_set_hash(held.iter())?;
+    let file = referee.path("holdouts").join(format!(
+        "{}.json",
+        hash.strip_prefix("blake3:").unwrap_or(&hash)
+    ));
+    let mut text = serde_json::to_string_pretty(&json!({
+        "schema": "evalsig.holdout/1",
+        "holdout": hash,
+        "method": name,
+        "seed": (name == "random").then_some(seed),
+        "share": args.share,
+        "items": held,
+    }))
+    .expect("holdouts serialize");
+    text.push('\n');
+    std::fs::write(&file, text).map_err(|e| io_error(&file, &e))?;
+    let out = args.out.as_ref().expect("clap requires --out");
+    let mut text = serde_json::to_string_pretty(&json!({
+        "schema": "evalsig.remaining/1",
+        "holdout": hash,
+        "items": remaining,
+    }))
+    .expect("item IDs serialize");
+    text.push('\n');
+    std::fs::write(out, text).map_err(|e| io_error(out, &e))?;
+    let summary = json!({
+        "holdout": { "hash": hash, "items": held.len() },
+        "remaining": { "hash": item_set_hash(remaining.iter())?, "items": remaining.len() },
+        "method": name,
+        "seed": (name == "random").then_some(seed),
+        // Ledger summaries hold no floating-point numbers (D-007).
+        "share": args.share.to_string(),
+    });
+    let snapshots = d.snapshot_ids();
+    referee.record(
+        Kind::Split,
+        snapshots.clone(),
+        vec![hash.clone()],
+        summary.clone(),
+    )?;
+    let mut envelope = Envelope::new("evalsig.holdout/1", summary);
+    envelope.provenance.snapshots = snapshots;
+    envelope.provenance.ledger = Some("referee".into());
     Ok(Output::success(envelope))
 }
 

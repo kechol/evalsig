@@ -11,6 +11,7 @@ mod markdown;
 mod output;
 mod project;
 mod provenance;
+mod referee;
 mod schemas;
 mod validate;
 
@@ -78,6 +79,9 @@ enum Command {
     Power(commands::power::PowerArgs),
     /// Remove a content body and the free-text fields of the items that name it.
     Purge(commands::purge::Args),
+    /// Create a referee home with a new age identity (D-014).
+    #[command(subcommand)]
+    Referee(RefereeCommand),
     /// Recreate the SQLite working copy from the canonical snapshots.
     Rebuild,
     /// The default-tier metrics of one run.
@@ -122,6 +126,12 @@ enum Command {
     Version,
 }
 
+#[derive(Debug, Subcommand)]
+enum RefereeCommand {
+    /// Create the referee's home: an age identity, the referee ledger and its state.
+    Init { dir: PathBuf },
+}
+
 pub(crate) fn tool_version() -> String {
     format!("evalsig {}", env!("CARGO_PKG_VERSION"))
 }
@@ -149,6 +159,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Power(ref args) => commands::power::power(args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Rebuild => commands::rebuild::run(&cli.project),
+        Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),

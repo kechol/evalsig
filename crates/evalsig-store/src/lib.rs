@@ -8,4 +8,5 @@ pub mod ledger;
 pub mod migrate;
 pub mod objects;
 pub mod rows;
+pub mod seal;
 pub mod snapshot;

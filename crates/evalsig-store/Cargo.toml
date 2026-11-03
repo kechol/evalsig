@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+age.workspace = true
 evalsig-core.workspace = true
 blake3.workspace = true
 ruzstd.workspace = true
