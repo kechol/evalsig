@@ -53,7 +53,7 @@ pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
     let x = |v: f64| LEFT + (v - lo) / (hi - lo) * (W - LEFT - PAD);
     let h = ROW * rows.len() as f64 + PAD;
     let mut s = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"intervals\" viewBox=\"0 0 {W} {h}\" width=\"{W}\" height=\"{h}\" role=\"img\">"
+        "<svg class=\"intervals\" viewBox=\"0 0 {W} {h}\" width=\"{W}\" height=\"{h}\" role=\"img\">"
     );
     if zero {
         let z = x(0.0);
@@ -112,7 +112,7 @@ pub fn curve(
     let py = |v: f64| m + (1.0 - v) * S;
     let size = S + 2.0 * m;
     let mut s = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"{}\" viewBox=\"0 0 {size} {size}\" width=\"{size}\" height=\"{size}\" role=\"img\"><rect x=\"{m}\" y=\"{m}\" width=\"{S}\" height=\"{S}\" fill=\"none\" stroke=\"#ccc\"/>",
+        "<svg class=\"{}\" viewBox=\"0 0 {size} {size}\" width=\"{size}\" height=\"{size}\" role=\"img\"><rect x=\"{m}\" y=\"{m}\" width=\"{S}\" height=\"{S}\" fill=\"none\" stroke=\"#ccc\"/>",
         esc(class)
     );
     if diagonal {

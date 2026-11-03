@@ -18,6 +18,8 @@ pub enum Format {
     Text,
     /// One JSON object per line: the per-item rows of `compare --items` (D-023).
     Jsonl,
+    /// One self-contained HTML page with the data embedded (D-019).
+    Html,
 }
 
 /// The conclusion of an output. The set is fixed within a schema version; agents
@@ -270,6 +272,14 @@ pub fn render(output: &Output, format: Format) -> String {
         }
         Format::Md => crate::markdown::render(e).unwrap_or_else(|| markdown(e)),
         Format::Junit => junit(e, output.exit),
+        Format::Html => {
+            let data = serde_json::to_string(e).expect("envelope serializes");
+            evalsig_dashboard::static_report(
+                e.schema.as_str(),
+                &data,
+                &serde_json::to_value(e).expect("envelope serializes"),
+            )
+        }
         Format::Text => text(e),
         Format::Jsonl => {
             // Rows sit in `results.items`, or in each comparison's `items` when several
