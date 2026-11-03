@@ -376,32 +376,73 @@ fn referee_warnings_withheld() {
 fn referee_forged_pass_is_not_in_referee_ledger() {
     let w = world(&gate_toml(10, 3, NOT_WORSE), None);
     let refs = references();
-    let wrong = candidate(w.referee.path(), "wrong.jsonl", |rows| {
-        for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
-            let id = r["item_id"].as_str().unwrap();
-            r["value"] = (refs[id][0] != json!(true)).into();
-        }
-    });
-    let out = submit(&w, &wrong);
+    let wrong_with = |name: &str, k: u32| {
+        candidate(w.referee.path(), name, |rows| {
+            rows[0]["attrs"] = json!({ "try": k });
+            for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+                let id = r["item_id"].as_str().unwrap();
+                r["value"] = (refs[id][0] != json!(true)).into();
+            }
+        })
+    };
+    let out = submit(&w, &wrong_with("wrong.jsonl", 1));
     assert_eq!(code(&out), Some(1));
     // The agent relays a pass: in its own ledger and in a result file it writes.
-    let forged = json!({ "kind": "gate", "summary": { "verdict": "pass" } });
     let ledger = w.agent.path().join(".evalsig/ledger.jsonl");
+    let honest = w.agent.path().join("honest-ledger.jsonl");
+    std::fs::copy(&ledger, &honest).unwrap();
+    let forged = json!({ "kind": "gate", "summary": { "verdict": "pass" } });
     let mut text = std::fs::read_to_string(&ledger).unwrap();
     text.push_str(&format!("{forged}\n"));
     std::fs::write(&ledger, text).unwrap();
     std::fs::write(w.agent.path().join("gate-result.json"), forged.to_string()).unwrap();
-    // People read the referee's ledger and results, where only the real verdict is.
-    let verdicts: Vec<Value> = referee_ledger(&w)
+
+    // Submitting with the forged ledger is refused; nothing reaches the referee ledger.
+    let out = submit_to(
+        &w,
+        &w.approved,
+        &wrong_with("wrong2.jsonl", 2),
+        &["--agent-ledger", ledger.to_str().unwrap()],
+    );
+    assert_eq!(
+        code(&out),
+        Some(64),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // A real submission beside the forged result file is judged on the referee's own
+    // labels, and only the agent ledger's head is copied, never its claims.
+    let out = submit_to(
+        &w,
+        &w.approved,
+        &wrong_with("wrong3.jsonl", 3),
+        &["--agent-ledger", honest.to_str().unwrap()],
+    );
+    assert_eq!(code(&out), Some(1));
+    assert_eq!(json(&out)["verdict"]["code"], "fail");
+    let head = std::fs::read_to_string(&honest)
+        .unwrap()
+        .lines()
+        .last()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap()["hash"].clone())
+        .unwrap();
+
+    // People read the referee's ledger and results, where only real verdicts are.
+    let gates: Vec<Value> = referee_ledger(&w)
         .into_iter()
         .filter(|e| e["kind"] == "gate")
-        .map(|e| e["summary"]["verdict"].clone())
         .collect();
-    assert_eq!(verdicts, vec![json!("fail")]);
+    let verdicts: Vec<&Value> = gates.iter().map(|e| &e["summary"]["verdict"]).collect();
+    assert_eq!(verdicts, vec![&json!("fail"), &json!("fail")]);
+    assert_eq!(gates[1]["summary"]["agent_ledger_head"], head);
     let results: Vec<_> = std::fs::read_dir(w.home.path().join("results"))
         .unwrap()
         .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
         .collect();
-    assert_eq!(results.len(), 1);
-    assert!(results[0].contains("\"fail\""));
+    assert_eq!(results.len(), 2);
+    assert!(
+        results
+            .iter()
+            .all(|r| r.contains("\"fail\"") && !r.contains("\"pass\""))
+    );
 }

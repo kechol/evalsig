@@ -354,3 +354,46 @@ fn a_condition_without_a_threshold_is_not_a_draft() {
             .contains("needs a numeric value")
     );
 }
+
+#[test]
+fn verdict_and_uncomputed_metrics_are_refused_rather_than_left_undecided() {
+    let w = world(&gate_toml(10, 3), None);
+    // human_parity, the only verdict metric, waits for D-017.
+    let g = w.agent.path().join("parity.toml");
+    std::fs::write(
+        &g,
+        gate_toml(10, 3).replace(
+            "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+            "metric = \"human_parity\"\nrule = \"pass\"",
+        ),
+    )
+    .unwrap();
+    let out = evalsig(w.agent.path())
+        .args(["--format", "json", "preregister", "--draft"])
+        .arg(&g)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        json(&out)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("D-017")
+    );
+    // A metric the gate does not compute for this run is an error, not undecided.
+    let w = world(
+        &gate_toml(10, 3).replace(
+            "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+            "metric = \"dprime\"\nrule = \"lower_bound_at_least\"\nvalue = 0.0",
+        ),
+        None,
+    );
+    let out = submit(&w, &variant(w.referee.path(), 1));
+    assert_eq!(
+        code(&out),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["error"]["code"], "metric_not_computed");
+}

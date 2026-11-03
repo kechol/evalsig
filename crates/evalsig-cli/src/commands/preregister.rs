@@ -83,6 +83,13 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
                 c["rule"]
             ));
         }
+        // human_parity is the alternative annotator test, whose parameters wait for
+        // D-017; until then no gate can compute it.
+        if c["metric"] == "human_parity" {
+            errors.push(format!(
+                "/conditions/{k}: human_parity is not available while D-017 is Proposed"
+            ));
+        }
         // The gate computes intervals by metrics spec §1.1 only; a named method it would
         // not use is refused rather than ignored.
         if c["interval"].as_str().is_some_and(|m| m != "auto") {

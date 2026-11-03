@@ -714,7 +714,7 @@ fn evidence(
         };
         let c = compare::compare(&Baseline::new(&pa), &pb, &options);
         let Some(m) = c.metrics.iter().find(|m| m.metric == metric) else {
-            return Ok(None);
+            return Err(not_computed(metric));
         };
         // MetricDelta is oriented so that positive is better; the rules read cand − base.
         let sign = if m.direction == "higher_is_better" {
@@ -736,11 +736,22 @@ fn evidence(
         });
     }
     let r = report::build(run, &cand_j, items, labels, s).map_err(CliError::report)?;
-    Ok(r.metrics
+    let m = r
+        .metrics
         .iter()
         .find(|m| m.metric == metric)
-        .and_then(|m| match (m.value, m.ci) {
-            (Some(point), Some((lo, hi))) => Some(Evidence::Value { point, lo, hi }),
-            _ => None,
-        }))
+        .ok_or_else(|| not_computed(metric))?;
+    Ok(match (m.value, m.ci) {
+        (Some(point), Some((lo, hi))) => Some(Evidence::Value { point, lo, hi }),
+        _ => None,
+    })
+}
+
+/// A condition on a metric the gate does not compute for this run is an error in the
+/// approval, not too little data.
+fn not_computed(metric: &str) -> CliError {
+    rejected(
+        "metric_not_computed",
+        format!("the gate computes no {metric} for this run; approve conditions on its metrics"),
+    )
 }
