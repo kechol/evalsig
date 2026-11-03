@@ -29,16 +29,20 @@ fn args(cmd: &Command) -> Vec<Value> {
         .collect()
 }
 
+/// The subcommands, without clap's own `help`.
+fn subcommands(cmd: &Command) -> Vec<Value> {
+    cmd.get_subcommands()
+        .filter(|c| c.get_name() != "help")
+        .map(command)
+        .collect()
+}
+
 fn command(cmd: &Command) -> Value {
     json!({
         "name": cmd.get_name(),
         "about": cmd.get_about().map(|a| a.to_string()),
         "args": args(cmd),
-        "subcommands": cmd
-            .get_subcommands()
-            .filter(|c| c.get_name() != "help")
-            .map(command)
-            .collect::<Vec<_>>(),
+        "subcommands": subcommands(cmd),
     })
 }
 
@@ -50,11 +54,7 @@ pub fn envelope(root: &Command) -> Envelope {
         json!({
             "tool": root.get_name(),
             "global_args": args(&root),
-            "commands": root
-                .get_subcommands()
-                .filter(|c| c.get_name() != "help")
-                .map(command)
-                .collect::<Vec<_>>(),
+            "commands": subcommands(&root),
             "exit_codes": Exit::ALL.iter().map(|e| json!({"code": e.code(), "meaning": e.meaning()})).collect::<Vec<_>>(),
             "verdict_codes": VerdictCode::ALL.iter().map(|c| json!({"code": c.as_str(), "meaning": c.meaning()})).collect::<Vec<_>>(),
         }),

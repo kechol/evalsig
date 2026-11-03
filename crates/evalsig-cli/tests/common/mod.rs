@@ -236,3 +236,52 @@ pub fn accesses(w: &World) -> usize {
         .filter(|e| e["kind"] == "holdout_access")
         .count()
 }
+
+/// evalsig with JSON output and no agent mode from the environment.
+pub fn evalsig_json(dir: &Path) -> Command {
+    let mut c = Command::cargo_bin("evalsig").unwrap();
+    c.env("EVALSIG_ACTOR", "user:test")
+        .env_remove("AI_AGENT")
+        .env_remove("EVALSIG_REFEREE")
+        .args(["--format", "json", "--project"])
+        .arg(dir);
+    c
+}
+
+/// Assert that a command line a guide names (`evalsig <words>`) exists: its subcommand
+/// path parses and every `--flag` it uses is in that command's help.
+pub fn assert_command_real(cmd: &str, ctx: &str) {
+    let words: Vec<&str> = cmd
+        .split([' ', ','])
+        .take_while(|w| !w.starts_with('('))
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut bin = Command::cargo_bin("evalsig").unwrap();
+    bin.env_remove("AI_AGENT");
+    if words.first() == Some(&"help") {
+        let out = bin.args(&words).output().unwrap();
+        assert!(out.status.success(), "{ctx}: evalsig {cmd}");
+        return;
+    }
+    let path: Vec<&str> = words
+        .iter()
+        .take_while(|w| {
+            !w.starts_with('-') && !w.starts_with('<') && !w.contains('.') && **w != "..."
+        })
+        .copied()
+        .collect();
+    let help = bin.args(&path).arg("--help").output().unwrap();
+    let text = String::from_utf8(help.stdout).unwrap();
+    assert!(
+        help.status.success() && text.contains("Usage"),
+        "{ctx}: evalsig {}",
+        path.join(" ")
+    );
+    for flag in words.iter().filter(|w| w.starts_with("--")) {
+        assert!(
+            text.contains(flag),
+            "{ctx}: {flag} in evalsig {}",
+            path.join(" ")
+        );
+    }
+}

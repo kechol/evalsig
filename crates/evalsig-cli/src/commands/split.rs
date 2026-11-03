@@ -263,6 +263,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
     text.push('\n');
     std::fs::write(&file, text).map_err(|e| io_error(&file, &e))?;
     let out = args.out.as_ref().expect("clap requires --out");
+    crate::project::outside_store(out)?;
     let mut text = serde_json::to_string_pretty(&json!({
         "schema": "evalsig.remaining/1",
         "holdout": hash,

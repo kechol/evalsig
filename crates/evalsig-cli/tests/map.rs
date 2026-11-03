@@ -465,5 +465,21 @@ fn a_mapping_draft_is_never_written_into_the_store() {
             .unwrap();
         assert_eq!(out.status.code(), Some(64), "{}", target.display());
     }
+    // A link outside the store that points into it is refused too.
+    #[cfg(unix)]
+    {
+        let link = dir.path().join("mapping.toml");
+        std::os::unix::fs::symlink(&config, &link).unwrap();
+        let out = assert_cmd::Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["map", "draft"])
+            .arg(&src)
+            .arg("--out")
+            .arg(&link)
+            .arg("--force")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(64));
+    }
     assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
 }

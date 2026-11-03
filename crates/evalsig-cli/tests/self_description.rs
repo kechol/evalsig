@@ -189,27 +189,8 @@ fn every_flag_a_recipe_names_exists() {
                 .unwrap(),
         );
         for step in r["results"]["steps"].as_array().unwrap() {
-            let step = step.as_str().unwrap();
-            for cmd in step.split("evalsig ").skip(1) {
-                let words: Vec<&str> = cmd
-                    .split([' ', ','])
-                    .take_while(|w| !w.is_empty() && !w.starts_with('('))
-                    .collect();
-                let path: Vec<&str> = words
-                    .iter()
-                    .take_while(|w| !w.starts_with('-') && !w.starts_with('<') && !w.contains('.'))
-                    .copied()
-                    .collect();
-                let help = bin().args(&path).arg("--help").output().unwrap();
-                assert!(help.status.success(), "{name}: evalsig {}", path.join(" "));
-                let text = String::from_utf8(help.stdout).unwrap();
-                for flag in words.iter().filter(|w| w.starts_with("--")) {
-                    assert!(
-                        text.contains(flag),
-                        "{name}: {flag} in evalsig {}",
-                        path.join(" ")
-                    );
-                }
+            for cmd in step.as_str().unwrap().split("evalsig ").skip(1) {
+                assert_command_real(cmd, &name);
             }
         }
     }

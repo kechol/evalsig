@@ -291,7 +291,18 @@ fn main() -> ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let format = requested_format(&args);
     // `help --json` describes the parser itself, so it is answered before parsing.
-    if args.get(1).is_some_and(|a| a == "help") && args.iter().any(|a| a == "--json") {
+    // The first word that is neither a global flag nor its value.
+    let mut words = args.iter().skip(1).map(|a| a.to_string_lossy());
+    let mut first_word = None;
+    while let Some(w) = words.next() {
+        if matches!(w.as_ref(), "--format" | "--project" | "--cursor") {
+            words.next();
+        } else if !w.starts_with('-') {
+            first_word = Some(w);
+            break;
+        }
+    }
+    if first_word.as_deref() == Some("help") && args.iter().any(|a| a == "--json") {
         use clap::CommandFactory as _;
         let out = output::Output::success(help::envelope(&Cli::command()));
         let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
@@ -375,17 +386,19 @@ fn main() -> ExitCode {
         format_given,
         std::io::stdout().is_terminal(),
     );
-    if agent_mode {
-        agent::enable(agent::Mode {
-            cursor: cli.cursor,
-            include_content: cli.include_content,
-        });
+    let mode = agent_mode.then_some(agent::Mode {
+        cursor: cli.cursor,
+        include_content: cli.include_content,
+    });
+    // Commands deep in the call tree (preregister --draft) read the mode as well.
+    if let Some(m) = mode {
+        agent::enable(m);
     }
     let format = if agent_mode { Format::Json } else { cli.format };
     match run(&cli) {
         Ok(mut out) => {
-            if let Some(mode) = agent::active() {
-                agent::shape(&mut out.envelope, mode);
+            if let Some(m) = mode {
+                agent::shape(&mut out.envelope, m);
             }
             let _ = std::io::stdout().write_all(output::render(&out, format).as_bytes());
             ExitCode::from(out.exit.code())

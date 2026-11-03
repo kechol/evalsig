@@ -47,11 +47,7 @@ pub fn wanted(agent: bool, no_agent: bool, format_given: bool, terminal: bool) -
 /// Shape an envelope for an agent: evaluated text out of `results`, row, cell and
 /// size limits, and `truncated` saying what was left out.
 pub fn shape(e: &mut Envelope, mode: Mode) {
-    // The hash names the results as `--format json` prints them, content included.
-    let hash = to_canonical_bytes(&e.results)
-        .map(|b| ContentHash::blake3(&b).to_string())
-        .unwrap_or_default();
-    let full = e.results.clone();
+    let full = std::mem::take(&mut e.results);
     let warnings = e.warnings.clone();
     let mut rows = ROWS;
     loop {
@@ -68,13 +64,19 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
             rows_omitted: cut.omitted,
             cells_cut: cut.cells,
             next_cursor: cut.more.then_some(mode.cursor + rows),
-            hash: hash.clone(),
+            hash: String::new(),
         });
         let size = serde_json::to_vec(e).map_or(0, |b| b.len());
         if size <= BYTES || rows == 0 {
             break;
         }
         rows /= 2;
+    }
+    // The hash names the results as `--format json` prints them, content included.
+    if let Some(t) = e.truncated.as_mut() {
+        t.hash = to_canonical_bytes(&full)
+            .map(|b| ContentHash::blake3(&b).to_string())
+            .unwrap_or_default();
     }
 }
 
@@ -112,7 +114,8 @@ fn page(results: &Value, cursor: usize, rows: usize, cut: &mut Cut) -> Value {
 
 fn cut_cells(v: &mut Value, cells: &mut u64) {
     match v {
-        Value::String(s) if s.chars().count() > CELL => {
+        // Bytes bound characters from above, so short strings skip the count.
+        Value::String(s) if s.len() > CELL && s.chars().count() > CELL => {
             *s = s.chars().take(CELL).chain(std::iter::once('…')).collect();
             *cells += 1;
         }

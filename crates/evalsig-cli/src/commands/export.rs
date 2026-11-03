@@ -295,6 +295,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             rows,
         });
     }
+    crate::project::outside_store(&args.out)?;
     std::fs::create_dir_all(&args.out).map_err(|e| io_error(&args.out, &e))?;
     let ext = match args.to {
         To::Parquet => "parquet",

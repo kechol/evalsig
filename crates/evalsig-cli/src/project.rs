@@ -142,6 +142,33 @@ impl Project {
     }
 }
 
+/// Refuse an output path in a `.evalsig` directory, as written or once every symbolic
+/// link on the way is resolved (the destination itself included): the store, the
+/// ledger and the configuration are never the destination of a file a command writes.
+pub fn outside_store(path: &Path) -> Result<(), CliError> {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let resolved = abs.canonicalize().ok().or_else(|| {
+        abs.parent()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.join(abs.file_name().unwrap_or_default()))
+    });
+    let inside = [Some(abs), resolved].into_iter().flatten().any(|p| {
+        p.components().any(|c| {
+            c.as_os_str()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(".evalsig")
+        })
+    });
+    if inside {
+        return Err(CliError::usage(format!(
+            "{} is inside .evalsig/, which holds the store, the ledger and the configuration",
+            path.display()
+        ))
+        .with_hint("write the file outside .evalsig/"));
+    }
+    Ok(())
+}
+
 /// The strings of a JSON array, such as a file's item IDs.
 pub fn str_set(v: &serde_json::Value) -> std::collections::BTreeSet<String> {
     v.as_array()

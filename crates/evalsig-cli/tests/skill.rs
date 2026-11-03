@@ -1,30 +1,12 @@
 //! `evalsig skill install|check` and `agent-guide` (agent-interface spec §3): files
 //! generated from the binary, drift detected, and every command they name real.
 
-use std::path::Path;
-
-use assert_cmd::Command;
 use serde_json::Value;
 
+mod common;
+use common::{assert_command_real, evalsig_json as bin, json as out_json};
+
 const EXAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/agent");
-
-fn bin(dir: &Path) -> Command {
-    let mut c = Command::cargo_bin("evalsig").unwrap();
-    c.env_remove("AI_AGENT")
-        .env("EVALSIG_ACTOR", "user:test")
-        .args(["--format", "json", "--project"])
-        .arg(dir);
-    c
-}
-
-fn out_json(o: &std::process::Output) -> Value {
-    serde_json::from_slice(if o.stdout.is_empty() {
-        &o.stderr
-    } else {
-        &o.stdout
-    })
-    .unwrap()
-}
 
 #[test]
 fn an_installed_skill_is_checked_against_the_binary() {
@@ -106,6 +88,19 @@ fn targets_and_scopes() {
         .assert()
         .success();
     assert!(codex.path().join("skills/evalsig/SKILL.md").is_file());
+    // No file a command writes lands in the store.
+    let store = dir.path().join(".evalsig");
+    let store = store.to_str().unwrap();
+    for args in [
+        vec!["skill", "install", "--target", "generic", "--dir", store],
+        vec!["export", "--to", "csv", "--out", store],
+    ] {
+        assert_eq!(
+            bin(dir.path()).args(&args).output().unwrap().status.code(),
+            Some(64),
+            "{args:?}"
+        );
+    }
     for args in [
         [
             "skill", "install", "--target", "codex", "--scope", "project",
@@ -174,48 +169,10 @@ fn every_command_the_guides_name_exists() {
     let mut checked = 0;
     for (file, text) in texts {
         for span in text.split('`').skip(1).step_by(2) {
-            let Some(cmd) = span.strip_prefix("evalsig ") else {
-                continue;
-            };
-            let words: Vec<&str> = cmd.split_whitespace().collect();
-            if words.first() == Some(&"help") {
-                let out = Command::cargo_bin("evalsig")
-                    .unwrap()
-                    .args(&words)
-                    .output()
-                    .unwrap();
-                assert!(out.status.success(), "{file}: evalsig {cmd}");
+            if let Some(cmd) = span.strip_prefix("evalsig ") {
+                assert_command_real(cmd, &file);
                 checked += 1;
-                continue;
             }
-            let path: Vec<&str> = words
-                .iter()
-                .take_while(|w| {
-                    !w.starts_with('-') && !w.starts_with('<') && !w.contains('.') && **w != "..."
-                })
-                .copied()
-                .collect();
-            let help = Command::cargo_bin("evalsig")
-                .unwrap()
-                .env_remove("AI_AGENT")
-                .args(&path)
-                .arg("--help")
-                .output()
-                .unwrap();
-            let text = String::from_utf8(help.stdout).unwrap();
-            assert!(
-                help.status.success() && text.contains("Usage"),
-                "{file}: evalsig {}",
-                path.join(" ")
-            );
-            for flag in words.iter().filter(|w| w.starts_with("--")) {
-                assert!(
-                    text.contains(flag),
-                    "{file}: {flag} in evalsig {}",
-                    path.join(" ")
-                );
-            }
-            checked += 1;
         }
     }
     assert!(checked > 30, "{checked}");

@@ -2,19 +2,12 @@
 //! are real envelopes, and its scored records go through evalsig. The dummy agents
 //! check the pipeline, not an agent.
 
-use assert_cmd::Command;
 use serde_json::Value;
 
-const EVAL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../evals/agent-interface");
+mod common;
+use common::evalsig_json as evalsig;
 
-fn evalsig(dir: &std::path::Path) -> Command {
-    let mut c = Command::cargo_bin("evalsig").unwrap();
-    c.env_remove("AI_AGENT")
-        .env("EVALSIG_ACTOR", "user:test")
-        .args(["--format", "json", "--project"])
-        .arg(dir);
-    c
-}
+const EVAL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../evals/agent-interface");
 
 #[test]
 fn the_scenarios_hold_valid_envelopes() {
