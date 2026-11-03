@@ -1,0 +1,1628 @@
+{
+  "version": 2,
+  "status": "success",
+  "eval": {
+    "eval_id": "FhgS5zWGwrroVGjRfKs3BF",
+    "run_id": "9k2fVsREhuLC3TebPptsZR",
+    "created": "2026-11-03T02:14:38+00:00",
+    "task": "probe",
+    "task_id": "ieCaRPpqmiDUhceNHvKdgh",
+    "task_version": 0,
+    "task_file": "probe_task.py",
+    "task_display_name": "probe",
+    "task_registry_name": "probe",
+    "task_attribs": {},
+    "task_args": {},
+    "task_args_passed": {},
+    "dataset": {
+      "samples": 2,
+      "sample_ids": [
+        "s1",
+        "s2"
+      ],
+      "shuffled": false
+    },
+    "model": "mockllm/model",
+    "model_generate_config": {},
+    "model_args": {},
+    "config": {
+      "epochs": 2,
+      "fail_on_error": true,
+      "continue_on_fail": false,
+      "score_on_error": false,
+      "sandbox_cleanup": true,
+      "sandbox_prebuilt": false,
+      "log_samples": true,
+      "log_realtime": true,
+      "log_images": true,
+      "log_shared": 0,
+      "score_display": true
+    },
+    "packages": {
+      "inspect_ai": "0.3.286"
+    },
+    "scorers": [
+      {
+        "name": "includes",
+        "options": {},
+        "metrics": [
+          {
+            "name": "inspect_ai/accuracy",
+            "options": {}
+          },
+          {
+            "name": "inspect_ai/stderr",
+            "options": {}
+          }
+        ],
+        "metadata": {}
+      }
+    ]
+  },
+  "plan": {
+    "name": "plan",
+    "steps": [
+      {
+        "solver": "generate",
+        "params": {
+          "tool_calls": "loop"
+        },
+        "params_passed": {}
+      }
+    ],
+    "config": {}
+  },
+  "results": {
+    "total_samples": 4,
+    "completed_samples": 4,
+    "scores": [
+      {
+        "name": "includes",
+        "scorer": "includes",
+        "scored_samples": 2,
+        "unscored_samples": 0,
+        "params": {},
+        "metrics": {
+          "accuracy": {
+            "name": "accuracy",
+            "value": 0.5,
+            "params": {}
+          },
+          "stderr": {
+            "name": "stderr",
+            "value": 0.5,
+            "params": {}
+          }
+        }
+      }
+    ],
+    "headline": {
+      "scorer": "includes",
+      "score": "includes",
+      "metric": "accuracy"
+    }
+  },
+  "stats": {
+    "started_at": "2026-11-03T02:14:38+00:00",
+    "completed_at": "2026-11-03T02:14:39+00:00",
+    "model_usage": {
+      "mockllm/model": {
+        "input_tokens": 8,
+        "output_tokens": 132,
+        "total_tokens": 140
+      }
+    },
+    "role_usage": {},
+    "connection_limit_history": []
+  },
+  "invalidated": false,
+  "tags": [],
+  "metadata": {},
+  "samples": [
+    {
+      "id": "s1",
+      "epoch": 1,
+      "input": "Say yes",
+      "target": "yes",
+      "messages": [
+        {
+          "id": "SqpEup7oExboDWG7F9C5ge",
+          "content": "Say yes",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "i4dLMFouFw2EYgCxB96MsV",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "i4dLMFouFw2EYgCxB96MsV",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        },
+        "input_context_tokens": 2,
+        "time": 0.12126683304086328
+      },
+      "scores": {
+        "includes": {
+          "value": "I",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "stratum": "a"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "YmKvyQgLkRRcXwNSchAZoW",
+          "span_id": "Rs6HpgqZmKhSwxvZede9Hr",
+          "timestamp": "2026-11-03T02:14:39.039098+00:00",
+          "working_start": 987657.274975875,
+          "event": "span_begin",
+          "id": "Rs6HpgqZmKhSwxvZede9Hr",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "4qwMgr9XmACKW7VvoWJa4q",
+          "span_id": "Rs6HpgqZmKhSwxvZede9Hr",
+          "timestamp": "2026-11-03T02:14:39.039467+00:00",
+          "working_start": 987657.275344458,
+          "event": "sample_init",
+          "sample": {
+            "input": "Say yes",
+            "target": "yes",
+            "id": "s1",
+            "metadata": {
+              "stratum": "a"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "SqpEup7oExboDWG7F9C5ge",
+                "content": "Say yes",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "stratum": "a"
+            }
+          }
+        },
+        {
+          "uuid": "WCeyATP222zZrRFWbfGsp9",
+          "span_id": "Rs6HpgqZmKhSwxvZede9Hr",
+          "timestamp": "2026-11-03T02:14:39.039617+00:00",
+          "working_start": 987657.275493833,
+          "event": "span_end",
+          "id": "Rs6HpgqZmKhSwxvZede9Hr"
+        },
+        {
+          "uuid": "VoPUHwx3TZjqVWkFsYVNaP",
+          "span_id": "6bSXk6u6nVeuxuEAMTbdj2",
+          "timestamp": "2026-11-03T02:14:39.041485+00:00",
+          "working_start": 0.0017824999522417784,
+          "event": "span_begin",
+          "id": "6bSXk6u6nVeuxuEAMTbdj2",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "5SWaCumUKRiz6LuTyFTpyz",
+          "span_id": "WVHGf3GCVGq3473Ltja2gv",
+          "timestamp": "2026-11-03T02:14:39.041721+00:00",
+          "working_start": 0.0020185839384794235,
+          "event": "span_begin",
+          "id": "WVHGf3GCVGq3473Ltja2gv",
+          "parent_id": "6bSXk6u6nVeuxuEAMTbdj2",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "jsgYPJnBZPhaMRLkUDQ8yW",
+          "span_id": "WVHGf3GCVGq3473Ltja2gv",
+          "timestamp": "2026-11-03T02:14:39.042008+00:00",
+          "working_start": 0.002305624890141189,
+          "event": "model",
+          "model": "mockllm/model",
+          "origin": "agent",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              1
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "i4dLMFouFw2EYgCxB96MsV",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            },
+            "input_context_tokens": 2,
+            "time": 0.12126683304086328
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                1
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-11-03T02:14:39.242868+00:00",
+          "working_time": 0.12126683304086328
+        },
+        {
+          "uuid": "HwzAfeyzW5CKhoMXzPZZn7",
+          "span_id": "WVHGf3GCVGq3473Ltja2gv",
+          "timestamp": "2026-11-03T02:14:39.243335+00:00",
+          "working_start": 0.20279895793646574,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "i4dLMFouFw2EYgCxB96MsV",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 2,
+                "output_tokens": 33,
+                "total_tokens": 35
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/input_context_tokens",
+              "value": 2
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.12126683304086328
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "i4dLMFouFw2EYgCxB96MsV",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "X8MePEMTcJZ6qi8pRubzUQ",
+          "span_id": "WVHGf3GCVGq3473Ltja2gv",
+          "timestamp": "2026-11-03T02:14:39.243611+00:00",
+          "working_start": 0.20307354198303074,
+          "event": "span_end",
+          "id": "WVHGf3GCVGq3473Ltja2gv"
+        },
+        {
+          "uuid": "3gopeMHbmt3TWTZ3WCUSx7",
+          "span_id": "6bSXk6u6nVeuxuEAMTbdj2",
+          "timestamp": "2026-11-03T02:14:39.243755+00:00",
+          "working_start": 0.2032180419191718,
+          "event": "span_end",
+          "id": "6bSXk6u6nVeuxuEAMTbdj2"
+        },
+        {
+          "uuid": "BmHZzRZPkziPhbxKqnnatn",
+          "span_id": "ZVEmGwvbwUPae3bZZYTEms",
+          "timestamp": "2026-11-03T02:14:39.247444+00:00",
+          "working_start": 0.20690549991559237,
+          "event": "span_begin",
+          "id": "ZVEmGwvbwUPae3bZZYTEms",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "cqJmqyDb9nQpDDEjtcU5v9",
+          "span_id": "kCdaehg4aA3pXnbQvjqmWm",
+          "timestamp": "2026-11-03T02:14:39.247516+00:00",
+          "working_start": 0.20697779196780175,
+          "event": "span_begin",
+          "id": "kCdaehg4aA3pXnbQvjqmWm",
+          "parent_id": "ZVEmGwvbwUPae3bZZYTEms",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "KiskXwwxiKo4iRxPpuP2u7",
+          "span_id": "kCdaehg4aA3pXnbQvjqmWm",
+          "timestamp": "2026-11-03T02:14:39.247607+00:00",
+          "working_start": 0.20706829195842147,
+          "event": "score",
+          "score": {
+            "value": "I",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "yes",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            }
+          }
+        },
+        {
+          "uuid": "Q7dMh7tSTEUdFWbNng6CQ7",
+          "span_id": "kCdaehg4aA3pXnbQvjqmWm",
+          "timestamp": "2026-11-03T02:14:39.247724+00:00",
+          "working_start": 0.20718570798635483,
+          "event": "span_end",
+          "id": "kCdaehg4aA3pXnbQvjqmWm"
+        },
+        {
+          "uuid": "LTpU3JZY8JpC29oZvVibJk",
+          "span_id": "ZVEmGwvbwUPae3bZZYTEms",
+          "timestamp": "2026-11-03T02:14:39.247780+00:00",
+          "working_start": 0.2072414580034092,
+          "event": "span_end",
+          "id": "ZVEmGwvbwUPae3bZZYTEms"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-11-03T02:14:39.039705+00:00",
+      "completed_at": "2026-11-03T02:14:39.248958+00:00",
+      "total_time": 0.209,
+      "working_time": 0.208,
+      "uuid": "mLbwizGAuK9s2yfA3zJfiy",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "SqpEup7oExboDWG7F9C5ge",
+            "content": "Say yes",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "SqpEup7oExboDWG7F9C5ge",
+            "content": "Say yes",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    },
+    {
+      "id": "s2",
+      "epoch": 1,
+      "input": "Say no",
+      "target": "Default",
+      "messages": [
+        {
+          "id": "StRsyZiGzSykMhoC4aebwj",
+          "content": "Say no",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "M98QbME8VGs7yPi7yK5qUa",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "M98QbME8VGs7yPi7yK5qUa",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        },
+        "input_context_tokens": 2,
+        "time": 0.00011037499643862247
+      },
+      "scores": {
+        "includes": {
+          "value": "C",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "stratum": "b"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "iKEuk65PBTbY3zYrrrUcrs",
+          "span_id": "aGTdLptBUYox3DCT7sBCrZ",
+          "timestamp": "2026-11-03T02:14:39.039987+00:00",
+          "working_start": 987657.275863416,
+          "event": "span_begin",
+          "id": "aGTdLptBUYox3DCT7sBCrZ",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "Kva2wdTCVPnJADAtKvBZbD",
+          "span_id": "aGTdLptBUYox3DCT7sBCrZ",
+          "timestamp": "2026-11-03T02:14:39.040142+00:00",
+          "working_start": 987657.276018708,
+          "event": "sample_init",
+          "sample": {
+            "input": "Say no",
+            "target": "Default",
+            "id": "s2",
+            "metadata": {
+              "stratum": "b"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "StRsyZiGzSykMhoC4aebwj",
+                "content": "Say no",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "stratum": "b"
+            }
+          }
+        },
+        {
+          "uuid": "SUTUVUpvAYVJzFtq9R5WNJ",
+          "span_id": "aGTdLptBUYox3DCT7sBCrZ",
+          "timestamp": "2026-11-03T02:14:39.040220+00:00",
+          "working_start": 987657.276096791,
+          "event": "span_end",
+          "id": "aGTdLptBUYox3DCT7sBCrZ"
+        },
+        {
+          "uuid": "8zpNCrnw7GFCkKxUe6ZgfN",
+          "span_id": "5aoHmPqAQkjA5SpZeZvQRh",
+          "timestamp": "2026-11-03T02:14:39.042089+00:00",
+          "working_start": 0.001815000083297491,
+          "event": "span_begin",
+          "id": "5aoHmPqAQkjA5SpZeZvQRh",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "RLfzZvBwrjJdoYinFDVDK2",
+          "span_id": "GKQq4YX8gUCB3XLrYiMHo2",
+          "timestamp": "2026-11-03T02:14:39.042178+00:00",
+          "working_start": 0.0019040830666199327,
+          "event": "span_begin",
+          "id": "GKQq4YX8gUCB3XLrYiMHo2",
+          "parent_id": "5aoHmPqAQkjA5SpZeZvQRh",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "iMWV5yU3Rki33ec6VPzy67",
+          "span_id": "GKQq4YX8gUCB3XLrYiMHo2",
+          "timestamp": "2026-11-03T02:14:39.042319+00:00",
+          "working_start": 0.0020456250058487058,
+          "event": "model",
+          "model": "mockllm/model",
+          "origin": "agent",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              1
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "M98QbME8VGs7yPi7yK5qUa",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            },
+            "input_context_tokens": 2,
+            "time": 0.00011037499643862247
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                1
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-11-03T02:14:39.245144+00:00",
+          "working_time": 0.00011037499643862247
+        },
+        {
+          "uuid": "jWMFndcTzWyYwoh5CDtWpw",
+          "span_id": "GKQq4YX8gUCB3XLrYiMHo2",
+          "timestamp": "2026-11-03T02:14:39.245314+00:00",
+          "working_start": 0.00338404206559062,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "M98QbME8VGs7yPi7yK5qUa",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 2,
+                "output_tokens": 33,
+                "total_tokens": 35
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/input_context_tokens",
+              "value": 2
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.00011037499643862247
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "M98QbME8VGs7yPi7yK5qUa",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "5fB5cHvG6aApXKhGm8zNGE",
+          "span_id": "GKQq4YX8gUCB3XLrYiMHo2",
+          "timestamp": "2026-11-03T02:14:39.245400+00:00",
+          "working_start": 0.003470208146609366,
+          "event": "span_end",
+          "id": "GKQq4YX8gUCB3XLrYiMHo2"
+        },
+        {
+          "uuid": "b39y7696N7tnBPK5Xb3WXi",
+          "span_id": "5aoHmPqAQkjA5SpZeZvQRh",
+          "timestamp": "2026-11-03T02:14:39.245468+00:00",
+          "working_start": 0.003538208082318306,
+          "event": "span_end",
+          "id": "5aoHmPqAQkjA5SpZeZvQRh"
+        },
+        {
+          "uuid": "3jPdqh8dUfBxFsdu4L95cb",
+          "span_id": "Gezwav4dTVvZZxPubfnefM",
+          "timestamp": "2026-11-03T02:14:39.247897+00:00",
+          "working_start": 0.005967500153928995,
+          "event": "span_begin",
+          "id": "Gezwav4dTVvZZxPubfnefM",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "Cf3b67xJQXS6aGN6ZhDRUc",
+          "span_id": "YZorfG2biQP9cZjx3YwSji",
+          "timestamp": "2026-11-03T02:14:39.247973+00:00",
+          "working_start": 0.006042792112566531,
+          "event": "span_begin",
+          "id": "YZorfG2biQP9cZjx3YwSji",
+          "parent_id": "Gezwav4dTVvZZxPubfnefM",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "9onrFXrzF9aapD365Rm2P6",
+          "span_id": "YZorfG2biQP9cZjx3YwSji",
+          "timestamp": "2026-11-03T02:14:39.248040+00:00",
+          "working_start": 0.006110333139076829,
+          "event": "score",
+          "score": {
+            "value": "C",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "Default",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            }
+          }
+        },
+        {
+          "uuid": "kdV2dytobvAH4E4ZBxNKue",
+          "span_id": "YZorfG2biQP9cZjx3YwSji",
+          "timestamp": "2026-11-03T02:14:39.248098+00:00",
+          "working_start": 0.006168125080876052,
+          "event": "span_end",
+          "id": "YZorfG2biQP9cZjx3YwSji"
+        },
+        {
+          "uuid": "BqS68dVfyHEJNbmzVjFoPj",
+          "span_id": "Gezwav4dTVvZZxPubfnefM",
+          "timestamp": "2026-11-03T02:14:39.248154+00:00",
+          "working_start": 0.006223958102054894,
+          "event": "span_end",
+          "id": "Gezwav4dTVvZZxPubfnefM"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-11-03T02:14:39.040275+00:00",
+      "completed_at": "2026-11-03T02:14:39.249609+00:00",
+      "total_time": 0.209,
+      "working_time": 0.008,
+      "uuid": "kQ3gcf3Qx8Ah4RWCUmMfky",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "StRsyZiGzSykMhoC4aebwj",
+            "content": "Say no",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "StRsyZiGzSykMhoC4aebwj",
+            "content": "Say no",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    },
+    {
+      "id": "s1",
+      "epoch": 2,
+      "input": "Say yes",
+      "target": "yes",
+      "messages": [
+        {
+          "id": "U7pZFTnFrzjaUezrzVLwGG",
+          "content": "Say yes",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "Hk7b6FT6rQ8VwabC5oP29u",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "Hk7b6FT6rQ8VwabC5oP29u",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        },
+        "input_context_tokens": 2,
+        "time": 0.00003925000783056021
+      },
+      "scores": {
+        "includes": {
+          "value": "I",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "stratum": "a"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "nv2mqxGMQnDz8Hw7sCEstb",
+          "span_id": "4PaVmkTuTpCnDgJpzu2ek8",
+          "timestamp": "2026-11-03T02:14:39.040463+00:00",
+          "working_start": 987657.276339833,
+          "event": "span_begin",
+          "id": "4PaVmkTuTpCnDgJpzu2ek8",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "JToPePefSPaQ4Kz67Faxtp",
+          "span_id": "4PaVmkTuTpCnDgJpzu2ek8",
+          "timestamp": "2026-11-03T02:14:39.040598+00:00",
+          "working_start": 987657.276474916,
+          "event": "sample_init",
+          "sample": {
+            "input": "Say yes",
+            "target": "yes",
+            "id": "s1",
+            "metadata": {
+              "stratum": "a"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "U7pZFTnFrzjaUezrzVLwGG",
+                "content": "Say yes",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "stratum": "a"
+            }
+          }
+        },
+        {
+          "uuid": "drYX6FttTgWDyQVQawDhqs",
+          "span_id": "4PaVmkTuTpCnDgJpzu2ek8",
+          "timestamp": "2026-11-03T02:14:39.040672+00:00",
+          "working_start": 987657.276548958,
+          "event": "span_end",
+          "id": "4PaVmkTuTpCnDgJpzu2ek8"
+        },
+        {
+          "uuid": "W9VzFV7jgnJx8C6hu9zKqY",
+          "span_id": "Qq3aCdAJ84FhUH2XPbon4b",
+          "timestamp": "2026-11-03T02:14:39.042378+00:00",
+          "working_start": 0.0016542499652132392,
+          "event": "span_begin",
+          "id": "Qq3aCdAJ84FhUH2XPbon4b",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "ea3br3zx9DhgcDALxPoxJH",
+          "span_id": "2QX5UrmR29BxvznTocvDqX",
+          "timestamp": "2026-11-03T02:14:39.042459+00:00",
+          "working_start": 0.0017357920296490192,
+          "event": "span_begin",
+          "id": "2QX5UrmR29BxvznTocvDqX",
+          "parent_id": "Qq3aCdAJ84FhUH2XPbon4b",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "W78zR6L5jBuy7HxT3tKb2y",
+          "span_id": "2QX5UrmR29BxvznTocvDqX",
+          "timestamp": "2026-11-03T02:14:39.042591+00:00",
+          "working_start": 0.0018669579876586795,
+          "event": "model",
+          "model": "mockllm/model",
+          "origin": "agent",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              1
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "Hk7b6FT6rQ8VwabC5oP29u",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            },
+            "input_context_tokens": 2,
+            "time": 0.00003925000783056021
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                1
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-11-03T02:14:39.246101+00:00",
+          "working_time": 0.00003925000783056021
+        },
+        {
+          "uuid": "gxLoeJ24S7gmotcV5WQZmL",
+          "span_id": "2QX5UrmR29BxvznTocvDqX",
+          "timestamp": "2026-11-03T02:14:39.246228+00:00",
+          "working_start": 0.002532250015065074,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "Hk7b6FT6rQ8VwabC5oP29u",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 2,
+                "output_tokens": 33,
+                "total_tokens": 35
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/input_context_tokens",
+              "value": 2
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.00003925000783056021
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "Hk7b6FT6rQ8VwabC5oP29u",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "Bc5a6Z6ka7gGXrCEQ5Zko6",
+          "span_id": "2QX5UrmR29BxvznTocvDqX",
+          "timestamp": "2026-11-03T02:14:39.246302+00:00",
+          "working_start": 0.002606249996460974,
+          "event": "span_end",
+          "id": "2QX5UrmR29BxvznTocvDqX"
+        },
+        {
+          "uuid": "fmR8iKSNUpQ225VxnnSftk",
+          "span_id": "Qq3aCdAJ84FhUH2XPbon4b",
+          "timestamp": "2026-11-03T02:14:39.246369+00:00",
+          "working_start": 0.0026734579587355256,
+          "event": "span_end",
+          "id": "Qq3aCdAJ84FhUH2XPbon4b"
+        },
+        {
+          "uuid": "jUoHauL2N5AmCPEZJ3xeVo",
+          "span_id": "QWZ9vyxrfSALAhabikaTax",
+          "timestamp": "2026-11-03T02:14:39.248254+00:00",
+          "working_start": 0.004558166954666376,
+          "event": "span_begin",
+          "id": "QWZ9vyxrfSALAhabikaTax",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "L6LNXJhwe8CMEYgmgaavzH",
+          "span_id": "97M53nBi4Tcft9ECxccCPv",
+          "timestamp": "2026-11-03T02:14:39.248316+00:00",
+          "working_start": 0.004619957995600998,
+          "event": "span_begin",
+          "id": "97M53nBi4Tcft9ECxccCPv",
+          "parent_id": "QWZ9vyxrfSALAhabikaTax",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "WiWMto59G68hpm46vpG6Pi",
+          "span_id": "97M53nBi4Tcft9ECxccCPv",
+          "timestamp": "2026-11-03T02:14:39.248381+00:00",
+          "working_start": 0.004685332998633385,
+          "event": "score",
+          "score": {
+            "value": "I",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "yes",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            }
+          }
+        },
+        {
+          "uuid": "3BhdsbHyBi6BFCakY8kJ3d",
+          "span_id": "97M53nBi4Tcft9ECxccCPv",
+          "timestamp": "2026-11-03T02:14:39.248443+00:00",
+          "working_start": 0.004747624974697828,
+          "event": "span_end",
+          "id": "97M53nBi4Tcft9ECxccCPv"
+        },
+        {
+          "uuid": "cDmkfD7dtRR88pvc4JNKd3",
+          "span_id": "QWZ9vyxrfSALAhabikaTax",
+          "timestamp": "2026-11-03T02:14:39.248502+00:00",
+          "working_start": 0.004806292010471225,
+          "event": "span_end",
+          "id": "QWZ9vyxrfSALAhabikaTax"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-11-03T02:14:39.040724+00:00",
+      "completed_at": "2026-11-03T02:14:39.249983+00:00",
+      "total_time": 0.209,
+      "working_time": 0.006,
+      "uuid": "Ya3kQ4V8akCjXBVeB54U5f",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "U7pZFTnFrzjaUezrzVLwGG",
+            "content": "Say yes",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "U7pZFTnFrzjaUezrzVLwGG",
+            "content": "Say yes",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    },
+    {
+      "id": "s2",
+      "epoch": 2,
+      "input": "Say no",
+      "target": "Default",
+      "messages": [
+        {
+          "id": "kRVveUqL2QpPfmxTvMQFqQ",
+          "content": "Say no",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "RwpjPqRAMuqkLKMkb7LR2p",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "RwpjPqRAMuqkLKMkb7LR2p",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        },
+        "input_context_tokens": 2,
+        "time": 0.000031374976970255375
+      },
+      "scores": {
+        "includes": {
+          "value": "C",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "stratum": "b"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "ZwpA3BfXyKRYPDG4zxdqEy",
+          "span_id": "F2VuodzRdeUVQGyDypfxXf",
+          "timestamp": "2026-11-03T02:14:39.040893+00:00",
+          "working_start": 987657.27677025,
+          "event": "span_begin",
+          "id": "F2VuodzRdeUVQGyDypfxXf",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "Wb2oRW3GPRnRzASmvGn5Tx",
+          "span_id": "F2VuodzRdeUVQGyDypfxXf",
+          "timestamp": "2026-11-03T02:14:39.041220+00:00",
+          "working_start": 987657.277097125,
+          "event": "sample_init",
+          "sample": {
+            "input": "Say no",
+            "target": "Default",
+            "id": "s2",
+            "metadata": {
+              "stratum": "b"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "kRVveUqL2QpPfmxTvMQFqQ",
+                "content": "Say no",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "stratum": "b"
+            }
+          }
+        },
+        {
+          "uuid": "6gEJbstLotjjuVdQxeYbPP",
+          "span_id": "F2VuodzRdeUVQGyDypfxXf",
+          "timestamp": "2026-11-03T02:14:39.041292+00:00",
+          "working_start": 987657.277169291,
+          "event": "span_end",
+          "id": "F2VuodzRdeUVQGyDypfxXf"
+        },
+        {
+          "uuid": "BYM4rcU2rfc6TyXJKpPcvy",
+          "span_id": "R7zDU4xi7qj6mJaiA8oVtk",
+          "timestamp": "2026-11-03T02:14:39.042631+00:00",
+          "working_start": 0.0012876250548288226,
+          "event": "span_begin",
+          "id": "R7zDU4xi7qj6mJaiA8oVtk",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "K4sVV9YMV7m9k3ZxvAYyEN",
+          "span_id": "FfwHu92bpnwKKQLQFQDxjZ",
+          "timestamp": "2026-11-03T02:14:39.042696+00:00",
+          "working_start": 0.0013527920236811042,
+          "event": "span_begin",
+          "id": "FfwHu92bpnwKKQLQFQDxjZ",
+          "parent_id": "R7zDU4xi7qj6mJaiA8oVtk",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "WeuECuiG9w6vgCQfarrRBc",
+          "span_id": "FfwHu92bpnwKKQLQFQDxjZ",
+          "timestamp": "2026-11-03T02:14:39.042810+00:00",
+          "working_start": 0.001467042020522058,
+          "event": "model",
+          "model": "mockllm/model",
+          "origin": "agent",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              1
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "RwpjPqRAMuqkLKMkb7LR2p",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            },
+            "input_context_tokens": 2,
+            "time": 0.000031374976970255375
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                1
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-11-03T02:14:39.246907+00:00",
+          "working_time": 0.000031374976970255375
+        },
+        {
+          "uuid": "54jr6vezK3PDqgYcf78RUJ",
+          "span_id": "FfwHu92bpnwKKQLQFQDxjZ",
+          "timestamp": "2026-11-03T02:14:39.247036+00:00",
+          "working_start": 0.002059292048215866,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "RwpjPqRAMuqkLKMkb7LR2p",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 2,
+                "output_tokens": 33,
+                "total_tokens": 35
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/input_context_tokens",
+              "value": 2
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.000031374976970255375
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "RwpjPqRAMuqkLKMkb7LR2p",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "KmjijFgMRmyTa7UM4T7w68",
+          "span_id": "FfwHu92bpnwKKQLQFQDxjZ",
+          "timestamp": "2026-11-03T02:14:39.247119+00:00",
+          "working_start": 0.002142125042155385,
+          "event": "span_end",
+          "id": "FfwHu92bpnwKKQLQFQDxjZ"
+        },
+        {
+          "uuid": "fHosYbuaDtQp8otwFSxhcn",
+          "span_id": "R7zDU4xi7qj6mJaiA8oVtk",
+          "timestamp": "2026-11-03T02:14:39.247181+00:00",
+          "working_start": 0.0022033749846741557,
+          "event": "span_end",
+          "id": "R7zDU4xi7qj6mJaiA8oVtk"
+        },
+        {
+          "uuid": "2NVVqq93aQDWFZY2ErN6Be",
+          "span_id": "3g5cmwk5Gz7FcP5JpSYpU4",
+          "timestamp": "2026-11-03T02:14:39.248600+00:00",
+          "working_start": 0.0036230830010026693,
+          "event": "span_begin",
+          "id": "3g5cmwk5Gz7FcP5JpSYpU4",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "PZDkxJJQoHScURss2Nuvnj",
+          "span_id": "GJX3UfgJmwvZCWQzu8nQuD",
+          "timestamp": "2026-11-03T02:14:39.248665+00:00",
+          "working_start": 0.003688249969854951,
+          "event": "span_begin",
+          "id": "GJX3UfgJmwvZCWQzu8nQuD",
+          "parent_id": "3g5cmwk5Gz7FcP5JpSYpU4",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "2k3amRjpfEwVzYtQ49CPnb",
+          "span_id": "GJX3UfgJmwvZCWQzu8nQuD",
+          "timestamp": "2026-11-03T02:14:39.248732+00:00",
+          "working_start": 0.0037548330146819353,
+          "event": "score",
+          "score": {
+            "value": "C",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "Default",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 2,
+              "output_tokens": 33,
+              "total_tokens": 35
+            }
+          }
+        },
+        {
+          "uuid": "Sv8AVMfrxEBeLiLTDEaJJ8",
+          "span_id": "GJX3UfgJmwvZCWQzu8nQuD",
+          "timestamp": "2026-11-03T02:14:39.248786+00:00",
+          "working_start": 0.0038087080465629697,
+          "event": "span_end",
+          "id": "GJX3UfgJmwvZCWQzu8nQuD"
+        },
+        {
+          "uuid": "jTQ48ZD7NmZMYKt589DVHJ",
+          "span_id": "3g5cmwk5Gz7FcP5JpSYpU4",
+          "timestamp": "2026-11-03T02:14:39.248837+00:00",
+          "working_start": 0.003859582939185202,
+          "event": "span_end",
+          "id": "3g5cmwk5Gz7FcP5JpSYpU4"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "total_tokens": 35
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-11-03T02:14:39.041344+00:00",
+      "completed_at": "2026-11-03T02:14:39.250335+00:00",
+      "total_time": 0.209,
+      "working_time": 0.005,
+      "uuid": "DyUcEvtUHH86GfwcAJePTX",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "kRVveUqL2QpPfmxTvMQFqQ",
+            "content": "Say no",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "kRVveUqL2QpPfmxTvMQFqQ",
+            "content": "Say no",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    }
+  ],
+  "reductions": [
+    {
+      "scorer": "includes",
+      "samples": [
+        {
+          "value": 0.0,
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": [],
+          "sample_id": "s1"
+        },
+        {
+          "value": 1.0,
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": [],
+          "sample_id": "s2"
+        }
+      ]
+    }
+  ]
+}

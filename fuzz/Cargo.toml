@@ -1,0 +1,39 @@
+[package]
+name = "evalsig-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+evalsig-adapters = { path = "../crates/evalsig-adapters" }
+
+# A workspace of its own: fuzzing needs nightly and must not affect the main build.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "zip"
+path = "fuzz_targets/zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zstd"
+path = "fuzz_targets/zstd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false

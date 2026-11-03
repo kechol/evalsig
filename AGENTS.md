@@ -18,6 +18,7 @@ contributors and to AI coding agents alike.
 | `docs/glossary.md` | Glossary. CLI output, reports and docs use only these terms |
 | `tests/fixtures/` | Reference values and canonicalization vectors (generated) |
 | `scripts/` | Fixture generators and cross-language verifiers |
+| `fuzz/` | cargo-fuzz targets for untrusted input (nightly, its own workspace) |
 
 Task IDs (`T-NNN`) in commit trailers refer to the maintainers' planning
 backlog, which is kept outside the repository.
