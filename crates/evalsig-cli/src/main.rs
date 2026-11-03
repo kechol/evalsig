@@ -42,6 +42,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Agreement between raters, of graders and a run with people, and on preferences.
+    Agree(commands::agree::Args),
     /// Compare a baseline run with one or more candidates on their common items.
     Compare(commands::compare::Args),
     /// Create `.evalsig/` and a commented configuration template.
@@ -122,6 +124,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
     }
     match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
+        Command::Agree(ref args) => commands::agree::run(&cli.project, args),
         Command::Compare(ref args) => commands::compare::run(&cli.project, args),
         Command::Capabilities { ref run } => {
             commands::list::capabilities(&cli.project, run.as_deref())
