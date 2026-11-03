@@ -1,6 +1,6 @@
 //! The project's imported data: the snapshots named by `import` ledger lines (as
-//! replaced by `purge` lines), layered in import order so a later import of the same
-//! primary key wins.
+//! replaced by `purge` and `migrate` lines), layered in import order so a later
+//! import of the same primary key wins.
 
 use std::collections::BTreeMap;
 
@@ -33,7 +33,7 @@ fn hash(v: Option<&str>, e: &ledger::Entry) -> Result<ContentHash, CliError> {
 
 /// The snapshots in force with their provenance objects: those named by `import`
 /// lines in import order, each once (its last import), and in place of each one a
-/// `purge` line replaced, the replacement.
+/// `purge` or `migrate` line replaced, the replacement.
 pub fn current(
     entries: &[ledger::Entry],
 ) -> Result<Vec<(ContentHash, Option<ContentHash>)>, CliError> {
@@ -46,7 +46,7 @@ pub fn current(
                 snapshots.retain(|(x, _)| *x != s);
                 snapshots.push((s, p));
             }
-            Kind::Purge => {
+            Kind::Purge | Kind::Migrate => {
                 let replaced = e.summary.get("replaced").and_then(|v| v.as_array());
                 for r in replaced.into_iter().flatten() {
                     let from = hash(r["from"].as_str(), e)?;
