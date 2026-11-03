@@ -109,6 +109,109 @@ def ordinal_cases():
     return out
 
 
+def _psi(x, y):
+    return 1.0 if x > y else 0.5 if x == y else 0.0
+
+
+def _delong_components(pos, neg):
+    """Structural components by explicit pairs (DeLong, DeLong & Clarke-Pearson 1988)."""
+    v10 = np.array([np.mean([_psi(x, y) for y in neg]) for x in pos])
+    v01 = np.array([np.mean([_psi(x, y) for x in pos]) for y in neg])
+    return v10, v01
+
+
+def _midrank(x):
+    order = np.argsort(x, kind="mergesort")
+    xs = x[order]
+    ranks = np.empty(len(x))
+    i = 0
+    while i < len(x):
+        j = i
+        while j < len(x) and xs[j] == xs[i]:
+            j += 1
+        ranks[i:j] = 0.5 * (i + j - 1) + 1
+        i = j
+    out = np.empty(len(x))
+    out[order] = ranks
+    return out
+
+
+def _fast_delong(pos, neg):
+    """The midrank algorithm of Sun & Xu (2014), as a second implementation."""
+    m, n = len(pos), len(neg)
+    tx, ty = _midrank(np.array(pos, float)), _midrank(np.array(neg, float))
+    tz = _midrank(np.array(list(pos) + list(neg), float))
+    auc = (tz[:m].sum() - m * (m + 1) / 2) / (m * n)
+    v10 = (tz[:m] - tx) / n
+    v01 = 1 - (tz[m:] - ty) / m
+    return auc, v10, v01
+
+
+def delong_cases():
+    """AUC variance and interval (logit scale, delta method) and the paired comparison of
+    two scores on the same items, by two independent implementations that must agree."""
+    out = []
+    singles = [
+        ([0.9, 0.8, 0.8, 0.7, 0.6, 0.55, 0.4], [0.7, 0.5, 0.45, 0.3, 0.3, 0.2, 0.1, 0.05]),
+        ([3, 3, 2, 2, 2, 1], [2, 1, 1, 1, 0, 0, 0]),
+    ]
+    for pos, neg in singles:
+        v10, v01 = _delong_components(pos, neg)
+        auc = v10.mean()
+        fauc, fv10, fv01 = _fast_delong(pos, neg)
+        assert abs(auc - fauc) < 1e-12 and np.allclose(v10, fv10) and np.allclose(v01, fv01)
+        var = np.var(v10, ddof=1) / len(pos) + np.var(v01, ddof=1) / len(neg)
+        se_logit = math.sqrt(var) / (auc * (1 - auc))
+        lo, hi = (1 / (1 + math.exp(-(math.log(auc / (1 - auc)) + s * Z95 * se_logit))) for s in (-1, 1))
+        out.append({
+            "input": {"pos": pos, "neg": neg},
+            "source": "independent pair-sum and Sun & Xu midrank implementations (agree to 1e-12)",
+            "expected": {"auc": r(auc), "variance": r(var), "logit95": [r(lo), r(hi)]},
+        })
+    labels = [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+    a = [0.9, 0.85, 0.7, 0.6, 0.6, 0.3, 0.65, 0.4, 0.35, 0.3, 0.2, 0.1, 0.05]
+    b = [0.8, 0.5, 0.75, 0.4, 0.7, 0.55, 0.6, 0.6, 0.2, 0.45, 0.1, 0.3, 0.2]
+    comps = []
+    for s in (a, b):
+        pos = [x for x, l in zip(s, labels) if l]
+        neg = [x for x, l in zip(s, labels) if not l]
+        comps.append(_delong_components(pos, neg))
+        f = _fast_delong(pos, neg)
+        assert np.allclose(comps[-1][0], f[1]) and np.allclose(comps[-1][1], f[2])
+    (a10, a01), (b10, b01) = comps
+    m, n = len(a10), len(a01)
+    s10 = np.cov(np.vstack([a10, b10]), ddof=1)
+    s01 = np.cov(np.vstack([a01, b01]), ddof=1)
+    s = s10 / m + s01 / n
+    diff = b10.mean() - a10.mean()
+    var_diff = s[0, 0] + s[1, 1] - 2 * s[0, 1]
+    z = diff / math.sqrt(var_diff)
+    out.append({
+        "input": {"labels": labels, "a": a, "b": b},
+        "source": "independent pair-sum implementation; covariance of structural components",
+        "expected": {"auc_a": r(a10.mean()), "auc_b": r(b10.mean()), "difference": r(diff),
+                     "variance_difference": r(var_diff), "z": r(z),
+                     "p_two_sided": r(2 * stats.norm.sf(abs(z))),
+                     "difference95": [r(diff - Z95 * math.sqrt(var_diff)), r(diff + Z95 * math.sqrt(var_diff))]},
+    })
+    return out
+
+
+def calibration_cases():
+    """Brier score and 10 equal-width reliability bins (a score of 1.0 falls in the last)."""
+    p = [0.05, 0.12, 0.18, 0.33, 0.35, 0.51, 0.66, 0.71, 0.88, 0.95, 1.0, 0.0]
+    y = [0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0]
+    brier = float(np.mean([(pi - yi) ** 2 for pi, yi in zip(p, y)]))
+    bins = []
+    for b in range(10):
+        members = [(pi, yi) for pi, yi in zip(p, y) if min(int(pi * 10), 9) == b]
+        if members:
+            bins.append({"bin": b, "n": len(members), "mean_score": r(np.mean([m[0] for m in members])),
+                         "positive_share": r(np.mean([m[1] for m in members]))})
+    return [{"input": {"scores": p, "labels": y}, "source": "closed (definition)",
+             "expected": {"brier": r(brier), "bins": bins}}]
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -386,6 +489,8 @@ def main():
             "proportion_interval": proportion_cases(),
             "sdt_binary": sdt_cases(),
             "ordinal_roc": ordinal_cases(),
+            "delong": delong_cases(),
+            "calibration": calibration_cases(),
             "feature_likelihood_ratio": lr_cases(),
             "mcnemar": mcnemar_cases(),
             "agreement": agreement_cases(),

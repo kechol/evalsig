@@ -379,6 +379,220 @@
     }
    }
   ],
+  "delong": [
+   {
+    "input": {
+     "pos": [
+      0.9,
+      0.8,
+      0.8,
+      0.7,
+      0.6,
+      0.55,
+      0.4
+     ],
+     "neg": [
+      0.7,
+      0.5,
+      0.45,
+      0.3,
+      0.3,
+      0.2,
+      0.1,
+      0.05
+     ]
+    },
+    "source": "independent pair-sum and Sun & Xu midrank implementations (agree to 1e-12)",
+    "expected": {
+     "auc": 0.9017857142857143,
+     "variance": 0.00639273566569485,
+     "logit95": [
+      0.610134225766962,
+      0.9817751099362676
+     ]
+    }
+   },
+   {
+    "input": {
+     "pos": [
+      3,
+      3,
+      2,
+      2,
+      2,
+      1
+     ],
+     "neg": [
+      2,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0
+     ]
+    },
+    "source": "independent pair-sum and Sun & Xu midrank implementations (agree to 1e-12)",
+    "expected": {
+     "auc": 0.904761904761905,
+     "variance": 0.006065759637188207,
+     "logit95": [
+      0.6176943504726803,
+      0.982412282295963
+     ]
+    }
+   },
+   {
+    "input": {
+     "labels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "a": [
+      0.9,
+      0.85,
+      0.7,
+      0.6,
+      0.6,
+      0.3,
+      0.65,
+      0.4,
+      0.35,
+      0.3,
+      0.2,
+      0.1,
+      0.05
+     ],
+     "b": [
+      0.8,
+      0.5,
+      0.75,
+      0.4,
+      0.7,
+      0.55,
+      0.6,
+      0.6,
+      0.2,
+      0.45,
+      0.1,
+      0.3,
+      0.2
+     ]
+    },
+    "source": "independent pair-sum implementation; covariance of structural components",
+    "expected": {
+     "auc_a": 0.8690476190476191,
+     "auc_b": 0.8333333333333334,
+     "difference": -0.0357142857142857,
+     "variance_difference": 0.01065759637188209,
+     "z": -0.3459492030108317,
+     "p_two_sided": 0.7293808903356315,
+     "difference95": [
+      -0.2380524125964039,
+      0.1666238411678325
+     ]
+    }
+   }
+  ],
+  "calibration": [
+   {
+    "input": {
+     "scores": [
+      0.05,
+      0.12,
+      0.18,
+      0.33,
+      0.35,
+      0.51,
+      0.66,
+      0.71,
+      0.88,
+      0.95,
+      1.0,
+      0.0
+     ],
+     "labels": [
+      0,
+      0,
+      1,
+      0,
+      1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
+      0
+     ]
+    },
+    "source": "closed (definition)",
+    "expected": {
+     "brier": 0.16645000000000001,
+     "bins": [
+      {
+       "bin": 0,
+       "n": 2,
+       "mean_score": 0.025,
+       "positive_share": 0.0
+      },
+      {
+       "bin": 1,
+       "n": 2,
+       "mean_score": 0.15,
+       "positive_share": 0.5
+      },
+      {
+       "bin": 3,
+       "n": 2,
+       "mean_score": 0.33999999999999997,
+       "positive_share": 0.5
+      },
+      {
+       "bin": 5,
+       "n": 1,
+       "mean_score": 0.51,
+       "positive_share": 1.0
+      },
+      {
+       "bin": 6,
+       "n": 1,
+       "mean_score": 0.66,
+       "positive_share": 0.0
+      },
+      {
+       "bin": 7,
+       "n": 1,
+       "mean_score": 0.71,
+       "positive_share": 1.0
+      },
+      {
+       "bin": 8,
+       "n": 1,
+       "mean_score": 0.88,
+       "positive_share": 1.0
+      },
+      {
+       "bin": 9,
+       "n": 2,
+       "mean_score": 0.975,
+       "positive_share": 1.0
+      }
+     ]
+    }
+   }
+  ],
   "feature_likelihood_ratio": [
    {
     "input": {
