@@ -121,30 +121,47 @@ fn reply(out: &mut TcpStream, status: u16, reason: &str, content_type: &str, bod
     );
 }
 
+/// A stream whose every read gets only the time left before one deadline, so a client
+/// trickling bytes cannot hold a connection past it.
+struct Deadline {
+    stream: TcpStream,
+    until: Instant,
+}
+
+impl Read for Deadline {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.stream.set_read_timeout(Some(left))?;
+        self.stream.read(buf)
+    }
+}
+
 fn exchange(
     mut stream: TcpStream,
     port: u16,
     token: &str,
     handler: &(dyn Fn(&str) -> Page + Sync),
 ) {
-    let started = Instant::now();
-    let _ = stream.set_read_timeout(Some(DEADLINE));
     let _ = stream.set_write_timeout(Some(DEADLINE));
     let Ok(clone) = stream.try_clone() else {
         return;
     };
-    let mut reader = BufReader::new(clone.take(HEAD_LIMIT));
+    let mut reader = BufReader::new(
+        Deadline {
+            stream: clone,
+            until: Instant::now() + DEADLINE,
+        }
+        .take(HEAD_LIMIT),
+    );
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() {
         return;
     }
     let mut host = None;
     loop {
-        // The clone shares the socket, so each read gets only the time left.
-        let left = DEADLINE.saturating_sub(started.elapsed());
-        if left.is_zero() || stream.set_read_timeout(Some(left)).is_err() {
-            return;
-        }
         let mut h = String::new();
         if reader.read_line(&mut h).unwrap_or(0) == 0 {
             break;
