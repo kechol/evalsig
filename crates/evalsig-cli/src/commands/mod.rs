@@ -2,6 +2,7 @@ pub mod agree;
 pub mod approve;
 pub mod check;
 pub mod compare;
+pub mod exclude;
 pub mod export;
 pub mod gate;
 pub mod import;

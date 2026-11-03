@@ -135,6 +135,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
 | migration | `migrate` | Rewriting snapshots in an earlier canonical record format as new snapshots in the current one, with a ledger line; the originals are kept |
 | purge | `purge` | Removing a content body and the free-text fields of the items that name it, through a replacement snapshot and a ledger line; the superseded snapshot remains only as a hash |
+| exclusion | `exclude`, `reason` | Leaving items out of every analysis with a reason code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other`), through replacement snapshots and a ledger line. Holdout items are excluded by the referee only |
 | validity checks | `checks` | Checks that stop measurement errors: missing denominators, mixed versions, double-counted replicates |
 
 ## Agent interface

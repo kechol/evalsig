@@ -824,3 +824,44 @@ after the entry is `Accepted`.
   protection rests on the budget, α/B and the withheld values, and
   `docs/referee.md` says so. The simulation covers one attack; a stronger
   one could do better against k = 1 or 2.
+
+## D-027 Item exclusion (`exclude`)
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Some items should not count at all (a duplicate, a broken input,
+  an item outside the population, one that must not be evaluated). Leaving
+  them out by hand breaks the record of what an analysis used, and leaving
+  them out of the holdout must stay with the referee (SPEC §10.1, audit
+  spec §4: the `exclude` line carries the reason code and the count; holdout
+  items are the referee's).
+- Decision:
+  - `evalsig exclude <item>... --reason <code> [--detail <text>]`. The
+    reason codes are `duplicate`, `invalid_input`, `out_of_scope`,
+    `privacy` and `other`; `other` needs `--detail`.
+  - On the agent's side the exclusion works like `purge` (D-024): every
+    snapshot in force that holds records of the items is replaced by one
+    without them, and an `exclude` line in the project ledger lists the
+    replacements, the reason, the detail and the count; its input is the
+    BLAKE3 reference of the sorted item IDs, whose JSON array is kept in
+    the object store. Earlier reports keep naming the superseded snapshots,
+    so `verify` still reproduces them; nothing is deleted. Records of the
+    items imported later come back in, and the output of `exclude` says so.
+  - When a split in the project was made within the referee's remaining
+    items, an item outside them is a holdout item and the agent-side
+    `exclude` refuses it (`holdout_item`, exit 3).
+  - With `--referee <dir>` the referee excludes holdout items only: it
+    writes `exclusions/<hash>.json` in its home and an `exclude` line in
+    its ledger, and from then on the holdout's items, for `seal`,
+    `preregister approve` and `gate`, leave those items out. An exclusion
+    made after approval changes the pinned holdout items, so `gate`
+    refuses that approval (exit 3) until the referee approves again; the
+    budget stays with the seal.
+- Alternatives: a filter applied when data is loaded (not taken: `verify`
+  recomputes a report from its snapshots and would need the exclusions as
+  of the report as well); free-text reasons (not taken: the ledger line
+  must carry a code that can be counted); letting the agent's exclusions
+  reach the referee (not taken: the referee trusts only what it fixed).
+- Consequences: a later import of an excluded item's records brings them
+  back, so an exclusion is repeated after such an import. The item list
+  lives in the object store, not in the ledger summary.

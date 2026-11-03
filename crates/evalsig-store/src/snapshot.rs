@@ -125,8 +125,8 @@ pub fn read(store: &ObjectStore, hash: &ContentHash) -> Result<Vec<Record>, Snap
         .collect()
 }
 
-/// One snapshot superseded by another, as `purge` and `migrate` lines list them in
-/// `summary.replaced` (D-024).
+/// One snapshot superseded by another, as `purge`, `migrate` and `exclude` lines list
+/// them in `summary.replaced` (D-024, D-027).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Replacement {
     pub from: ContentHash,
@@ -182,8 +182,9 @@ fn replacements(e: &Entry) -> Result<Vec<Replacement>, SnapshotError> {
 }
 
 /// The snapshots in force: those named by `import` lines in import order, each once
-/// (its last import), and in place of each one a `purge` or `migrate` line replaced,
-/// the replacement. Importing a replaced snapshot again brings in its replacement.
+/// (its last import), and in place of each one a `purge`, `migrate` or `exclude` line
+/// replaced, the replacement. Importing a replaced snapshot again brings in its
+/// replacement.
 pub fn in_force(entries: &[Entry]) -> Result<Vec<InForce>, SnapshotError> {
     let mut out: Vec<InForce> = Vec::new();
     let mut replaced_by: BTreeMap<ContentHash, InForce> = BTreeMap::new();
@@ -212,7 +213,7 @@ pub fn in_force(entries: &[Entry]) -> Result<Vec<InForce>, SnapshotError> {
                 out.retain(|y| y.snapshot != x.snapshot);
                 out.push(x);
             }
-            Kind::Purge | Kind::Migrate => {
+            Kind::Purge | Kind::Migrate | Kind::Exclude => {
                 for r in replacements(e)? {
                     let to = InForce {
                         snapshot: r.to,

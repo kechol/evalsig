@@ -2,6 +2,7 @@
 //! readable identity is the referee's authority; commands that need it fail with
 //! `referee_only` otherwise.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use evalsig_store::ledger::{self, Entry, Kind, LedgerSide, NewEntry};
@@ -67,6 +68,16 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
     )))
 }
 
+fn item_ids(p: &Path, text: &str) -> Result<BTreeSet<String>, CliError> {
+    let v: Value = serde_json::from_str(text).map_err(|e| CliError::invalid_input(p, e))?;
+    Ok(v["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|i| i.as_str().map(str::to_owned))
+        .collect())
+}
+
 impl Referee {
     /// The home named by `arg` or `EVALSIG_REFEREE`, if its identity can be read.
     pub fn open(arg: Option<&Path>) -> Result<Referee, CliError> {
@@ -99,24 +110,53 @@ impl Referee {
             .to_owned())
     }
 
-    /// The items of a holdout this referee cut, by its hash.
-    pub fn holdout_items(
-        &self,
-        hash: &str,
-    ) -> Result<std::collections::BTreeSet<String>, CliError> {
+    /// The items of a holdout this referee cut, by its hash, less the items the
+    /// referee excluded (D-027).
+    pub fn holdout_items(&self, hash: &str) -> Result<BTreeSet<String>, CliError> {
         let p = self.path("holdouts").join(format!(
             "{}.json",
             hash.strip_prefix("blake3:").unwrap_or(hash)
         ));
         let text = std::fs::read_to_string(&p)
             .map_err(|_| CliError::usage(format!("this referee has cut no holdout {hash}")))?;
-        let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
-        Ok(v["items"]
-            .as_array()
+        let excluded = self.excluded()?;
+        Ok(item_ids(&p, &text)?
             .into_iter()
-            .flatten()
-            .filter_map(|i| i.as_str().map(str::to_owned))
+            .filter(|i| !excluded.contains(i))
             .collect())
+    }
+
+    /// Every item of every holdout this referee cut.
+    pub fn all_holdout_items(&self) -> Result<BTreeSet<String>, CliError> {
+        let dir = self.path("holdouts");
+        let mut out = BTreeSet::new();
+        for entry in std::fs::read_dir(&dir).map_err(|e| io_error(&dir, &e))? {
+            let p = entry.map_err(|e| io_error(&dir, &e))?.path();
+            let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
+            out.extend(item_ids(&p, &text)?);
+        }
+        Ok(out)
+    }
+
+    /// The items named by the `exclude` lines of the referee ledger.
+    fn excluded(&self) -> Result<BTreeSet<String>, CliError> {
+        let mut out = BTreeSet::new();
+        for e in self.entries()?.iter().filter(|e| e.kind == Kind::Exclude) {
+            let Some(h) = e.inputs.first() else { continue };
+            let p = self
+                .path("exclusions")
+                .join(format!("{}.json", h.strip_prefix("blake3:").unwrap_or(h)));
+            let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
+            let v: Value =
+                serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
+            out.extend(
+                v.as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|i| i.as_str().map(str::to_owned)),
+            );
+        }
+        Ok(out)
     }
 
     pub fn path(&self, sub: &str) -> PathBuf {

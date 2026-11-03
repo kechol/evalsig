@@ -61,6 +61,8 @@ enum Command {
         #[arg(long)]
         run: Option<String>,
     },
+    /// Leave items out of every analysis, with a reason code (holdout items: the referee).
+    Exclude(commands::exclude::Args),
     /// Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere.
     Export(commands::export::Args),
     /// As the referee: judge a candidate on the sealed holdout under approved conditions.
@@ -156,6 +158,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Capabilities { ref run } => {
             commands::list::capabilities(&cli.project, run.as_deref())
         }
+        Command::Exclude(ref args) => commands::exclude::run(&cli.project, args),
         Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
