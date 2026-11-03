@@ -865,3 +865,46 @@ after the entry is `Accepted`.
 - Consequences: a later import of an excluded item's records brings them
   back, so an exclusion is repeated after such an import. The item list
   lives in the object store, not in the ledger summary.
+
+## D-018 Agent mode and the deferral of MCP
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Coding agents call the CLI from a shell and read its output into
+  a limited context. They need output that fits, that keeps the text of
+  evaluated systems apart from evalsig's own words, and that never waits
+  for an answer (SPEC §12.3, agent-interface spec §2.1, §2.4, §2.5, §4).
+  The spec leaves open how the mode is triggered and how output is cut.
+- Decision:
+  - Agent mode is on with `--agent`, or when `AI_AGENT` is set and not
+    empty, standard output is not a terminal and no `--format` is given
+    (the condition DuckDB 2.0's CLI uses). `--no-agent` or
+    `EVALSIG_AGENT_MODE=0` turns it off; the flags win over the variables.
+    `--agent` with `--format` is a usage error.
+  - Agent mode changes the output only. It prints one JSON envelope on
+    standard output and errors as JSON on standard error; exit codes,
+    verdicts, ledger lines and every referee check are the same as without
+    it.
+  - Each top-level array in `results` shows at most 50 rows from
+    `--cursor <n>` (default 0); strings longer than 500 characters end in
+    `…`; when the envelope still exceeds 20 KB, the row limit halves until
+    it fits. `truncated` then gives `rows_omitted`, `cells_cut`,
+    `next_cursor` when rows remain, and `hash`, the BLAKE3 reference of the
+    canonical JSON of the full `results`. `--format json` is never cut.
+  - Text that comes from evaluated data (today the example values of
+    `map probe`) is left out in agent mode, with the warning
+    `content_withheld`. With `--include-content` it is returned in
+    `untrusted_content`, beside `content_notice`, and never in `results`.
+  - evalsig asks no questions. In agent mode, an operation that changes
+    the procedure (`preregister --draft`) also needs `--yes`, and the
+    ledger's actor comes from `AI_AGENT` as `agent:<name>` unless
+    `EVALSIG_ACTOR` is set.
+  - No MCP server in v1. If one is built, its tools are generated from the
+    same command definitions as `help --json`.
+- Alternatives: switching on `AI_AGENT` alone (not taken: a person piping
+  to a file with the variable set would lose rows); cutting `--format json`
+  as well (not taken: scripts need the full result); an MCP server now (not
+  taken: agents with a shell use the CLI, and a second tool surface would
+  have to be kept in step).
+- Consequences: an agent that needs every row pages with `--cursor` or asks
+  for `--format json`. `--cursor` has no effect outside agent mode.
