@@ -24,7 +24,8 @@ pub struct Args {
     pub run: String,
     #[command(flatten)]
     pub analysis: AnalysisArgs,
-    /// Also report each value of this stratum.
+    /// Also report each value of this stratum. `reference_agreement` splits the items
+    /// two or more human raters labelled into `unanimous` and `split`.
     #[arg(long, value_name = "STRATUM")]
     pub by: Option<String>,
     /// Include one row per item.
