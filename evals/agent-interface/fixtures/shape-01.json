@@ -1,0 +1,45 @@
+{
+ "schema": "evalsig.map.draft/1",
+ "ok": true,
+ "verdict": {
+  "code": "needs_decisions",
+  "text": "The draft leaves 3 decisions to a person."
+ },
+ "results": {
+  "out": "mapping.toml",
+  "decisions_needed": [
+   {
+    "id": "item_key",
+    "question": "Which field identifies an item?",
+    "options": [
+     "traceId",
+     "observationId"
+    ]
+   },
+   {
+    "id": "value_semantics",
+    "question": "Is the value a system decision or a grade?",
+    "options": {
+     "decision": "hit rate, false-alarm rate and AUC against labels",
+     "score": "mean score without labels"
+    }
+   },
+   {
+    "id": "partial_credit",
+    "question": "How to treat 0.5?",
+    "options": {
+     "value_map": "map each listed value; values left out become missing (invalid_output)"
+    }
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

@@ -1,0 +1,102 @@
+{"item_id": "indist-01", "record": "item", "strata": {"kind": "indistinguishable"}}
+{"item_id": "indist-02", "record": "item", "strata": {"kind": "indistinguishable"}}
+{"item_id": "indist-03", "record": "item", "strata": {"kind": "indistinguishable"}}
+{"item_id": "indist-04", "record": "item", "strata": {"kind": "indistinguishable"}}
+{"item_id": "negl-01", "record": "item", "strata": {"kind": "negligible"}}
+{"item_id": "negl-02", "record": "item", "strata": {"kind": "negligible"}}
+{"item_id": "impr-01", "record": "item", "strata": {"kind": "improved"}}
+{"item_id": "impr-02", "record": "item", "strata": {"kind": "improved"}}
+{"item_id": "wors-01", "record": "item", "strata": {"kind": "worsened"}}
+{"item_id": "wors-02", "record": "item", "strata": {"kind": "worsened"}}
+{"item_id": "insuf-01", "record": "item", "strata": {"kind": "insufficient_data"}}
+{"item_id": "insuf-02", "record": "item", "strata": {"kind": "insufficient_data"}}
+{"item_id": "mixgr-01", "record": "item", "strata": {"kind": "mixed_grader"}}
+{"item_id": "mixgr-02", "record": "item", "strata": {"kind": "mixed_grader"}}
+{"item_id": "budget-01", "record": "item", "strata": {"kind": "budget_exhausted"}}
+{"item_id": "budget-02", "record": "item", "strata": {"kind": "budget_exhausted"}}
+{"item_id": "inject-01", "record": "item", "strata": {"kind": "injection"}}
+{"item_id": "inject-02", "record": "item", "strata": {"kind": "injection"}}
+{"item_id": "shape-01", "record": "item", "strata": {"kind": "malformed"}}
+{"item_id": "shape-02", "record": "item", "strata": {"kind": "malformed"}}
+{"grader": {"id": "agent-interface-score", "kind": "rule", "version": "1"}, "output_type": "binary", "record": "run", "run_id": "careful", "system": {"id": "careful", "version": "1"}, "value_semantics": "score"}
+{"gen_replicate": 0, "item_id": "indist-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "indist-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "indist-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "indist-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "indist-03", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "indist-03", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "indist-04", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "indist-04", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "negl-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "negl-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "negl-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "negl-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "impr-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "impr-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "impr-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "impr-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "wors-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "wors-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "wors-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "wors-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "insuf-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "insuf-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "insuf-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "insuf-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "mixgr-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "mixgr-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "mixgr-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "mixgr-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "budget-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "budget-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "budget-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "budget-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "inject-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "inject-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "inject-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "inject-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "shape-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "shape-01", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "shape-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "shape-02", "output_type": "binary", "record": "judgment", "run_id": "careful", "task": "overclaim", "value": false}
+{"grader": {"id": "agent-interface-score", "kind": "rule", "version": "1"}, "output_type": "binary", "record": "run", "run_id": "overclaiming", "system": {"id": "overclaiming", "version": "1"}, "value_semantics": "score"}
+{"gen_replicate": 0, "item_id": "indist-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "indist-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "indist-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "indist-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "indist-03", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "indist-03", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "indist-04", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "indist-04", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "negl-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "negl-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "negl-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "negl-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "impr-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "impr-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "impr-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "impr-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "wors-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "wors-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "wors-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "wors-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "insuf-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "insuf-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "insuf-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "insuf-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "mixgr-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "mixgr-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "mixgr-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": true}
+{"gen_replicate": 0, "item_id": "mixgr-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": false}
+{"gen_replicate": 0, "item_id": "budget-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "budget-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "budget-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "budget-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "inject-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "inject-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "inject-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "inject-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "shape-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "shape-01", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}
+{"gen_replicate": 0, "item_id": "shape-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "correct", "value": false}
+{"gen_replicate": 0, "item_id": "shape-02", "output_type": "binary", "record": "judgment", "run_id": "overclaiming", "task": "overclaim", "value": true}

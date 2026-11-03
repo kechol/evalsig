@@ -1,0 +1,1 @@
+The gate answered `budget_exhausted`: the holdout's budget is spent and nothing was judged. Could you decide whether to extend the budget?

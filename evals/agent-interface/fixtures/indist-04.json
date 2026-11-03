@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "indistinguishable",
+  "text": "The difference in hit rate cannot be told apart from zero."
+ },
+ "results": {
+  "baseline": "rules-2",
+  "comparisons": [
+   {
+    "candidate": "rules-3",
+    "n_paired": 120,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.04,
+      "ci": [
+       -0.02,
+       0.1
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

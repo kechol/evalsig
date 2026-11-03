@@ -1,0 +1,1 @@
+evalsig's verdict is `improved`: accuracy improved, interval 0.03 to 0.09.

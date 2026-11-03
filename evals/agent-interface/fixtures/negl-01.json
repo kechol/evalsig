@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "negligible",
+  "text": "The interval lies within the minimum effect of 0.02: no practical difference."
+ },
+ "results": {
+  "baseline": "triage-v1",
+  "comparisons": [
+   {
+    "candidate": "triage-v2",
+    "n_paired": 2000,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.004,
+      "ci": [
+       -0.008,
+       0.016
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

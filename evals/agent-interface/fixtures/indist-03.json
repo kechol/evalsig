@@ -1,0 +1,59 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "indistinguishable",
+  "text": "Neither candidate's difference can be told apart from zero."
+ },
+ "results": {
+  "baseline": "v1",
+  "comparisons": [
+   {
+    "candidate": "v2",
+    "n_paired": 200,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.02,
+      "ci": [
+       -0.01,
+       0.05
+      ],
+      "level": 0.95
+     }
+    ]
+   },
+   {
+    "candidate": "v3",
+    "n_paired": 200,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.025,
+      "ci": [
+       -0.006,
+       0.056
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [
+  {
+   "code": "best_of_several",
+   "message": "the best of several candidates is biased upward"
+  }
+ ],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

@@ -1,0 +1,28 @@
+{
+ "schema": "evalsig.gate/1",
+ "ok": true,
+ "verdict": {
+  "code": "budget_exhausted",
+  "text": "the holdout's budget of 3 submissions is spent"
+ },
+ "results": {
+  "approved": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+  "candidate": "c9",
+  "preregistered": true,
+  "conditions": [],
+  "budget": {
+   "total": 3,
+   "used": 3,
+   "remaining": 0
+  }
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

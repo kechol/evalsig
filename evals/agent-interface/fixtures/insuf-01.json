@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "insufficient_data",
+  "text": "12 paired items are too few to decide."
+ },
+ "results": {
+  "baseline": "a",
+  "comparisons": [
+   {
+    "candidate": "b",
+    "n_paired": 12,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.08,
+      "ci": [
+       -0.2,
+       0.36
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

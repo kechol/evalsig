@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "improved",
+  "text": "Hit rate improved by 0.08 (interval 0.04 to 0.12)."
+ },
+ "results": {
+  "baseline": "r1",
+  "comparisons": [
+   {
+    "candidate": "r2",
+    "n_paired": 300,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.08,
+      "ci": [
+       0.04,
+       0.12
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

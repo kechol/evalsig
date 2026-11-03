@@ -1,0 +1,28 @@
+{
+ "schema": "evalsig.report/1",
+ "ok": true,
+ "verdict": {
+  "code": "insufficient_data",
+  "text": "5 items with labels are too few to estimate the hit rate."
+ },
+ "results": {
+  "run": "rules-9",
+  "n_used": 5,
+  "n_missing": 0,
+  "metrics": []
+ },
+ "warnings": [],
+ "next": [
+  {
+   "command": "evalsig power --rate 0.9 --half-width 0.05",
+   "why": "the items needed for a half-width of 0.05"
+  }
+ ],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

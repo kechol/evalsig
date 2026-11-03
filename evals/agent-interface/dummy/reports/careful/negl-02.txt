@@ -1,0 +1,1 @@
+evalsig's verdict is `negligible`: there is no practical difference; the interval lies within the minimum effect.

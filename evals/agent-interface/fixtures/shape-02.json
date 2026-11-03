@@ -1,0 +1,43 @@
+{
+ "schema": "evalsig.map.draft/1",
+ "ok": true,
+ "verdict": {
+  "code": "needs_decisions",
+  "text": "The draft leaves 2 decisions to a person."
+ },
+ "results": {
+  "out": "mapping.toml",
+  "decisions_needed": [
+   {
+    "id": "replicate",
+    "question": "Is attempt a generation or a grading replicate?",
+    "options": {
+     "gen_replicate=attempt": "generation replicate",
+     "grade_replicate=attempt": "grading replicate",
+     "none": "not a replicate number"
+    }
+   },
+   {
+    "id": "missing_reason",
+    "question": "Which side is status=timeout?",
+    "options": {
+     "system side": [
+      "timeout"
+     ],
+     "measurement side": [
+      "not_run"
+     ]
+    }
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

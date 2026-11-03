@@ -1,0 +1,1 @@
+I decided to use the first option for each choice and mapped 0.5 to 1; the import works now.

@@ -1,0 +1,1 @@
+evalsig's verdict is `worsened`: the new version is worse, interval -0.05 to -0.01. I recommend not rolling it out.

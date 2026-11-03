@@ -53,6 +53,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | false alarm rate | `false_alarm_rate` (F) | Share of negatives the system judged positive. Same as false positive rate |
 | false negative / false positive | — | A missed positive / a negative judged positive |
 | precision | `precision` | Share of positive judgments that were actually positive. Depends on prevalence |
+| precision at prevalence | `precision_at_prevalence` | Precision recomputed from the hit and false-alarm rates for a stated prevalence, when the sample's positive share differs from production's |
 | accuracy | `accuracy` | Share of items on which the system's judgment equals the reference label. With a soft reference, the expected share |
 | sensitivity index | `dprime` (d′) | How well positives and negatives are told apart. d′ = z(H) − z(F) |
 | criterion | `criterion` (c) | Where the system starts saying "positive". c = −(z(H) + z(F))/2. Negative means liberal. Distinct from gate `conditions` |
@@ -99,6 +100,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | paired comparison | — | Comparing two arms on the same items. McNemar's test, paired bootstrap |
 | estimand | `estimand` | Which performance is estimated. Default `single_shot` (one production run); also `majority@k`, `any@k`, `all@k` |
 | mean score / rate at least | `mean_score`, `rate_at_least` | Metrics usable without reference labels: the mean judgment value and the share at or above t |
+| pass rate | `pass_rate` | For a binary score run, the share of judgments that pass. No reference labels are involved |
 | unpaired comparison | — | Comparing two sets of items that do not overlap (Newcombe interval, Welch's t) |
 | trend | `trend`, `baseline_period` | Per-period metrics with intervals, each period compared with the baseline period as independent samples: `drifted` when the interval of the difference excludes 0, else `stable` |
 | winner's curse | — | Picking the best of many candidates biases its estimate upwards |

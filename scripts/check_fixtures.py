@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the fixtures and docs/sample-size.md into a temporary directory and compare them
 with the committed ones, and check that examples/custom-harness/records.out.jsonl is the
-converter script's output.
+converter script's output and evals/agent-interface/dummy/records.jsonl is the scorer's.
 
 Canonicalization vectors must match byte for byte. Reference values must match within
 1e-12 (absolute); `generated_with` and `source` strings are allowed to differ, since they
@@ -66,6 +66,13 @@ def main():
         check=True, capture_output=True).stdout
     if converted != (harness / "records.out.jsonl").read_bytes():
         errors.append("custom-harness/records.out.jsonl: differs from convert_runlog.py output")
+    agent_eval = HERE.parent / "evals" / "agent-interface"
+    with tempfile.TemporaryDirectory() as tmp:
+        scored = Path(tmp) / "records.jsonl"
+        subprocess.run([sys.executable, "-I", str(agent_eval / "score.py"), str(agent_eval / "dummy" / "reports"),
+                        "--out", str(scored)], check=True)
+        if scored.read_bytes() != (agent_eval / "dummy" / "records.jsonl").read_bytes():
+            errors.append("evals/agent-interface/dummy/records.jsonl: differs from score.py output")
     for e in errors:
         print(e)
     print("fixtures ok" if not errors else f"{len(errors)} difference(s)")

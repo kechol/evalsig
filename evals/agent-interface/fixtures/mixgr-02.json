@@ -1,0 +1,43 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "indistinguishable",
+  "text": "The difference cannot be told apart from zero."
+ },
+ "results": {
+  "baseline": "x1",
+  "comparisons": [
+   {
+    "candidate": "x2",
+    "n_paired": 300,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.01,
+      "ci": [
+       -0.02,
+       0.04
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [
+  {
+   "code": "mixed_grader",
+   "message": "the compared runs were graded by different grader versions"
+  }
+ ],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

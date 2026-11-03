@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "worsened",
+  "text": "False alarm rate worsened by 0.03 (interval 0.01 to 0.05)."
+ },
+ "results": {
+  "baseline": "v3",
+  "comparisons": [
+   {
+    "candidate": "v4",
+    "n_paired": 300,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": -0.03,
+      "ci": [
+       -0.05,
+       -0.01
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

@@ -1,0 +1,28 @@
+{
+ "schema": "evalsig.gate/1",
+ "ok": true,
+ "verdict": {
+  "code": "budget_exhausted",
+  "text": "the holdout's budget of 5 submissions is spent"
+ },
+ "results": {
+  "approved": "blake3:1111111111111111111111111111111111111111111111111111111111111111",
+  "candidate": "triage-v7",
+  "preregistered": true,
+  "conditions": [],
+  "budget": {
+   "total": 5,
+   "used": 5,
+   "remaining": 0
+  }
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}

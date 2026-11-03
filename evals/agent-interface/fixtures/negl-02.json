@@ -1,0 +1,38 @@
+{
+ "schema": "evalsig.compare/1",
+ "ok": true,
+ "verdict": {
+  "code": "negligible",
+  "text": "The difference is real but smaller than the minimum effect of 0.05."
+ },
+ "results": {
+  "baseline": "g1",
+  "comparisons": [
+   {
+    "candidate": "g2",
+    "n_paired": 5000,
+    "n_missing": 0,
+    "metrics": [
+     {
+      "metric": "accuracy",
+      "delta": 0.012,
+      "ci": [
+       0.003,
+       0.021
+      ],
+      "level": 0.95
+     }
+    ]
+   }
+  ]
+ },
+ "warnings": [],
+ "next": [],
+ "provenance": {
+  "snapshots": [
+   "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "tool": "evalsig 0.1.0"
+ },
+ "truncated": null
+}
