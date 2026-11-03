@@ -52,6 +52,9 @@ enum Command {
     Import(commands::import::Args),
     /// List the imported items.
     Items,
+    /// Read, verify or anchor a ledger.
+    #[command(subcommand)]
+    Ledger(commands::ledger::LedgerCommand),
     /// The default-tier metrics of one run.
     Report(commands::report::Args),
     /// List the imported runs.
@@ -93,6 +96,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Compare(ref args) => commands::compare::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
+        Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
