@@ -634,3 +634,33 @@ after the entry is `Accepted`.
   cover with their own guards).
 - Consequences: moving a check to a gate means adding the gate-only sections
   and preregistering, not rewriting the conditions.
+
+## D-025 Export formats and the Parquet dependency
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: `evalsig export` hands the data to tools built for large analysis,
+  such as DuckDB, as Parquet, CSV or canonical JSONL (SPEC §9 "Large
+  analysis", §10.1). The exports are derived: verification always runs on the
+  canonical snapshots. Writing Parquet by hand would mean re-implementing its
+  Thrift metadata and page encoding.
+- Decision:
+  - `export --to parquet|csv|jsonl --out <dir>` writes one table per record
+    type (`runs`, `items`, `judgments`, `labels`, `preferences`), skipping
+    empty ones. Columns are the record fields, nested values (strata, cost,
+    features, system, grader) as canonical JSON text, and every column is
+    nullable. `jsonl` writes the records in canonical form instead, one file
+    per type. `--items <run>` adds that run's per-item report rows as `items_<run>`.
+  - `parquet` 60 (Apache-2.0, the Apache Arrow Rust implementation) with
+    default features off is a dependency of `evalsig-cli` only. Files use its
+    low-level column writer, are uncompressed and carry no Arrow schema; this
+    adds `bytes`, `chrono`, `half`, `num-bigint`, `seq-macro` and `zerocopy`
+    (MIT or Apache-2.0) and no C code. CSV is written by hand (RFC 4180
+    quoting).
+- Alternatives: the `arrow` feature and compression codecs (not taken: they
+  pull in a large tree and C code for zstd and lz4, for files that are derived
+  and short-lived); the `duckdb` crate (not taken: a bundled C++ engine for a
+  writer); Parquet by hand (not taken: error-prone for a format other tools
+  must read).
+- Consequences: Parquet files are larger than compressed ones. Readers that
+  want an Arrow schema infer it from the Parquet types.
