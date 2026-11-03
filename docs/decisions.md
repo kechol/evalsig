@@ -685,3 +685,43 @@ after the entry is `Accepted`.
   wasm-only crates without saying so); dropping Parquet (not taken: the spec
   names it for large analysis).
 - Consequences: a new CC0 crate fails the check again and needs its own entry.
+
+## D-014 The referee's home, authority and `gate serve` transport
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Splitting off the holdout, sealing, approving conditions, excluding
+  holdout items and gating need the referee's authority, which the agent must
+  not have (SPEC §8.0, §8.5). The spec places the referee under another OS user,
+  in CI or on another machine, reached by a Unix socket or token HTTP on
+  127.0.0.1, and asks for a warning when it runs with the agent's privileges.
+  It leaves open where the referee keeps its state and how a command knows it
+  has that authority.
+- Decision:
+  - The referee works from a home directory named by `--referee <dir>` or
+    `EVALSIG_REFEREE`. `evalsig referee init <dir>` creates it with an age
+    X25519 identity (`identity.txt`, mode 0600) and its recipient
+    (`recipient.txt`), the referee ledger (`ledger.jsonl`, D-007 side
+    `referee`), and `holdouts/`, `sealed/`, `approved/`, `results/` and
+    `state/`. The home is a plain directory, so CI can restore it from a
+    protected store.
+  - Authority is possession: a referee-only command needs a referee home whose
+    identity the process can read, and fails with exit 3 and code
+    `referee_only` otherwise. The agent's project never holds a referee home.
+  - The seal is void, and `gate` says so in its output and its ledger line,
+    when the referee home lies inside the project directory or its identity is
+    readable by group or others.
+  - `gate serve` listens on a Unix socket `gate.sock` in the referee home
+    (mode 0600; the referee grants access by group) and, when asked, on token
+    HTTP bound to 127.0.0.1. The token is 32 random bytes, hex, in `token`
+    (mode 0600), compared in constant time from an `Authorization: Bearer`
+    header. A submission carries the candidate's records and the approved
+    hash; the response carries only what SPEC §8.3 and §11.3 allow, and the
+    full result goes to `results/` and the referee ledger.
+- Alternatives: the OS keychain (not taken: unavailable in CI and on Linux
+  servers without a session); mutual TLS (not taken: certificate handling for a
+  local, single-host channel; HTTPS for a remote referee is left to a reverse
+  proxy); checking the OS user (not taken: CI runs everything as one user; the
+  key is what separates authority).
+- Consequences: anyone who can read the identity file is the referee; the
+  deployment guide (docs/referee.md) says how to keep it from the agent.
