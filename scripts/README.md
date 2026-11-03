@@ -13,6 +13,9 @@ uv run --project scripts scripts/<script>.py
 | `gen_canonicalization_vectors.py` | Writes `tests/fixtures/canonicalization-vectors.json` |
 | `reference_values.py` | Writes `tests/fixtures/reference-values.json` from scipy, closed forms and published values |
 | `check_fixtures.py` | Regenerates both fixtures in a temporary directory and compares them with the committed files |
+| `verify_store.py` | Checks a `.evalsig/` directory or ledger file without evalsig: ledger chains, object names and canonical form, saved report hashes |
+| `cross_verify.sh` | Builds stores with the Rust binary, checks them with `verify_store.py` and confirms it rejects tampered copies (CI job `cross-verify`) |
+| `smoke_test.sh` | End-to-end smoke test of the binary over the examples |
 
 ## Regenerating the fixtures
 
