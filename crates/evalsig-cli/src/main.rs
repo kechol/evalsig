@@ -63,6 +63,8 @@ enum Command {
     },
     /// Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere.
     Export(commands::export::Args),
+    /// As the referee: judge a candidate on the sealed holdout under approved conditions.
+    Gate(commands::gate::Args),
     /// Read records into a snapshot and record the import in the ledger.
     Import(commands::import::Args),
     /// List the imported items.
@@ -155,6 +157,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
             commands::list::capabilities(&cli.project, run.as_deref())
         }
         Command::Export(ref args) => commands::export::run(&cli.project, args),
+        Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
         Command::Items => commands::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),

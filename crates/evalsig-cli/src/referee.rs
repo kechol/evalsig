@@ -86,6 +86,11 @@ impl Referee {
         Ok(Referee { dir })
     }
 
+    pub fn identity(&self) -> Result<String, CliError> {
+        let p = self.dir.join(IDENTITY);
+        std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))
+    }
+
     pub fn recipient(&self) -> Result<String, CliError> {
         let p = self.dir.join(RECIPIENT);
         Ok(std::fs::read_to_string(&p)
@@ -155,4 +160,30 @@ impl Referee {
         )
         .map_err(CliError::store)
     }
+}
+
+impl Referee {
+    /// Whether the agent could read the key: the home lies inside the project, or the
+    /// identity is readable by group or others (D-014).
+    pub fn seal_void(&self, project: &crate::project::Project) -> bool {
+        let inside = match (
+            self.dir.canonicalize(),
+            project.dir.parent().map(Path::canonicalize),
+        ) {
+            (Ok(home), Some(Ok(root))) => home.starts_with(root),
+            _ => false,
+        };
+        inside || shared(&self.dir.join(IDENTITY))
+    }
+}
+
+#[cfg(unix)]
+fn shared(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0)
+}
+
+#[cfg(not(unix))]
+fn shared(_: &Path) -> bool {
+    false
 }

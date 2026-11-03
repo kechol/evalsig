@@ -51,7 +51,7 @@ fn hex(h: &str) -> &str {
     h.strip_prefix("blake3:").unwrap_or(h)
 }
 
-fn canonical_hash(v: &Value) -> Result<String, CliError> {
+pub fn canonical_hash(v: &Value) -> Result<String, CliError> {
     Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(CliError::store)?).to_string())
 }
 
@@ -270,7 +270,7 @@ fn resolve(
 }
 
 /// The baseline's records, canonical and sorted, by hash.
-fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
+pub fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
     let mut lines: Vec<Vec<u8>> = d
         .records
         .iter()
@@ -289,7 +289,7 @@ fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
 }
 
 /// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
-fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, CliError> {
+pub fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, CliError> {
     let items: Vec<Value> = d
         .items()
         .into_iter()
