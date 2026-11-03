@@ -6,6 +6,15 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(i128);
 
+/// A calendar period for trends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Period {
+    Day,
+    Week,
+    Month,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("not an RFC 3339 timestamp: {0:?}")]
 pub struct TimestampError(pub String);
@@ -23,6 +32,26 @@ impl Instant {
 
     pub fn from_unix_nanos(nanos: i128) -> Self {
         Instant(nanos)
+    }
+
+    /// The UTC calendar period holding this instant: `2026-11-03` (day), `2026-W45`
+    /// (ISO 8601 week, Monday first) or `2026-11` (month). Labels of one kind sort in
+    /// time order.
+    pub fn period(self, p: Period) -> String {
+        let days = self.0.div_euclid(86_400 * 1_000_000_000) as i64;
+        let (y, m, d) = civil_from_days(days);
+        match p {
+            Period::Day => format!("{y:04}-{m:02}-{d:02}"),
+            Period::Month => format!("{y:04}-{m:02}"),
+            Period::Week => {
+                // 1970-01-01 was a Thursday; the ISO year is that of the week's Thursday.
+                let weekday = (days + 3).rem_euclid(7);
+                let thursday = days - weekday + 3;
+                let (iso_year, _, _) = civil_from_days(thursday);
+                let week = (thursday - days_from_civil(iso_year, 1, 1)) / 7 + 1;
+                format!("{iso_year:04}-W{week:02}")
+            }
+        }
     }
 
     /// `YYYY-MM-DDTHH:MM:SSZ` in UTC, truncated to whole seconds.
@@ -217,5 +246,20 @@ mod tests {
         ] {
             assert!(Instant::parse(s).is_err(), "{s}");
         }
+    }
+
+    #[test]
+    fn periods_follow_iso_weeks_across_year_ends() {
+        let at = |s: &str| Instant::parse(s).unwrap();
+        assert_eq!(at("2026-11-03T12:00:00Z").period(Period::Day), "2026-11-03");
+        assert_eq!(at("2026-11-03T12:00:00Z").period(Period::Month), "2026-11");
+        assert_eq!(at("2026-11-03T12:00:00Z").period(Period::Week), "2026-W45");
+        // 2027-01-01 is a Friday: still week 53 of 2026. 2024-12-30 is in 2025-W01.
+        assert_eq!(at("2027-01-01T00:00:00Z").period(Period::Week), "2026-W53");
+        assert_eq!(at("2024-12-30T00:00:00Z").period(Period::Week), "2025-W01");
+        assert_eq!(
+            at("2026-11-03T00:30:00+09:00").period(Period::Day),
+            "2026-11-02"
+        );
     }
 }

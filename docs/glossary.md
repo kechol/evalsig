@@ -96,7 +96,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | estimand | `estimand` | Which performance is estimated. Default `single_shot` (one production run); also `majority@k`, `any@k`, `all@k` |
 | mean score / rate at least | `mean_score`, `rate_at_least` | Metrics usable without reference labels: the mean judgment value and the share at or above t |
 | unpaired comparison | — | Comparing two sets of items that do not overlap (Newcombe interval, Welch's t) |
-| trend | `trend` | Per-period metrics with intervals. Periods outside the baseline are `drifted` |
+| trend | `trend`, `baseline_period` | Per-period metrics with intervals, each period compared with the baseline period as independent samples: `drifted` when the interval of the difference excludes 0, else `stable` |
 | winner's curse | — | Picking the best of many candidates biases its estimate upwards |
 | minimum effect | `min_effect` | Differences smaller than this are not called improvements even if the interval excludes 0 |
 | missing bounds | `missing_bounds` | The metric range when system-side missing judgments are filled with the best and worst values (Manski bounds) |

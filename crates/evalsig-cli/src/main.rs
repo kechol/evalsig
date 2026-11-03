@@ -106,6 +106,8 @@ enum Command {
         #[command(flatten)]
         checks: checks::DatasetArgs,
     },
+    /// A run's metrics per period of occurred_at, compared with a baseline period.
+    Trend(commands::trend::Args),
     /// Recompute a saved result from its snapshots and configuration.
     Verify(commands::verify::Args),
     /// Show the tool, record-format and output-schema versions.
@@ -140,6 +142,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),
         Command::Split(ref args) => commands::split::run(&cli.project, args),
+        Command::Trend(ref args) => commands::trend::run(&cli.project, args),
         Command::Splits => commands::split::list(&cli.project),
         Command::Recipes(ref cmd) => commands::recipes::run(cmd),
         Command::Validate {

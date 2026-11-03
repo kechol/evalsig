@@ -12,5 +12,6 @@ pub mod recipes;
 pub mod report;
 pub mod schema;
 pub mod split;
+pub mod trend;
 pub mod validate;
 pub mod verify;
