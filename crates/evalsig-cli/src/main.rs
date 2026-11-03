@@ -1,5 +1,6 @@
 //! The `evalsig` command-line interface.
 
+mod checks;
 mod commands;
 mod data;
 mod error;
@@ -57,10 +58,16 @@ enum Command {
         raw: bool,
     },
     /// Check a `records/1` JSONL file line by line.
+    /// Run validity checks only: on a records file, or on the imported data.
     Validate {
-        /// The records file.
+        /// Check this `records/1` file instead of the project's data.
         #[arg(long, value_name = "FILE")]
-        records: PathBuf,
+        records: Option<PathBuf>,
+        /// List every check with its default action and override flag.
+        #[arg(long)]
+        list_checks: bool,
+        #[command(flatten)]
+        checks: checks::CheckArgs,
     },
     /// Show the tool, record-format and output-schema versions.
     Version,
@@ -77,7 +84,15 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Items => commands::list::items(&cli.project),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, raw: _ } => commands::schema::run(name),
-        Command::Validate { ref records } => commands::validate::run(records),
+        Command::Validate {
+            records: Some(ref records),
+            ..
+        } => commands::validate::run(records),
+        Command::Validate {
+            records: None,
+            list_checks,
+            checks,
+        } => commands::validate::project(&cli.project, checks, list_checks),
         Command::Version => Ok(Output::success(Envelope::new(
             "evalsig.version/1",
             json!({
