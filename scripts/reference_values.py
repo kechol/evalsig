@@ -287,6 +287,25 @@ def lr_bh_cases():
     }]
 
 
+def agreement_ordinal_cases():
+    """Quadratic weighted kappa 1 - sum(w*po)/sum(w*pe) with w = (a-b)^2/(Q-1)^2, and
+    Spearman's rho (scipy.stats.spearmanr, midranks for ties)."""
+    table = np.array([[10, 3, 1], [2, 12, 4], [0, 3, 15]], dtype=float)
+    q = table.shape[0]
+    po = table / table.sum()
+    pe = np.outer(po.sum(axis=1), po.sum(axis=0))
+    w = np.array([[(a - b) ** 2 / (q - 1) ** 2 for b in range(q)] for a in range(q)])
+    kw = 1 - (w * po).sum() / (w * pe).sum()
+    x = [1, 2, 2, 3, 4, 4, 5, 6, 7, 7]
+    y = [2, 1, 3, 3, 5, 4, 6, 6, 9, 8]
+    rho = stats.spearmanr(x, y).statistic
+    return [{
+        "input": {"table": table.astype(int).tolist(), "x": x, "y": y},
+        "source": f"closed (quadratic weights); scipy {scipy.__version__} spearmanr",
+        "expected": {"quadratic_weighted_kappa": r(kw), "spearman_rho": r(rho)},
+    }]
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -329,9 +348,10 @@ def cohen_kappa(table):
     return (po - pe) / (1 - pe)
 
 
-def krippendorff_alpha_nominal(units):
-    """units: values per unit (None for missing). Alpha from the coincidence matrix."""
-    vals = sorted({v for u in units for v in u if v is not None})
+def krippendorff_alpha(units, level="nominal"):
+    """units: values per unit (None for missing). Alpha = 1 - (n-1) sum(o*d) / sum(nc*nk*d)
+    from the coincidence matrix, with the nominal, ordinal or interval difference d."""
+    vals = sorted({v for u in units if sum(v is not None for v in u) >= 2 for v in u if v is not None})
     idx = {v: i for i, v in enumerate(vals)}
     o = np.zeros((len(vals), len(vals)))
     for u in units:
@@ -345,26 +365,38 @@ def krippendorff_alpha_nominal(units):
                     o[idx[x], idx[y]] += 1 / (m - 1)
     nc = o.sum(1)
     n = nc.sum()
-    do = o.sum() - np.trace(o)
-    de = (np.outer(nc, nc).sum() - (nc * nc).sum()) / (n - 1)
-    return 1 - do / de
-
+    q = len(vals)
+    d = np.zeros((q, q))
+    for c in range(q):
+        for k in range(q):
+            if level == "nominal":
+                d[c, k] = float(c != k)
+            elif level == "ordinal":
+                lo, hi = min(c, k), max(c, k)
+                d[c, k] = (nc[lo:hi + 1].sum() - (nc[c] + nc[k]) / 2) ** 2
+            else:
+                d[c, k] = (vals[c] - vals[k]) ** 2
+    return 1 - (n - 1) * (o * d).sum() / (np.outer(nc, nc) * d).sum()
 
 def agreement_cases():
     # Example from Krippendorff (2011) "Computing Krippendorff's Alpha-Reliability":
-    # 4 coders x 12 units with missing values; nominal alpha = 0.743.
+    # 4 coders x 12 units with missing values; alpha = 0.743 nominal, 0.815 ordinal,
+    # 0.849 interval.
     A = [1, 2, 3, 3, 2, 1, 4, 1, 2, None, None, None]
     B = [1, 2, 3, 3, 2, 2, 4, 1, 2, 5, None, 3]
     C = [None, 3, 3, 3, 2, 3, 4, 2, 2, 5, 1, None]
     D = [1, 2, 3, 3, 2, 4, 4, 1, 2, 5, 1, None]
     units = list(zip(A, B, C, D))
-    alpha = krippendorff_alpha_nominal(units)
-    assert round(alpha, 3) == 0.743, alpha
+    alpha = krippendorff_alpha(units)
+    ordinal = krippendorff_alpha(units, "ordinal")
+    interval = krippendorff_alpha(units, "interval")
+    assert (round(alpha, 3), round(ordinal, 3), round(interval, 3)) == (0.743, 0.815, 0.849)
     return [
         {"input": {"confusion": [[20, 5], [10, 15]]}, "source": "closed (po = 0.7, pe = 0.5, so kappa = 0.4 by hand)",
          "expected": {"cohen_kappa": r(cohen_kappa([[20, 5], [10, 15]]))}},
-        {"input": {"coders": {"A": A, "B": B, "C": C, "D": D}}, "source": "literature (Krippendorff 2011 example; nominal alpha = 0.743)",
-         "expected": {"krippendorff_alpha_nominal": r(alpha), "literature_value_3dp": 0.743}},
+        {"input": {"coders": {"A": A, "B": B, "C": C, "D": D}}, "source": "literature (Krippendorff 2011 example; alpha = 0.743 nominal, 0.815 ordinal, 0.849 interval)",
+         "expected": {"krippendorff_alpha_nominal": r(alpha), "literature_value_3dp": 0.743,
+                      "krippendorff_alpha_ordinal": r(ordinal), "krippendorff_alpha_interval": r(interval)}},
     ]
 
 
@@ -572,6 +604,7 @@ def main():
             "mcnemar": mcnemar_cases(),
             "agreement": agreement_cases(),
             "agreement_prevalence_robust": agreement_extra_cases(),
+            "agreement_ordinal": agreement_ordinal_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

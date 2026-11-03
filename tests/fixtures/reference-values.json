@@ -951,10 +951,12 @@
       ]
      }
     },
-    "source": "literature (Krippendorff 2011 example; nominal alpha = 0.743)",
+    "source": "literature (Krippendorff 2011 example; alpha = 0.743 nominal, 0.815 ordinal, 0.849 interval)",
     "expected": {
      "krippendorff_alpha_nominal": 0.743421052631579,
-     "literature_value_3dp": 0.743
+     "literature_value_3dp": 0.743,
+     "krippendorff_alpha_ordinal": 0.8153875037548813,
+     "krippendorff_alpha_interval": 0.8491071428571428
     }
    }
   ],
@@ -1020,6 +1022,58 @@
      "gwet_ac1": 0.923417756140255,
      "positive_agreement": 0.2222222222222222,
      "negative_agreement": 0.9633507853403142
+    }
+   }
+  ],
+  "agreement_ordinal": [
+   {
+    "input": {
+     "table": [
+      [
+       10,
+       3,
+       1
+      ],
+      [
+       2,
+       12,
+       4
+      ],
+      [
+       0,
+       3,
+       15
+      ]
+     ],
+     "x": [
+      1,
+      2,
+      2,
+      3,
+      4,
+      4,
+      5,
+      6,
+      7,
+      7
+     ],
+     "y": [
+      2,
+      1,
+      3,
+      3,
+      5,
+      4,
+      6,
+      6,
+      9,
+      8
+     ]
+    },
+    "source": "closed (quadratic weights); scipy 1.18.1 spearmanr",
+    "expected": {
+     "quadratic_weighted_kappa": 0.7448979591836735,
+     "spearman_rho": 0.9630814820533091
     }
    }
   ],
