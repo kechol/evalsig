@@ -18,6 +18,10 @@
           1.0
         ],
         "n": 2.0,
+        "rater_spread": [
+          0.75,
+          1.0
+        ],
         "value": 0.75
       },
       {
@@ -29,6 +33,10 @@
           1.0
         ],
         "n": 1.0,
+        "rater_spread": [
+          1.0,
+          1.0
+        ],
         "value": 1.0
       },
       {
@@ -40,6 +48,10 @@
           0.5
         ],
         "n": 1.0,
+        "rater_spread": [
+          0.5,
+          0.5
+        ],
         "value": 0.5
       },
       {
@@ -47,6 +59,10 @@
         "interval": "too_few_units",
         "metric": "precision",
         "n": 1.0,
+        "rater_spread": [
+          1.0,
+          1.0
+        ],
         "value": 1.0
       }
     ],
@@ -74,10 +90,36 @@
       "ordinal_at_least": 2
     },
     "reference": {
+      "by_rater": {
+        "user:alice": {
+          "accuracy": 0.75,
+          "false_alarm_rate": 0.5,
+          "hit_rate": 1.0,
+          "precision": 1.0
+        },
+        "user:bob": {
+          "accuracy": 1.0,
+          "hit_rate": 1.0,
+          "precision": 1.0
+        },
+        "user:carol": {
+          "accuracy": 1.0,
+          "hit_rate": 1.0,
+          "precision": 1.0
+        }
+      },
+      "detected": true,
+      "estimand": "performance against these raters",
       "items_with_reference": 2,
       "mode": "soft",
       "model_derived_items": 0,
-      "raters": 4
+      "rater_design": "crossed",
+      "raters": 4,
+      "raters_per_item": {
+        "1": 1,
+        "3": 1
+      },
+      "voters": 3
     },
     "reproducibility": {
       "generation": {
@@ -127,7 +169,7 @@
       },
       "command": "report"
     },
-    "output": "blake3:d446e8a6794bbc40dd4a9820e38334d4a4845d6e42ae15c5e57dee3e11fe5dcf"
+    "output": "blake3:124065087e9179acd4bf1e4535834519207d3ec0a6d5e6f6afb529ca3023a8a4"
   },
   "truncated": null
 }

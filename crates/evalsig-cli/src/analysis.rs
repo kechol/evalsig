@@ -55,6 +55,7 @@ pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
         estimand: a.estimand.unwrap_or(config.stats.estimand),
         missing: config.missing_policy(),
         reference: a.reference.map_or(config.reference.mode, Into::into),
+        rater_design: config.reference.rater_design,
         level: config.stats.level,
         bootstrap: config.stats.bootstrap,
         seed: config.stats.seed.unwrap_or(0),

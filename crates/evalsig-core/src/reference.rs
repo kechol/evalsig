@@ -4,10 +4,12 @@
 //! with positive share s_i counts s_i toward the positive side and 1 − s_i toward the
 //! negative side. `single` and `majority` give shares of 0, ½ (a tie) or 1.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::Serialize;
 
 use crate::agreement;
-use crate::config::ReferenceMode;
+use crate::config::{RaterDesign, ReferenceMode};
 use crate::records::{Label, LabelKind, Source};
 use crate::rules::Rule;
 
@@ -20,10 +22,9 @@ pub struct Reference {
     pub model_derived: bool,
 }
 
-/// The reference of one item from the latest revision of its labels. Human labels
-/// are used when there are any; adjudications decide under `single` and are left out
-/// of the votes otherwise, as are later label replicates of the same rater.
-pub fn of(labels: &[&Label], positive: &Rule, mode: ReferenceMode) -> Option<Reference> {
+/// The labels a reference is built from: the human ones when there are any. Also
+/// whether only model raters produced them.
+fn pool<'l>(labels: &[&'l Label]) -> (Vec<&'l Label>, bool) {
     let human: Vec<&Label> = labels
         .iter()
         .copied()
@@ -35,24 +36,45 @@ pub fn of(labels: &[&Label], positive: &Rule, mode: ReferenceMode) -> Option<Ref
         human
     };
     let model_derived = pool.iter().all(|l| l.source == Source::Model);
-    let value = |l: &Label| l.value.and_then(|v| positive.is_positive(v));
+    (pool, model_derived)
+}
+
+/// Each rater's vote on one item: their first label replicate, read as positive or
+/// not. Adjudications are not votes.
+pub fn votes<'l>(labels: &[&'l Label], positive: &Rule) -> Vec<(&'l str, bool)> {
+    pool(labels)
+        .0
+        .into_iter()
+        .filter(|l| l.kind() != LabelKind::Adjudication && l.label_replicate() == 0)
+        .filter_map(|l| {
+            l.value
+                .and_then(|v| positive.is_positive(v))
+                .map(|p| (l.rater_id.as_str(), p))
+        })
+        .collect()
+}
+
+/// The reference of one item from the latest revision of its labels. Human labels
+/// are used when there are any; adjudications decide under `single` and are left out
+/// of the votes otherwise, as are later label replicates of the same rater.
+pub fn of(labels: &[&Label], positive: &Rule, mode: ReferenceMode) -> Option<Reference> {
+    let (pool, model_derived) = pool(labels);
     if mode == ReferenceMode::Single
         && let Some(adj) = pool.iter().find(|l| l.kind() == LabelKind::Adjudication)
     {
-        return value(adj).map(|p| Reference {
-            share: f64::from(u8::from(p)),
-            model_derived,
-        });
+        return adj
+            .value
+            .and_then(|v| positive.is_positive(v))
+            .map(|p| Reference {
+                share: f64::from(u8::from(p)),
+                model_derived,
+            });
     }
-    let votes: Vec<bool> = pool
-        .iter()
-        .filter(|l| l.kind() != LabelKind::Adjudication && l.label_replicate() == 0)
-        .filter_map(|l| value(l))
-        .collect();
+    let votes = votes(labels, positive);
     if votes.is_empty() {
         return None;
     }
-    let share = votes.iter().filter(|v| **v).count() as f64 / votes.len() as f64;
+    let share = votes.iter().filter(|(_, v)| *v).count() as f64 / votes.len() as f64;
     let share = match mode {
         ReferenceMode::Soft => share,
         // Majority, and single without an adjudication: ties count one half.
@@ -65,6 +87,80 @@ pub fn of(labels: &[&Label], positive: &Rule, mode: ReferenceMode) -> Option<Ref
     Some(Reference {
         share,
         model_derived,
+    })
+}
+
+/// How raters were assigned to items (metrics spec §9.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Design {
+    /// Different raters on different items.
+    Nested,
+    /// The same few raters on most items.
+    Crossed,
+}
+
+impl Design {
+    /// What the intervals estimate under this design.
+    pub fn estimand(self) -> &'static str {
+        match self {
+            Design::Nested => "performance against one rater drawn at random",
+            Design::Crossed => "performance against these raters",
+        }
+    }
+}
+
+/// The rater design of a reference and what follows from it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DesignInfo {
+    pub rater_design: Design,
+    /// Whether the design was detected from the overlap rather than set.
+    pub detected: bool,
+    pub estimand: &'static str,
+    /// The raters whose votes form the reference.
+    pub voters: usize,
+    /// How many items have each number of raters.
+    pub raters_per_item: BTreeMap<usize, usize>,
+}
+
+/// Below this share of the items per rater (the median rater), the design is nested.
+const NESTED_SHARE: f64 = 0.2;
+
+/// The design from the raters who voted on each item, unless `setting` fixes it.
+/// `None` when no item has a vote.
+pub fn design<'r>(
+    voters: impl IntoIterator<Item = BTreeSet<&'r str>>,
+    setting: RaterDesign,
+) -> Option<DesignInfo> {
+    let mut per_rater: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut raters_per_item = BTreeMap::new();
+    let mut items = 0;
+    for v in voters.into_iter().filter(|v| !v.is_empty()) {
+        items += 1;
+        *raters_per_item.entry(v.len()).or_insert(0) += 1;
+        for r in v {
+            *per_rater.entry(r).or_insert(0) += 1;
+        }
+    }
+    if items == 0 {
+        return None;
+    }
+    let mut counts: Vec<usize> = per_rater.values().copied().collect();
+    counts.sort_unstable();
+    let m = counts.len();
+    let median = (counts[(m - 1) / 2] + counts[m / 2]) as f64 / 2.0;
+    let (rater_design, detected) = match setting {
+        RaterDesign::Auto if median < NESTED_SHARE * items as f64 => (Design::Nested, true),
+        RaterDesign::Auto => (Design::Crossed, true),
+        RaterDesign::Nested => (Design::Nested, false),
+        RaterDesign::Crossed => (Design::Crossed, false),
+    };
+    Some(DesignInfo {
+        rater_design,
+        detected,
+        estimand: rater_design.estimand(),
+        voters: m,
+        raters_per_item,
     })
 }
 
@@ -102,4 +198,42 @@ pub fn kappa_vs_raters<'a>(
         .collect();
     let mean = crate::numeric::mean(each.values().copied())?;
     Some((mean, each))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn voters(sets: &[&[&'static str]]) -> Vec<BTreeSet<&'static str>> {
+        sets.iter().map(|s| s.iter().copied().collect()).collect()
+    }
+
+    #[test]
+    fn overlap_decides_nested_or_crossed() {
+        // Twenty items, each by its own pair of raters: every rater has 2 items, under
+        // 20% of 20.
+        let names: Vec<String> = (0..40).map(|i| format!("r{i}")).collect();
+        let nested: Vec<BTreeSet<&str>> = (0..20)
+            .map(|i| BTreeSet::from([names[2 * i].as_str(), names[2 * i + 1].as_str()]))
+            .collect();
+        let d = design(nested.clone(), RaterDesign::Auto).unwrap();
+        assert_eq!(
+            (d.rater_design, d.detected, d.voters),
+            (Design::Nested, true, 40)
+        );
+        assert_eq!(d.raters_per_item, BTreeMap::from([(2, 20)]));
+        assert_eq!(d.estimand, "performance against one rater drawn at random");
+
+        // Three raters on every item, one item with only two of them.
+        let mut crossed = voters(&[&["ana", "ben", "cy"] as &[&str]; 19]);
+        crossed.push(BTreeSet::from(["ana", "ben"]));
+        let d = design(crossed, RaterDesign::Auto).unwrap();
+        assert_eq!((d.rater_design, d.voters), (Design::Crossed, 3));
+        assert_eq!(d.raters_per_item, BTreeMap::from([(2, 1), (3, 19)]));
+
+        // A setting overrides the overlap; no votes, no design.
+        let d = design(nested, RaterDesign::Crossed).unwrap();
+        assert_eq!((d.rater_design, d.detected), (Design::Crossed, false));
+        assert_eq!(design(voters(&[&[]]), RaterDesign::Auto), None);
+    }
 }

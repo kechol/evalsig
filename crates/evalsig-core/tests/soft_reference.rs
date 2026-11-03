@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use evalsig_core::config::{Estimand, ReferenceMode};
+use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
 use evalsig_core::cost;
 use evalsig_core::features::{self, Counts};
 use evalsig_core::missing::MissingPolicy;
@@ -66,6 +66,7 @@ fn settings(mode: ReferenceMode) -> Settings {
         estimand: Estimand::SingleShot,
         missing: MissingPolicy::default(),
         reference: mode,
+        rater_design: RaterDesign::Auto,
         level: 0.95,
         bootstrap: 200,
         seed: 1,

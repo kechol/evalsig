@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
-use crate::config::{Estimand, ReferenceMode};
+use crate::config::{Estimand, RaterDesign, ReferenceMode};
 use crate::interval::wilson_two_sided;
 use crate::missing::{MissingPolicy, Policy, Side};
 use crate::numeric::{Rng, mean, sum};
@@ -31,6 +31,7 @@ pub struct Settings {
     pub estimand: Estimand,
     pub missing: MissingPolicy,
     pub reference: ReferenceMode,
+    pub rater_design: RaterDesign,
     pub level: f64,
     pub bootstrap: u32,
     pub seed: u64,
@@ -68,6 +69,10 @@ pub struct Metric {
     /// System-side missing values filled with the worst and the best judgment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_bounds: Option<(f64, f64)>,
+    /// In a crossed design: the lowest and highest value with each rater alone as the
+    /// reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rater_spread: Option<(f64, f64)>,
     pub n: f64,
 }
 
@@ -85,6 +90,11 @@ pub struct ReferenceInfo {
     pub raters: usize,
     pub items_with_reference: usize,
     pub model_derived_items: usize,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub design: Option<reference::DesignInfo>,
+    /// In a crossed design: each metric with each rater alone as the reference.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub by_rater: BTreeMap<String, BTreeMap<&'static str, f64>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -146,6 +156,8 @@ struct Unit {
     /// Share of raters calling the item positive.
     reference: Option<f64>,
     model_reference: bool,
+    /// Each rater's vote (1 positive, 0 negative).
+    votes: BTreeMap<String, f64>,
 }
 
 fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) -> Option<f64> {
@@ -315,6 +327,12 @@ pub fn prepare<'a>(
         let reference = positive
             .as_ref()
             .and_then(|p| reference::of(&item_labels, p, s.reference));
+        let votes = positive.as_ref().map_or_else(BTreeMap::new, |p| {
+            reference::votes(&item_labels, p)
+                .into_iter()
+                .map(|(r, v)| (r.to_owned(), f64::from(u8::from(v))))
+                .collect()
+        });
         units.push(Unit {
             item_id: (*item_id).to_owned(),
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
@@ -329,6 +347,7 @@ pub fn prepare<'a>(
             at_least: at_least_reps,
             reference: reference.map(|r| r.share),
             model_reference: reference.is_some_and(|r| r.model_derived),
+            votes,
         });
     }
 
@@ -381,7 +400,26 @@ pub fn build(
     let units = &p.units;
     let semantics = p.semantics;
     let all: Vec<&Unit> = units.iter().collect();
-    let metrics = calc.metrics(&all, semantics);
+    let mut metrics = calc.metrics(&all, semantics);
+    let design = p.positive.and(reference::design(
+        units
+            .iter()
+            .map(|u| u.votes.keys().map(String::as_str).collect()),
+        s.rater_design,
+    ));
+    let by_rater = match &design {
+        Some(d) if d.rater_design == reference::Design::Crossed && d.voters > 1 => {
+            calc.by_rater(units, semantics)
+        }
+        _ => BTreeMap::new(),
+    };
+    for m in &mut metrics {
+        let values = by_rater.values().filter_map(|v| v.get(m.metric).copied());
+        m.rater_spread = values.fold(None, |acc, v| match acc {
+            None => Some((v, v)),
+            Some((lo, hi)) => Some((f64::min(lo, v), f64::max(hi, v))),
+        });
+    }
     let mut by = BTreeMap::new();
     if s.by.is_some() {
         let strata: BTreeSet<&str> = units.iter().filter_map(|u| u.stratum.as_deref()).collect();
@@ -434,6 +472,8 @@ pub fn build(
         raters: p.raters,
         items_with_reference: units.iter().filter(|u| u.reference.is_some()).count(),
         model_derived_items: units.iter().filter(|u| u.model_reference).count(),
+        design,
+        by_rater,
     });
     let item_rows = if s.items {
         units
@@ -735,6 +775,7 @@ impl Calc<'_> {
                 interval: "none",
                 resamples: None,
                 missing_bounds: None,
+                rater_spread: None,
                 n,
             });
         }
@@ -750,6 +791,44 @@ impl Calc<'_> {
             .map(|u| {
                 self.item_value_bound(u, &*d.worst, bound, d.values)
                     .map(|(v, _)| (d.part)(u, v))
+            })
+            .collect()
+    }
+
+    /// The point value of each reference metric with each rater's votes alone as the
+    /// reference, for the raters who voted on at least one item.
+    fn by_rater(
+        &self,
+        units: &[Unit],
+        semantics: ValueSemantics,
+    ) -> BTreeMap<String, BTreeMap<&'static str, f64>> {
+        let raters: BTreeSet<&str> = units
+            .iter()
+            .flat_map(|u| u.votes.keys().map(String::as_str))
+            .collect();
+        raters
+            .into_iter()
+            .map(|rater| {
+                let alone: Vec<Unit> = units
+                    .iter()
+                    .map(|u| Unit {
+                        reference: u.votes.get(rater).copied(),
+                        ..u.clone()
+                    })
+                    .collect();
+                let refs: Vec<&Unit> = alone.iter().collect();
+                let values = self
+                    .ids(semantics)
+                    .into_iter()
+                    .filter(|id| id.needs_reference())
+                    .filter_map(|id| {
+                        let parts = self.parts(id, &self.eligible(id, &refs), Fill::Policy);
+                        let num = sum(parts.iter().flatten().map(|x| x.0));
+                        let den = sum(parts.iter().flatten().map(|x| x.1));
+                        (den > 0.0).then(|| (id.name(), num / den))
+                    })
+                    .collect();
+                (rater.to_owned(), values)
             })
             .collect()
     }
@@ -827,6 +906,7 @@ impl Calc<'_> {
                     interval: "too_few_units",
                     resamples: None,
                     missing_bounds,
+                    rater_spread: None,
                     n,
                 };
             }
@@ -862,6 +942,7 @@ impl Calc<'_> {
             interval,
             resamples,
             missing_bounds,
+            rater_spread: None,
             n,
         }
     }

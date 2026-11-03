@@ -140,8 +140,38 @@ fn report(e: &Envelope) -> String {
             reference["items_with_reference"],
             reference["model_derived_items"],
         );
+        if let Some(design) = reference["rater_design"].as_str() {
+            let _ = writeln!(
+                s,
+                "Rater design: {} ({}); the intervals estimate {}\n",
+                inline(design),
+                if reference["detected"] == true {
+                    "detected"
+                } else {
+                    "set"
+                },
+                inline(reference["estimand"].as_str().unwrap_or("?")),
+            );
+        }
     }
     metric_table(&mut s, &r["metrics"], level);
+    let spread: Vec<&Value> = r["metrics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| !m["rater_spread"].is_null())
+        .collect();
+    if !spread.is_empty() {
+        s.push_str("\n| Metric | Lowest–highest with one rater as the reference |\n|---|---|\n");
+        for m in spread {
+            let _ = writeln!(
+                s,
+                "| {} | {} |",
+                inline(m["metric"].as_str().unwrap_or("?")),
+                pair(&m["rater_spread"], num),
+            );
+        }
+    }
     if let Some(by) = r["by"].as_object() {
         for (stratum, metrics) in by {
             let _ = writeln!(s, "\n**{}**\n", inline(stratum));

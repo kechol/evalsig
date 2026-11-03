@@ -4,12 +4,21 @@
 
 Reference: `soft` from 2 raters; 300 items with a reference (0 model-derived)
 
+Rater design: crossed (detected); the intervals estimate performance against these raters
+
 | Metric | Value | 95% interval | If missing were worst / best | n |
 |---|---:|---|---|---:|
 | accuracy | 0.7583 | 0.7133 to 0.8050 | 0.7583 to 0.7783 | 300 |
 | hit_rate | 0.7268 | 0.6442 to 0.8118 | 0.7268 to 0.7705 | 91.50 |
 | false_alarm_rate | 0.2278 | 0.1687 to 0.2867 | 0.2182 to 0.2278 | 208.50 |
 | precision | 0.5938 | 0.5000 to 0.6847 | — | 112 |
+
+| Metric | Lowest–highest with one rater as the reference |
+|---|---|
+| accuracy | 0.7333 to 0.7700 |
+| hit_rate | 0.6296 to 0.7528 |
+| false_alarm_rate | 0.2083 to 0.2227 |
+| precision | 0.5982 to 0.6296 |
 
 
 <sub>evalsig <VERSION> · 1 snapshot(s) · config blake3:35df6c9b1761 · seed 20261103</sub>
