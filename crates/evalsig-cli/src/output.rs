@@ -343,12 +343,17 @@ fn junit_conditions(e: &Envelope, conditions: &[Json], exit: Exit) -> String {
             "<testcase classname=\"evalsig\" name=\"{}\">",
             xml_escape(&name)
         );
-        let detail = format!(
-            "estimate {}, bound {} ({}-sided)",
-            c["estimate"],
-            c["bound"],
-            c["sided"].as_str().unwrap_or("?")
-        );
+        // The referee returns verdicts only, so a gate case names no number.
+        let detail = if e.schema == "evalsig.gate/1" {
+            "the referee returns the verdict only".to_owned()
+        } else {
+            format!(
+                "estimate {}, bound {} ({}-sided)",
+                c["estimate"],
+                c["bound"],
+                c["sided"].as_str().unwrap_or("?")
+            )
+        };
         if c["passed"] == false {
             let _ = write!(s, "<failure message=\"{}\"/>", xml_escape(&detail));
         } else if c["passed"].is_null() {

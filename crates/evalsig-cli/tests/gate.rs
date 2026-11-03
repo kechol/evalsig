@@ -477,3 +477,89 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
         }
     }
 }
+
+#[test]
+fn another_output_type_is_refused_after_spending_budget() {
+    let w = world(&gate_toml(10, 3), None);
+    let records = candidate(w.referee.path(), "score.jsonl", |rows| {
+        rows[0]["output_type"] = "score".into();
+        for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+            r["output_type"] = "score".into();
+            if let Some(b) = r["value"].as_bool() {
+                r["value"] = if b { 1.0 } else { 0.0 }.into();
+            }
+        }
+    });
+    let out = submit(&w, &records);
+    assert_eq!(
+        code(&out),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let e = &json(&out)["error"];
+    assert_eq!(e["code"], "does_not_match_approval");
+    assert!(e["message"].as_str().unwrap().contains("output type"));
+    assert_eq!(accesses(&w), 1);
+}
+
+#[test]
+fn the_gate_answer_renders_as_junit_without_values() {
+    let w = world(&gate_toml(10, 3), None);
+    let wrong = candidate(w.referee.path(), "wrong.jsonl", |rows| {
+        for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+            if let Some(b) = r["value"].as_bool() {
+                r["value"] = (!b).into();
+            }
+        }
+    });
+    let out = evalsig(w.referee.path())
+        .args([
+            "--format",
+            "junit",
+            "gate",
+            "--approved",
+            &w.approved,
+            "--candidate",
+            "triage-v2",
+            "--records",
+        ])
+        .arg(&wrong)
+        .arg("--referee")
+        .arg(w.home.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        code(&out),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let xml = String::from_utf8(out.stdout).unwrap();
+    assert!(xml.contains("tests=\"2\""), "{xml}");
+    assert!(
+        xml.contains("name=\"accuracy not_worse_than -0.3\""),
+        "{xml}"
+    );
+    assert!(xml.contains("<failure message=\"the referee returns the verdict only\"/>"));
+    assert!(
+        !xml.contains("estimate") && !xml.contains("bound "),
+        "{xml}"
+    );
+}
+
+#[test]
+fn the_gate_takes_no_override_flags() {
+    let w = world(&gate_toml(10, 3), None);
+    let records = variant(w.referee.path(), 1);
+    for flag in [
+        "--allow-identical-replicates",
+        "--allow-input-change",
+        "--allow-mixed-grader",
+        "--allow-unexplained-missing",
+    ] {
+        let out = submit_to(&w, &w.approved, &records, &[flag]);
+        assert_eq!(code(&out), Some(64), "{flag}");
+    }
+    assert_eq!(accesses(&w), 0);
+}
