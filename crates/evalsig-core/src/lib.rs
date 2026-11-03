@@ -8,6 +8,7 @@ pub mod labels;
 pub mod missing;
 pub mod numeric;
 pub mod records;
+pub mod replicates;
 pub mod rules;
 pub mod score;
 pub mod sdt;

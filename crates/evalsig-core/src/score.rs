@@ -2,6 +2,7 @@
 //! the judgment grades an output, and no reference label is needed.
 
 use crate::numeric::sum;
+use crate::replicates::{Rule, at_k};
 
 /// One item's score and weight. With replicates, the score is the item's mean over
 /// replicates, so the item stays the counting unit.
@@ -27,21 +28,9 @@ pub fn rate_at_least(items: &[Scored], t: f64) -> Option<f64> {
 }
 
 /// Unbiased pass@k for one item with `passing` of `replicates` passing:
-/// 1 − C(n − c, k) / C(n, k). Needs k ≤ n.
+/// 1 − C(n − c, k) / C(n, k), the `any@k` estimand.
 pub fn pass_at_k(passing: u64, replicates: u64, k: u64) -> Option<f64> {
-    if k == 0 || k > replicates || passing > replicates {
-        return None;
-    }
-    if replicates - passing < k {
-        return Some(1.0);
-    }
-    // C(n − c, k) / C(n, k) as a product, which stays exact in floating point longer
-    // than the binomial coefficients themselves.
-    let (n, c) = (replicates as f64, passing as f64);
-    let fail_all = (0..k)
-        .map(|i| (n - c - i as f64) / (n - i as f64))
-        .product::<f64>();
-    Some(1.0 - fail_all)
+    at_k(passing, replicates, k, Rule::Any)
 }
 
 /// The mean of per-item pass@k values.
