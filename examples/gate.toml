@@ -1,0 +1,57 @@
+# Example gate conditions. An agent or a person drafts them with
+# `evalsig preregister --draft gate.toml`; only conditions a person approves with
+# `evalsig preregister approve <hash>`, with the referee's authority, take effect.
+# Approval resolves every setting not given here (positive definition, missing
+# handling, level, interval method, seed, ...), pins the baseline run, the split,
+# the seal and the holdout items' attributes by hash, and writes
+# approved/<hash>.toml, the only file gate reads. At approval `power --gate` shows
+# the probability of passing if the hypothesis holds.
+name = "prompt-v4 cuts false alarms without losing hits"
+hypothesis = "Clearer instructions for judging missing evidence lower the false-alarm rate by 5 points without lowering the hit rate"
+split = "holdout"
+estimand = "single_shot"              # "majority@3" if production generates three times and takes the majority
+min_items = 600                       # paired items (not positives or negatives)
+replicates = 3
+positive = { ordinal_at_least = 2 }   # on the reference label side; approval resolves and pins it
+
+[compare]
+baseline = "r-base"                   # pinned to its snapshot hash at approval
+candidate = "*"                       # the agent passes the candidate run when gating
+
+[grader]                              # stops when the candidate's run.grader differs (a mix-up check; it cannot stop an altered grader)
+id = "rubric-judge"
+version = "j-1.2"
+
+[reference]                           # items with several human raters use the share who said positive
+mode = "soft"
+rater_design = "auto"                 # detected from the overlap and reported; raters are not resampled
+
+# Pass when all hold. The first is the Ladder's primary condition.
+# The false-alarm rate's denominator is the negatives, so with about 500 of them a
+# non-inferiority margin of -0.05 can pass even one-sided at 99%.
+[[conditions]]
+metric = "false_alarm_rate"
+rule = "delta_upper_bound_at_most"    # the upper end of the (candidate - baseline) interval is at most value
+value = 0.0
+min_effect = 0.02                     # no pass unless the point difference falls by 2 points or more
+sided = "one"
+interval = "auto"                     # replicates mean a bootstrap; the referee requires at least 50/(alpha/B) resamples
+
+[[conditions]]
+metric = "hit_rate"
+rule = "not_worse_than"               # the lower end of the difference's interval is at least -0.05 (non-inferiority)
+value = -0.05                         # a narrow margin such as -0.01 does not pass on a few hundred items even when true
+sided = "one"
+interval = "auto"
+
+[[conditions]]
+metric = "missing_rate"
+rule = "upper_bound_at_most"          # the upper bound of the missing rate; on the holdout every missing value counts
+value = 0.02
+sided = "one"
+interval = "auto"                     # a rate, so the exact interval (it does not degenerate at zero events like a bootstrap)
+
+[holdout]
+budget = 5                            # each submission at (1 - 0.95)/5 = 0.01; the budget accumulates per sealed holdout
+reuse_guard = "ladder"
+ladder_k = 2                          # the referee fixes the step at approval (about 0.04 for 500 in the primary denominator and 10% validation error)

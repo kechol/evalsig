@@ -77,6 +77,8 @@ enum Command {
     Migrate(commands::migrate::Args),
     /// Sample sizes, the minimum detectable difference and a gate's pass probability.
     Power(commands::power::PowerArgs),
+    /// Draft gate conditions: check them, name them by hash and record the draft.
+    Preregister(commands::preregister::Args),
     /// Remove a content body and the free-text fields of the items that name it.
     Purge(commands::purge::Args),
     /// Create a referee home with a new age identity (D-014).
@@ -94,7 +96,7 @@ enum Command {
     Split(commands::split::Args),
     /// List the recorded dev / validation splits.
     Splits,
-    /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`).
+    /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`).
     Schema {
         name: String,
         /// Print only the schema document, without the envelope.
@@ -159,6 +161,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Map(ref cmd) => commands::map::run(&cli.project, cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
         Command::Power(ref args) => commands::power::power(args),
+        Command::Preregister(ref args) => commands::preregister::run(&cli.project, args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Rebuild => commands::rebuild::run(&cli.project),
         Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),

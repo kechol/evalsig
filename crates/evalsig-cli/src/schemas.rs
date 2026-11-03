@@ -3,12 +3,14 @@
 pub const RECORDS: &str = include_str!("../schema/records.schema.json");
 pub const LEDGER_ENTRY: &str = include_str!("../schema/ledger-entry.schema.json");
 pub const MAPPING: &str = include_str!("../schema/mapping.schema.json");
+pub const GATE: &str = include_str!("../schema/gate.schema.json");
 
 /// Every published schema by name.
-pub const ALL: [(&str, &str); 3] = [
+pub const ALL: [(&str, &str); 4] = [
     ("records", RECORDS),
     ("ledger-entry", LEDGER_ENTRY),
     ("mapping", MAPPING),
+    ("gate", GATE),
 ];
 
 pub fn by_name(name: &str) -> Option<&'static str> {

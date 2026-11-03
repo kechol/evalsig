@@ -18,6 +18,8 @@ pub enum Rule {
     /// Scores at or above this threshold are positive.
     ScoreAtLeast(f64),
     /// Exactly this value is positive (binary `true`, or one class of several).
+    /// `boolean = true` is the same rule, as gate.toml writes it.
+    #[serde(alias = "boolean")]
     Equals(Value),
 }
 
