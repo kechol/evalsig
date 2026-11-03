@@ -553,3 +553,50 @@ after the entry is `Accepted`.
   agreement with a random rater have no built-in method; the report's
   estimand line says what `soft` measures. Per-rater sensitivity and
   specificity, which `latent` would also have given, are not reported.
+
+## D-022 Two-level split
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Fixing a system needs items to look at (dev), items to decide
+  adoption on (validation) and items the agent never sees labelled
+  (holdout). The holdout must be cut and sealed with the judge's authority,
+  while dev and validation splits are the agent's own business: their labels
+  are already in its environment (SPEC §8.0, §8.1). The agent must still
+  avoid splitting into items the judge has sealed, without learning their
+  labels.
+- Decision:
+  - Splitting has two levels. `split --holdout` and `seal` belong to the
+    judge (M5). `split` (dev / validation) runs with the agent's authority and
+    records a `split` line in the agent-side ledger.
+  - The unit of every split is the cluster (`item.cluster`, else the item).
+    Methods: `time` (cut at an `occurred_at` boundary, by each cluster's
+    earliest item), `random` (stratified by a named item stratum when given,
+    seeded), and `assign` (a user file of `item_id` → `dev`/`validation`).
+    The default is `time` when every item has `occurred_at`, else `random`.
+    A user assignment that splits one cluster is refused
+    (`split_crosses_cluster`).
+  - The judge hands the agent the items left after the holdout as a file,
+    `remaining.json`: `{"schema": "evalsig.remaining/1", "holdout": <set
+    hash>, "items": [<item IDs>]}`. It names IDs only, never labels.
+    `split --within remaining.json` splits only those items, records the
+    holdout hash in the `split` line, and refuses an `assign` file or an
+    explicit item that is not in the list. Without the file, `split` uses all
+    items and states that no holdout is excluded.
+  - A split is identified by the BLAKE3 reference of the canonical JSON
+    array of its sorted item IDs, the same hash `compare` uses for
+    `validation_uses`. The ledger line records each part's hash and size, the
+    method, the seed and the holdout hash. `split` writes the assignment to
+    `splits/<hash>.json` in the project; `splits` lists the recorded splits.
+  - `compare --split validation` restricts a comparison to the latest
+    split's validation items.
+- Alternatives: fetching the remaining set from `gate serve` (not taken:
+  the CI deployment has no running server, and a file works for both and is
+  auditable); giving the agent the holdout IDs (not taken: the agent only
+  needs what it may use, and a list of what is withheld invites fitting to
+  it); splitting by item (not taken: items of one document in two parts leak
+  across the split).
+- Consequences: the agent must keep `remaining.json` current after the
+  judge re-cuts the holdout; a stale file is detected only by the judge when
+  a gate submission covers sealed items. Splits are per project, not per
+  task.
