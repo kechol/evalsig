@@ -13,6 +13,8 @@ uv run --project scripts scripts/<script>.py
 | `gen_canonicalization_vectors.py` | Writes `tests/fixtures/canonicalization-vectors.json` |
 | `reference_values.py` | Writes `tests/fixtures/reference-values.json` from scipy, closed forms and published values |
 | `check_fixtures.py` | Regenerates both fixtures in a temporary directory and compares them with the committed files, and checks `examples/custom-harness/records.out.jsonl` against `convert_runlog.py` |
+| `gen_harness_fixtures.sh` | Runs Inspect and promptfoo with models that call no AI and writes `tests/fixtures/harness/` (see its README) |
+| `json_shape.py` | Prints the key paths, types and example values of a JSON or JSONL file as a Markdown table |
 | `verify_store.py` | Checks a `.evalsig/` directory or ledger file without evalsig: ledger chains, object names and canonical form, saved report hashes |
 | `cross_verify.sh` | Builds stores with the Rust binary, checks them with `verify_store.py` and confirms it rejects tampered copies (CI job `cross-verify`) |
 | `smoke_test.sh` | End-to-end smoke test of the binary over the examples |

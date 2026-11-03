@@ -1,0 +1,15 @@
+prompts:
+  - "Answer: {{q}}"
+providers:
+  - echo
+tests:
+  - vars: {q: "yes"}
+    metadata: {stratum: a}
+    assert:
+      - type: contains
+        value: "yes"
+  - vars: {q: "no"}
+    metadata: {stratum: b}
+    assert:
+      - type: contains
+        value: "maybe"
