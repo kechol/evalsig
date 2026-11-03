@@ -123,12 +123,23 @@ fn long_cells_and_large_envelopes_are_cut() {
     evalsig(p.path()).arg("init").assert().success();
     let f = p.path().join("long.jsonl");
     std::fs::write(&f, rows).unwrap();
+    // The messages quote the values, so they are content: withheld by default.
     let out = as_agent(p.path()).arg("import").arg(&f).output().unwrap();
+    assert_eq!(out.status.code(), Some(5));
+    let withheld = stdout_json(&out);
+    assert!(withheld["results"]["issues"][0].get("message").is_none());
+    let out = as_agent(p.path())
+        .args(["--include-content", "import"])
+        .arg(&f)
+        .output()
+        .unwrap();
     assert_eq!(out.status.code(), Some(5));
     let v = stdout_json(&out);
     let t = &v["truncated"];
     assert!(t["cells_cut"].as_u64().unwrap() > 0, "{t}");
-    let message = v["results"]["issues"][0]["message"].as_str().unwrap();
+    let message = v["untrusted_content"]["/issues/0/message"]
+        .as_str()
+        .unwrap();
     assert_eq!(message.chars().count(), 501);
     assert!(message.ends_with('…'));
     // Fifty rows of 500-character cells exceed 20 KB, so fewer rows are shown.

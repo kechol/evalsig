@@ -891,9 +891,12 @@ after the entry is `Accepted`.
     it fits. `truncated` then gives `rows_omitted`, `cells_cut`,
     `next_cursor` when rows remain, and `hash`, the BLAKE3 reference of the
     canonical JSON of the full `results`. `--format json` is never cut.
-  - Text that comes from evaluated data (item strata, and the values that
-    `map probe`, `map draft` and `map test` quote) is left out in agent
-    mode, with the warning `content_withheld`. With `--include-content` it is returned in
+  - Text that comes from evaluated data (item strata, the values that
+    `map probe`, `map draft` and `map test` quote, and the issue messages
+    of `import` and `validate`) is left out in agent mode, with the warning
+    `content_withheld`. A table names these fields for every envelope
+    schema; a schema missing from it has its whole `results` treated as
+    content. With `--include-content` it is returned in
     `untrusted_content`, beside `content_notice`, and never in `results`.
   - evalsig asks no questions. In agent mode, an operation that changes
     the procedure (`preregister --draft`) also needs `--yes`, and the

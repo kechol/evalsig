@@ -61,6 +61,9 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
         // Content is taken from the rows shown, so its pointers name those rows.
         separate_content(e, mode);
         cut_cells(&mut e.results, &mut cut.cells);
+        if let Some(u) = e.untrusted_content.as_mut() {
+            cut_cells(u, &mut cut.cells);
+        }
         e.truncated = (cut.omitted > 0 || cut.cells > 0).then(|| Truncated {
             rows_omitted: cut.omitted,
             cells_cut: cut.cells,
@@ -119,22 +122,66 @@ fn cut_cells(v: &mut Value, cells: &mut u64) {
     }
 }
 
-/// The fields that carry text from the evaluated data, by envelope schema. In agent
-/// mode they leave `results` wherever they occur: returned apart on request, or
-/// withheld. Identifiers (item, run, rater) stay, since every answer needs them.
-pub const CONTENT_FIELDS: [(&str, &[&str]); 4] = [
+/// The fields that carry text from the evaluated data, for every envelope schema. In
+/// agent mode they leave `results` wherever they occur: returned apart on request,
+/// or withheld. Identifiers (item, run, rater) stay, since every answer needs them.
+/// A schema missing here has its whole `results` treated as content (a test lists
+/// every schema the code writes).
+pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
+    ("evalsig.agree/1", &[]),
+    ("evalsig.capabilities/1", &[]),
+    ("evalsig.check/1", &[]),
+    ("evalsig.compare/1", &[]),
+    ("evalsig.exclude/1", &[]),
+    ("evalsig.explain/1", &[]),
+    ("evalsig.export/1", &[]),
+    ("evalsig.gate/1", &[]),
+    ("evalsig.help/1", &[]),
+    ("evalsig.holdout/1", &[]),
+    // Issue messages quote the offending values.
+    ("evalsig.import/1", &["message"]),
+    ("evalsig.init/1", &[]),
     ("evalsig.items/1", &["strata"]),
-    ("evalsig.map.probe/1", &["values"]),
+    ("evalsig.ledger.anchor/1", &[]),
+    ("evalsig.ledger.show/1", &[]),
+    ("evalsig.ledger.verify/1", &[]),
+    ("evalsig.map.decide/1", &[]),
     ("evalsig.map.draft/1", &["values"]),
-    ("evalsig.map.test/1", &["values", "invalid_examples"]),
+    ("evalsig.map.probe/1", &["values"]),
+    (
+        "evalsig.map.test/1",
+        &["values", "invalid_examples", "message", "got", "expected"],
+    ),
+    ("evalsig.migrate/1", &[]),
+    ("evalsig.power/1", &[]),
+    ("evalsig.preregister/1", &[]),
+    ("evalsig.purge/1", &[]),
+    ("evalsig.rebuild/1", &[]),
+    ("evalsig.recipes/1", &[]),
+    ("evalsig.referee/1", &[]),
+    ("evalsig.remaining/1", &[]),
+    ("evalsig.report/1", &[]),
+    ("evalsig.runs/1", &[]),
+    ("evalsig.schema/1", &[]),
+    ("evalsig.seal/1", &[]),
+    ("evalsig.split/1", &[]),
+    ("evalsig.splits/1", &[]),
+    ("evalsig.threshold/1", &[]),
+    ("evalsig.trend/1", &[]),
+    ("evalsig.validate/1", &["message"]),
+    ("evalsig.verify/1", &[]),
+    ("evalsig.version/1", &[]),
 ];
 
 fn separate_content(e: &mut Envelope, mode: Mode) {
-    let Some((_, keys)) = CONTENT_FIELDS.iter().find(|(s, _)| *s == e.schema) else {
-        return;
-    };
     let mut taken = Map::new();
-    take(&mut e.results, keys, "", &mut taken);
+    match CONTENT_FIELDS.iter().find(|(s, _)| *s == e.schema) {
+        Some((_, keys)) => take(&mut e.results, keys, "", &mut taken),
+        // Unknown to the table: fail closed.
+        None => {
+            taken.insert(String::new(), std::mem::take(&mut e.results));
+        }
+    }
     if taken.is_empty() {
         return;
     }
@@ -168,5 +215,46 @@ fn take(v: &mut Value, keys: &[&str], at: &str, taken: &mut Map<String, Value>) 
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every envelope schema written anywhere in the CLI's source is in the table.
+    #[test]
+    fn every_schema_has_its_content_fields_listed() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    for (i, _) in text.match_indices("\"evalsig.") {
+                        let rest = &text[i + 1..];
+                        if let Some(end) = rest.find('"') {
+                            let name = &rest[..end];
+                            if name.ends_with("/1") && !name.contains(' ') {
+                                out.push(name.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+            &mut found,
+        );
+        assert!(found.len() > 30);
+        for name in found {
+            assert!(
+                CONTENT_FIELDS.iter().any(|(s, _)| *s == name),
+                "{name} is not in CONTENT_FIELDS"
+            );
+        }
     }
 }
