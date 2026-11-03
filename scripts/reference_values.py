@@ -455,6 +455,40 @@ def confidence_sequence_cases():
     return out
 
 
+def obuchowski_cases():
+    """Clustered AUC variance (Obuchowski 1997): DeLong components summed per cluster."""
+    rng = np.random.default_rng(20261106)
+    pos, neg = [], []
+    for c in range(12):
+        shift = rng.normal(0, 0.5)
+        for _ in range(rng.integers(1, 4)):
+            pos.append((round(float(rng.normal(1 + shift, 1)), 3), c))
+        for _ in range(rng.integers(1, 4)):
+            neg.append((round(float(rng.normal(shift, 1)), 3), c))
+    psi = lambda x, y: 1.0 if x > y else (0.5 if x == y else 0.0)
+    m, n, k = len(pos), len(neg), 12
+    v10 = [sum(psi(x, y) for y, _ in neg) / n for x, _ in pos]
+    v01 = [sum(psi(x, y) for x, _ in pos) / m for y, _ in neg]
+    a = sum(v10) / m
+    c10, c01, mk, nk = np.zeros(k), np.zeros(k), np.zeros(k), np.zeros(k)
+    for v, (_, c) in zip(v10, pos):
+        c10[c] += v
+        mk[c] += 1
+    for v, (_, c) in zip(v01, neg):
+        c01[c] += v
+        nk[c] += 1
+    d10, d01 = c10 - mk * a, c01 - nk * a
+    s10 = k / ((k - 1) * m) * (d10 ** 2).sum()
+    s01 = k / ((k - 1) * n) * (d01 ** 2).sum()
+    s11 = k / (k - 1) * (d10 * d01).sum()
+    var = s10 / m + s01 / n + 2 * s11 / (m * n)
+    return [{
+        "input": {"pos": [[s, c] for s, c in pos], "neg": [[s, c] for s, c in neg]},
+        "source": "closed (Obuchowski 1997 clustered DeLong variance)",
+        "expected": {"auc": r(a), "variance": r(var)},
+    }]
+
+
 def lr_cases():
     """Feature likelihood ratio LR = P(fire|pos)/P(fire|neg) with the Katz log interval.
     If a or b is zero, 0.5 is added to all four cells of the 2x2 table (Haldane-Anscombe; denominators +1)."""
@@ -757,6 +791,7 @@ def main():
             "ppi_mean": ppi_cases(),
             "bradley_terry": bradley_terry_cases(),
             "confidence_sequence": confidence_sequence_cases(),
+            "auc_clustered": obuchowski_cases(),
             "estimand_at_k": estimand_cases(),
             "misc": misc_cases(),
             "score": score_cases(),

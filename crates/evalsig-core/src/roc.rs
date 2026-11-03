@@ -173,17 +173,62 @@ pub fn delong(pos: &[f64], neg: &[f64], level: f64) -> Option<DeLong> {
     let (v10, v01) = components(pos, neg);
     let auc = sum(v10.iter().copied()) / v10.len() as f64;
     let variance = variance(&v10, 1) / pos.len() as f64 + variance(&v01, 1) / neg.len() as f64;
-    let interval = (auc > 0.0 && auc < 1.0).then(|| {
+    Some(DeLong {
+        auc,
+        variance,
+        interval: logit_interval(auc, variance, level),
+    })
+}
+
+/// The logit-scale interval of an AUC with this variance; `None` at 0 or 1.
+fn logit_interval(auc: f64, variance: f64, level: f64) -> Option<(f64, f64)> {
+    (auc > 0.0 && auc < 1.0 && variance > 0.0).then(|| {
         let se = variance.sqrt() / (auc * (1.0 - auc));
         let logit = (auc / (1.0 - auc)).ln();
         let z = norm_ppf(0.5 + level / 2.0);
         let back = |x: f64| 1.0 / (1.0 + (-x).exp());
         (back(logit - z * se), back(logit + z * se))
-    });
+    })
+}
+
+/// The AUC of items in clusters (Obuchowski 1997): the DeLong components are summed
+/// per cluster, V10_k and V01_k, and with K clusters, M positives and N negatives
+/// S10 = K/((K−1)M) Σ (V10_k − m_k A)², S01 = K/((K−1)N) Σ (V01_k − n_k A)²,
+/// S11 = K/(K−1) Σ (V10_k − m_k A)(V01_k − n_k A), Var(A) = S10/M + S01/N + 2 S11/(MN).
+/// `pos` and `neg` are (score, cluster index) pairs.
+pub fn delong_clustered(pos: &[(f64, usize)], neg: &[(f64, usize)], level: f64) -> Option<DeLong> {
+    let k = pos.iter().chain(neg).map(|(_, c)| c + 1).max().unwrap_or(0);
+    if pos.len() < 2 || neg.len() < 2 || k < 2 {
+        return None;
+    }
+    let (ps, ns): (Vec<f64>, Vec<f64>) = (
+        pos.iter().map(|p| p.0).collect(),
+        neg.iter().map(|n| n.0).collect(),
+    );
+    let (v10, v01) = components(&ps, &ns);
+    let (m, n) = (pos.len() as f64, neg.len() as f64);
+    let auc = sum(v10.iter().copied()) / m;
+    let (mut c10, mut c01, mut mk, mut nk) =
+        (vec![0.0; k], vec![0.0; k], vec![0.0; k], vec![0.0; k]);
+    for (v, (_, c)) in v10.iter().zip(pos) {
+        c10[*c] += v;
+        mk[*c] += 1.0;
+    }
+    for (v, (_, c)) in v01.iter().zip(neg) {
+        c01[*c] += v;
+        nk[*c] += 1.0;
+    }
+    let kf = k as f64;
+    let d10: Vec<f64> = (0..k).map(|c| c10[c] - mk[c] * auc).collect();
+    let d01: Vec<f64> = (0..k).map(|c| c01[c] - nk[c] * auc).collect();
+    let s10 = kf / ((kf - 1.0) * m) * sum(d10.iter().map(|d| d * d));
+    let s01 = kf / ((kf - 1.0) * n) * sum(d01.iter().map(|d| d * d));
+    let s11 = kf / (kf - 1.0) * sum(d10.iter().zip(&d01).map(|(a, b)| a * b));
+    let variance = s10 / m + s01 / n + 2.0 * s11 / (m * n);
     Some(DeLong {
         auc,
         variance,
-        interval,
+        interval: logit_interval(auc, variance, level),
     })
 }
 

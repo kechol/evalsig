@@ -36,6 +36,15 @@ pub struct Args {
     #[arg(long)]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub k_curve: bool,
+    /// Add each feature's likelihood ratio and class.
+    #[arg(long)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub features: bool,
+    /// With --reference human: correct the human-scale value with this model rater's
+    /// labels on the items humans did not label (PPI++).
+    #[arg(long, value_name = "RATER")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<String>,
     #[command(flatten)]
     pub checks: DatasetArgs,
 }
@@ -56,6 +65,14 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     settings.prevalence = config.cost.as_ref().map(|c| c.prevalence);
     settings.by = args.by.clone();
     settings.items = args.items;
+    settings.features = args.features;
+    let human = matches!(args.analysis.reference, Some(analysis::ReferenceArg::Human));
+    if human != args.proxy.is_some() {
+        return Err(CliError::usage(
+            "--reference human and --proxy <rater> go together",
+        ));
+    }
+    settings.proxy = args.proxy.clone();
     let judgments = d.judgments(&args.run);
     let items = d.items();
     let failed = |e: report::ReportError| CliError::new("report", e.to_string(), Exit::Rejected);

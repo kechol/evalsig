@@ -115,3 +115,19 @@ fn calibration_cases_match() {
         }
     }
 }
+
+#[test]
+fn clustered_auc_variance_matches() {
+    let c = &cases("auc_clustered")[0];
+    let pairs = |k: &str| -> Vec<(f64, usize)> {
+        c["input"][k]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p[0].as_f64().unwrap(), p[1].as_u64().unwrap() as usize))
+            .collect()
+    };
+    let d = evalsig_core::roc::delong_clustered(&pairs("pos"), &pairs("neg"), 0.95).unwrap();
+    close(d.auc, &c["expected"]["auc"], "auc");
+    close(d.variance, &c["expected"]["variance"], "variance");
+}

@@ -1,0 +1,347 @@
+//! The detail tier of a report (SPEC §6): ROC and AUC (metrics spec §3), calibration
+//! (§3.4) and feature likelihood ratios (§5), from the units `prepare` built.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::Serialize;
+
+use super::{Fill, Prepared, ReportError, Unit};
+use crate::features::{self, Class, Counts, Thresholds};
+use crate::numeric::mean;
+use crate::ppi;
+use crate::records::{Item, Label, Source};
+use crate::records::{OutputType, ValueSemantics};
+use crate::reference;
+use crate::roc::{self, Bin, SoftItem, Weighted};
+
+/// The empirical ROC of a run's scores or levels against the reference.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Roc {
+    pub auc: f64,
+    pub ci: Option<(f64, f64)>,
+    /// `delong`, `obuchowski` (clusters), `bootstrap` (soft or weighted references,
+    /// or an AUC of 0 or 1) or `too_few_units`.
+    pub interval: &'static str,
+    pub n_positive: f64,
+    pub n_negative: f64,
+    /// (false-alarm rate, hit rate) from the strongest threshold.
+    pub points: Vec<(f64, f64)>,
+    /// (z(F′), z(H′)) per threshold between levels, for ordinal runs with a 0/1
+    /// reference; a slope far from 1 argues against the equal-variance d′.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zroc: Option<Vec<(f64, f64)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Calibration {
+    pub brier: f64,
+    pub bins: Vec<Bin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FeatureRow {
+    pub feature_id: String,
+    /// Weighted firings among positives and negatives, and the class sizes.
+    pub fired_positive: f64,
+    pub n_positive: f64,
+    pub fired_negative: f64,
+    pub n_negative: f64,
+    pub lr: f64,
+    pub ci: (f64, f64),
+    /// The interval at the Benjamini-Hochberg adjusted level, which decides the class.
+    pub adjusted_ci: (f64, f64),
+    pub p_value: f64,
+    pub corrected: bool,
+    pub class: Class,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub posterior: Option<f64>,
+}
+
+impl Prepared<'_> {
+    /// Units with a reference and a raw value, for decision runs whose judgments are
+    /// levels or scores.
+    fn ranked(&self) -> Option<Vec<&Unit>> {
+        let graded = matches!(self.output_type, OutputType::Ordinal | OutputType::Score);
+        (self.semantics == ValueSemantics::Decision && graded && self.positive.is_some()).then(
+            || {
+                self.units
+                    .iter()
+                    .filter(|u| u.reference.is_some() && u.raw.is_some())
+                    .collect()
+            },
+        )
+    }
+
+    /// The ROC and AUC with its interval: DeLong for 0/1 references of single items,
+    /// Obuchowski's clustered variance when items share clusters, otherwise (soft or
+    /// weighted references, or an AUC of 0 or 1) a cluster bootstrap.
+    pub fn roc(&self) -> Option<Roc> {
+        let units = self.ranked()?;
+        let s = &self.settings;
+        let share = |u: &Unit| u.reference.unwrap_or(0.0);
+        let score = |u: &Unit| u.raw.unwrap_or(0.0);
+        let pos: Vec<Weighted> = units
+            .iter()
+            .map(|u| Weighted {
+                score: score(u),
+                weight: u.weight * share(u),
+            })
+            .filter(|w| w.weight > 0.0)
+            .collect();
+        let neg: Vec<Weighted> = units
+            .iter()
+            .map(|u| Weighted {
+                score: score(u),
+                weight: u.weight * (1.0 - share(u)),
+            })
+            .filter(|w| w.weight > 0.0)
+            .collect();
+        let auc = roc::auc(&pos, &neg)?;
+        let hard = units
+            .iter()
+            .all(|u| u.weight == 1.0 && (share(u) == 0.0 || share(u) == 1.0));
+        let cluster_ids: BTreeMap<&str, usize> = units
+            .iter()
+            .map(|u| u.cluster.as_str())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (c, i))
+            .collect();
+        let clustered = units.iter().any(|u| u.cluster != u.item_id);
+        let analytic = hard.then(|| {
+            let side = |positive: bool| -> Vec<(f64, usize)> {
+                units
+                    .iter()
+                    .filter(|u| (share(u) == 1.0) == positive)
+                    .map(|u| (score(u), cluster_ids[u.cluster.as_str()]))
+                    .collect()
+            };
+            let (p, n) = (side(true), side(false));
+            if clustered {
+                roc::delong_clustered(&p, &n, s.level).map(|d| (d.interval, "obuchowski"))
+            } else {
+                let scores = |v: &[(f64, usize)]| v.iter().map(|x| x.0).collect::<Vec<_>>();
+                roc::delong(&scores(&p), &scores(&n), s.level).map(|d| (d.interval, "delong"))
+            }
+        });
+        let (ci, interval) = match analytic.flatten() {
+            Some((Some(ci), method)) => (Some(ci), method),
+            _ => {
+                let items: Vec<SoftItem> = units
+                    .iter()
+                    .map(|u| SoftItem {
+                        score: score(u),
+                        share: share(u),
+                        weight: u.weight,
+                    })
+                    .collect();
+                let clusters: Vec<usize> = units
+                    .iter()
+                    .map(|u| cluster_ids[u.cluster.as_str()])
+                    .collect();
+                match roc::auc_soft_interval(&items, &clusters, s.bootstrap, s.seed, s.level) {
+                    Some(ci) => (Some(ci), "bootstrap"),
+                    None => (None, "too_few_units"),
+                }
+            }
+        };
+        let zroc = (hard && self.output_type == OutputType::Ordinal).then(|| {
+            let mut levels: Vec<f64> = units.iter().map(|u| score(u)).collect();
+            levels.sort_by(|a, b| b.total_cmp(a));
+            levels.dedup();
+            let hist = |positive: bool| -> Vec<u64> {
+                levels
+                    .iter()
+                    .map(|l| {
+                        units
+                            .iter()
+                            .filter(|u| (share(u) == 1.0) == positive && score(u) == *l)
+                            .count() as u64
+                    })
+                    .collect()
+            };
+            roc::zroc_points(&hist(true), &hist(false))
+        });
+        Some(Roc {
+            auc,
+            ci,
+            interval,
+            n_positive: pos.iter().map(|w| w.weight).sum(),
+            n_negative: neg.iter().map(|w| w.weight).sum(),
+            points: roc::roc_points(&pos, &neg),
+            zroc,
+        })
+    }
+
+    /// The Brier score and reliability bins of score runs whose scores lie in [0, 1].
+    pub fn calibration(&self) -> Option<Calibration> {
+        if self.output_type != OutputType::Score {
+            return None;
+        }
+        let units = self.ranked()?;
+        let scores: Vec<f64> = units.iter().map(|u| u.raw.unwrap_or(0.0)).collect();
+        let y: Vec<f64> = units.iter().map(|u| u.reference.unwrap_or(0.0)).collect();
+        roc::calibration(&scores, &y).map(|(brier, bins)| Calibration { brier, bins })
+    }
+
+    /// Each feature's likelihood ratio and class over the items with a reference; an
+    /// item that does not report a feature counts as not firing it. `prevalence` adds
+    /// the posterior probability.
+    pub fn features(&self, thresholds: Thresholds, prevalence: Option<f64>) -> Vec<FeatureRow> {
+        let units: Vec<&Unit> = self
+            .units
+            .iter()
+            .filter(|u| u.reference.is_some())
+            .collect();
+        let ids: BTreeSet<&str> = units
+            .iter()
+            .flat_map(|u| u.fired.keys().map(String::as_str))
+            .collect();
+        let counts: Vec<Counts> = ids
+            .iter()
+            .map(|id| {
+                let mut c = Counts {
+                    a: 0.0,
+                    n_pos: 0.0,
+                    b: 0.0,
+                    n_neg: 0.0,
+                };
+                for u in &units {
+                    let s = u.reference.unwrap_or(0.0);
+                    let f = u.fired.get(*id).copied().unwrap_or(0.0);
+                    c.a += u.weight * s * f;
+                    c.n_pos += u.weight * s;
+                    c.b += u.weight * (1.0 - s) * f;
+                    c.n_neg += u.weight * (1.0 - s);
+                }
+                c
+            })
+            .collect();
+        let assessed = features::assess(&counts, self.settings.level, thresholds);
+        ids.into_iter()
+            .zip(counts)
+            .zip(assessed)
+            .filter_map(|((id, c), a)| {
+                let a = a?;
+                Some(FeatureRow {
+                    feature_id: id.to_owned(),
+                    fired_positive: c.a,
+                    n_positive: c.n_pos,
+                    fired_negative: c.b,
+                    n_negative: c.n_neg,
+                    lr: a.ratio.lr,
+                    ci: a.ratio.interval,
+                    adjusted_ci: a.adjusted_interval,
+                    p_value: a.p_value,
+                    corrected: a.ratio.corrected,
+                    class: a.class,
+                    posterior: prevalence.map(|p| features::posterior(a.ratio.lr, p)),
+                })
+            })
+            .collect()
+    }
+}
+
+/// The human-scale value of a run corrected with a model rater's labels on the items
+/// humans did not label (PPI++, metrics spec §9.8).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ProxyEstimate {
+    /// `accuracy` for decision runs, `mean_label` (the human labels' mean) otherwise.
+    pub metric: &'static str,
+    pub proxy: String,
+    pub estimate: f64,
+    pub ci: (f64, f64),
+    pub se: f64,
+    pub lambda: f64,
+    /// Items with a human label (and the proxy's), and items with the proxy's only.
+    pub labelled: usize,
+    pub unlabelled: usize,
+    /// False when the human-labelled items are not known to be a random sample, so
+    /// the estimate uses the human labels alone (λ = 0).
+    pub corrected: bool,
+}
+
+impl Prepared<'_> {
+    /// PPI++ with `proxy`'s labels as f and the human reference as y. The correction
+    /// needs the human-labelled items to be a random sample, which evalsig takes as
+    /// every item stating the same `label_inclusion_prob`; otherwise λ = 0.
+    pub fn proxy_estimate(
+        &self,
+        items: &BTreeMap<&str, &Item>,
+        labels: &[&Label],
+        proxy: &str,
+    ) -> Result<ProxyEstimate, ReportError> {
+        let calc = self.calc();
+        let mut by_item: BTreeMap<&str, Vec<&Label>> = BTreeMap::new();
+        for l in labels.iter().filter(|l| l.task() == self.settings.task) {
+            by_item.entry(l.item_id.as_str()).or_default().push(l);
+        }
+        // A label set's value on the item: the positive share for decisions, the mean
+        // label value otherwise.
+        let value = |ls: Vec<&Label>| -> Option<f64> {
+            match &self.positive {
+                Some(p) => reference::of(&ls, p, self.settings.reference).map(|r| r.share),
+                None => mean(ls.iter().filter_map(|l| l.value.map(|v| v.as_f64()))),
+            }
+        };
+        let (mut labelled, mut unlabelled) = (Vec::new(), Vec::new());
+        for u in &self.units {
+            let Some(ls) = by_item.get(u.item_id.as_str()) else {
+                continue;
+            };
+            let human = value(
+                ls.iter()
+                    .copied()
+                    .filter(|l| l.source == Source::Human)
+                    .collect(),
+            );
+            let model = value(ls.iter().copied().filter(|l| l.rater_id == proxy).collect());
+            let Some(g) = model else { continue };
+            let score = |r: f64| match self.positive {
+                Some(_) => calc
+                    .item_value_bound(u, &|_| None, Fill::Policy, super::Values::Judged)
+                    .map(|(v, _)| v * r + (1.0 - v) * (1.0 - r)),
+                None => Some(r),
+            };
+            let Some(f) = score(g) else { continue };
+            match human.and_then(score) {
+                Some(y) => labelled.push((y, f)),
+                None => unlabelled.push(f),
+            }
+        }
+        let probabilities: BTreeSet<u64> = self
+            .units
+            .iter()
+            .map(|u| {
+                items
+                    .get(u.item_id.as_str())
+                    .and_then(|i| i.label_inclusion_prob)
+                    .map_or(u64::MAX, f64::to_bits)
+            })
+            .collect();
+        let random = probabilities.len() == 1 && !probabilities.contains(&u64::MAX);
+        let fit = ppi::mean_estimate(
+            &labelled,
+            &unlabelled,
+            self.settings.level,
+            (!random).then_some(0.0),
+        )
+        .ok_or_else(|| ReportError::NoProxyLabels(proxy.to_owned()))?;
+        Ok(ProxyEstimate {
+            metric: if self.positive.is_some() {
+                "accuracy"
+            } else {
+                "mean_label"
+            },
+            proxy: proxy.to_owned(),
+            estimate: fit.estimate,
+            ci: fit.interval,
+            se: fit.se,
+            lambda: fit.lambda,
+            labelled: fit.labelled,
+            unlabelled: fit.unlabelled,
+            corrected: random,
+        })
+    }
+}

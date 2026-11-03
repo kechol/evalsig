@@ -246,6 +246,11 @@ pub fn compute(
     let items = d.items();
     let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = labels.iter().collect();
+    if matches!(args.analysis.reference, Some(analysis::ReferenceArg::Human)) {
+        return Err(CliError::usage(
+            "--reference human applies to report --proxy; compare uses single, majority or soft",
+        ));
+    }
     let settings = analysis::settings(config, &args.analysis);
     let prepare = |id: &str| -> Result<(&Run, Prepared<'_>), CliError> {
         let run = d.run(id)?;

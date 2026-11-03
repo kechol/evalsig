@@ -59,7 +59,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | z-ROC | `zroc` | ROC with both axes transformed to normal quantiles. The straighter, the better the equal-variance normal model fits |
 | d_a | `d_a` | Sensitivity index when the z-ROC slope is not 1 (unequal variances) |
 | isosensitivity curve | — | The (F, H) curve of constant d′. Moving along it only shifts the criterion |
-| likelihood ratio | `likelihood_ratio` (LR) | Feature firing probability among positives divided by that among negatives. 1 means uninformative |
+| likelihood ratio | `likelihood_ratio` (LR), `features` | Feature firing probability among positives divided by that among negatives. 1 means uninformative. `features` lists each feature's LR and class |
 | decision threshold | `threshold` | The score or level from which a judgment counts as positive |
 | cost matrix | `cost_matrix` | Loss per item for each (reference label, judgment level) cell |
 | expected cost | `expected_cost` | Average loss per item from the cost matrix and the judgment distribution |
@@ -99,7 +99,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | minimum effect | `min_effect` | Differences smaller than this are not called improvements even if the interval excludes 0 |
 | missing bounds | `missing_bounds` | The metric range when system-side missing judgments are filled with the best and worst values (Manski bounds) |
 | position bias | — | In pairwise comparison, the side shown first (left) tends to win |
-| prediction-powered inference | `ppi` | Combines many grader labels with a few human labels to estimate the human-standard value without bias |
+| prediction-powered inference | `ppi`, `proxy` | Combines many grader labels with a few human labels to estimate the human-standard value without bias. `proxy` names the model rater whose labels fill in; `corrected` is false when the human-labelled items are not known to be random, and only the human labels are used |
 | verification bias | — | Bias in hit and false alarm rates when humans check only some items |
 | confidence sequence | `confidence_sequence` | An interval that stays valid however often it is inspected as data accrue |
 | validation uses | `validation_uses` | How many comparisons used the same validation split. Above the configured limit, evalsig warns that it is time to rebuild the split. No correction is applied |

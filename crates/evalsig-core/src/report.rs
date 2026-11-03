@@ -20,6 +20,9 @@ use crate::reference;
 use crate::replicates::{Disagreement, item_value};
 use crate::rules::Rule;
 
+mod detail;
+pub use detail::{Calibration, FeatureRow, ProxyEstimate, Roc};
+
 /// What a report needs besides the records.
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -39,6 +42,11 @@ pub struct Settings {
     pub prevalence: Option<f64>,
     pub by: Option<String>,
     pub items: bool,
+    /// Add the feature likelihood ratios (`report --features`).
+    pub features: bool,
+    /// Correct the human-scale value with this model rater's labels (PPI++,
+    /// `report --reference human --proxy`).
+    pub proxy: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -55,6 +63,8 @@ pub enum ReportError {
     EstimandNeedsBinary(String),
     #[error("--threshold applies to score outputs; this run's judgments are binary")]
     ThresholdOnBinary,
+    #[error("no item has both a label by {0:?} and a judgment, so it cannot serve as the proxy")]
+    NoProxyLabels(String),
 }
 
 /// One interval-bearing metric.
@@ -138,6 +148,14 @@ pub struct Report {
     pub by: BTreeMap<String, Vec<Metric>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ItemRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roc: Option<Roc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calibration: Option<Calibration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub features: Option<Vec<FeatureRow>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<ProxyEstimate>,
 }
 
 /// One item of the run: its replicates (judged value or missing reason, one per
@@ -163,6 +181,10 @@ struct Unit {
     votes: BTreeMap<String, f64>,
     /// Whether the weight includes 1 / label_inclusion_prob.
     inclusion_weighted: bool,
+    /// The mean raw value of the judgments with a value (scores, levels).
+    raw: Option<f64>,
+    /// Each feature's share of the item's judgments that fired it.
+    fired: BTreeMap<String, f64>,
 }
 
 fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) -> Option<f64> {
@@ -289,10 +311,22 @@ pub fn prepare<'a>(
         let mut replicates = Vec::new();
         let mut at_least_reps = Vec::new();
         let mut grades = Vec::new();
+        let mut raw = Vec::new();
+        let mut fired: BTreeMap<String, (f64, f64)> = BTreeMap::new();
         for reps in gens.values() {
             let mut values = Vec::new();
             let mut reason = None;
             for j in reps {
+                if j.missing.is_none()
+                    && let Some(v) = j.value
+                {
+                    raw.push(v.as_f64());
+                }
+                for f in j.features.iter().flatten() {
+                    let e = fired.entry(f.feature_id.clone()).or_default();
+                    e.0 += f64::from(u8::from(f.fired));
+                    e.1 += 1.0;
+                }
                 match (&j.missing, judged_value(j, rule.as_ref(), semantics)) {
                     (Some(m), _) => {
                         *missing_by_reason.entry(m.reason).or_default() += 1;
@@ -347,6 +381,8 @@ pub fn prepare<'a>(
             cluster: item.map_or((*item_id).to_owned(), |i| i.cluster_key().to_owned()),
             weight: item.map_or(1.0, |i| i.weight()) * inverse_inclusion.unwrap_or(1.0),
             inclusion_weighted: inverse_inclusion.is_some(),
+            raw: mean(raw.iter().copied()),
+            fired: fired.into_iter().map(|(k, (f, n))| (k, f / n)).collect(),
             stratum: s.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
@@ -531,6 +567,16 @@ pub fn build(
         reproducibility,
         by,
         items: item_rows,
+        roc: p.roc(),
+        calibration: p.calibration(),
+        features: s
+            .features
+            .then(|| p.features(crate::features::Thresholds::default(), s.prevalence)),
+        proxy: s
+            .proxy
+            .as_deref()
+            .map(|r| p.proxy_estimate(items, labels, r))
+            .transpose()?,
     })
 }
 

@@ -133,7 +133,28 @@
     "run": "r-base",
     "seed": 20261029,
     "task": "default",
-    "value_semantics": "decision"
+    "value_semantics": "decision",
+    "roc": {
+      "auc": 1.0,
+      "ci": null,
+      "interval": "too_few_units",
+      "n_negative": 4.0,
+      "n_positive": 1.0,
+      "points": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ]
+    }
   },
   "warnings": [
     {
@@ -170,7 +191,7 @@
       },
       "command": "report"
     },
-    "output": "blake3:6396d6e60eddedb3cd21593b553133bf986970f74bafad1e7e8606b6baa0850e"
+    "output": "blake3:3ea1304d4541c967f2c4ed0ae46b42514ecfaca2488c4389512fc8e5de1d034e"
   },
   "truncated": null
 }

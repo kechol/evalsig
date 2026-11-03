@@ -73,6 +73,8 @@ fn settings(mode: ReferenceMode) -> Settings {
         prevalence: None,
         by: None,
         items: false,
+        features: false,
+        proxy: None,
     }
 }
 

@@ -201,6 +201,52 @@ fn report(e: &Envelope) -> String {
             r["n_insufficient_replicates"]
         );
     }
+    if let Some(roc) = r["roc"].as_object() {
+        let _ = writeln!(
+            s,
+            "\nAUC {} ({}, {})",
+            num(&roc["auc"]),
+            pair(&roc["ci"], num),
+            id(&roc["interval"]),
+        );
+    }
+    if let Some(c) = r["calibration"].as_object() {
+        let _ = writeln!(s, "\nBrier score {}", num(&c["brier"]));
+    }
+    if let Some(p) = r["proxy"].as_object() {
+        let _ = writeln!(
+            s,
+            "\nHuman-scale {} corrected with {}: {} ({}); {} human-labelled, {} proxy-only items, λ {}{}",
+            id(&p["metric"]),
+            id(&p["proxy"]),
+            num(&p["estimate"]),
+            pair(&p["ci"], num),
+            p["labelled"],
+            p["unlabelled"],
+            num(&p["lambda"]),
+            if p["corrected"] == false {
+                " (not corrected: the human-labelled items are not known to be random)"
+            } else {
+                ""
+            },
+        );
+    }
+    if let Some(features) = r["features"].as_array().filter(|f| !f.is_empty()) {
+        s.push_str(
+            "\n| Feature | LR | Interval | Adjusted interval | Class |\n|---|---:|---|---|---|\n",
+        );
+        for f in features {
+            let _ = writeln!(
+                s,
+                "| {} | {} | {} | {} | {} |",
+                inline(f["feature_id"].as_str().unwrap_or("?")),
+                num(&f["lr"]),
+                pair(&f["ci"], num),
+                pair(&f["adjusted_ci"], num),
+                id(&f["class"]),
+            );
+        }
+    }
     if let Some(points) = r["k_curve"]["points"].as_array() {
         s.push_str("\n| Rule | k | Metric | Value | Interval |\n|---|---:|---|---:|---|\n");
         for p in points {

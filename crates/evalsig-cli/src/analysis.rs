@@ -31,6 +31,8 @@ pub enum ReferenceArg {
     Majority,
     Soft,
     Latent,
+    /// The human labels, corrected with a model rater's labels (`report --proxy`).
+    Human,
 }
 
 impl From<ReferenceArg> for ReferenceMode {
@@ -40,6 +42,8 @@ impl From<ReferenceArg> for ReferenceMode {
             ReferenceArg::Majority => ReferenceMode::Majority,
             ReferenceArg::Soft => ReferenceMode::Soft,
             ReferenceArg::Latent => ReferenceMode::Latent,
+            // The human labels form the reference; `--proxy` adds the correction.
+            ReferenceArg::Human => ReferenceMode::Soft,
         }
     }
 }
@@ -62,5 +66,7 @@ pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
         prevalence: None,
         by: None,
         items: false,
+        features: false,
+        proxy: None,
     }
 }

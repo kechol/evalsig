@@ -30,6 +30,8 @@ fn settings(positive: Option<Rule>) -> Settings {
         prevalence: None,
         by: None,
         items: false,
+        features: false,
+        proxy: None,
     }
 }
 
