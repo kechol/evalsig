@@ -383,13 +383,29 @@ fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErr
         .map(|(k, v)| vec![k.clone(), cell(v)])
         .collect();
     body.push_str(&html::table(&["Measure", "Value"], &rows));
-    if let Some(k) = c.results["k_curve"].as_array() {
-        let rows: Vec<Vec<String>> = k
+    // The k-curve: each rule and k with the primary metric's value and interval, and
+    // the cost per item when the configuration prices a generation.
+    let curve = &c.results["k_curve"];
+    if let Some(points) = curve["points"].as_array() {
+        let rows: Vec<Vec<String>> = points
             .iter()
-            .map(|p| vec![cell(&p["k"]), cell(&p["rule"]), cell(&p["value"])])
+            .map(|p| {
+                let m = &p["metrics"][0];
+                vec![
+                    cell(&p["k"]),
+                    cell(&p["rule"]),
+                    cell(&m["metric"]),
+                    cell(&m["value"]),
+                    format!("{} – {}", cell(&m["ci"][0]), cell(&m["ci"][1])),
+                    cell(&p["cost_per_item"]),
+                ]
+            })
             .collect();
-        body.push_str("<h2>k-curve</h2>");
-        body.push_str(&html::table(&["k", "Rule", "Value"], &rows));
+        body.push_str("<h2>Performance and cost by k</h2>");
+        body.push_str(&html::table(
+            &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
+            &rows,
+        ));
     }
     body.push_str(&how_to_read(&["replicate_disagreement", "noise_floor"]));
     Ok(Screen {

@@ -114,6 +114,21 @@ fn every_screen_renders_for_the_examples() {
             .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
             .to_owned();
         let host = format!("127.0.0.1:{}", d.port);
+        // The k-curve as the CLI computes it, before the ledger is compared.
+        let runs: Value =
+            serde_json::from_slice(&evalsig_json(p).arg("runs").output().unwrap().stdout).unwrap();
+        let run = runs["results"]["runs"][0]["run_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let k: Value = serde_json::from_slice(
+            &evalsig_json(p)
+                .args(["report", &run, "--k-curve"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
         let before = std::fs::read_to_string(p.join(".evalsig/ledger.jsonl")).unwrap();
         for (screen, expect) in [
             ("", "<h1>Overview</h1>"),
@@ -133,6 +148,16 @@ fn every_screen_renders_for_the_examples() {
             assert!(!page.contains("<h1>Error</h1>"), "{screen}: {page}");
             assert!(
                 !page.contains("http://") || page.contains("xmlns=\"http://www.w3.org/2000/svg\"")
+            );
+        }
+        // The reproducibility screen shows that k-curve.
+        let page = get(d.port, &format!("{base}reproducibility?run={run}"), &host);
+        assert!(page.contains("Performance and cost by k"), "{page}");
+        for point in k["results"]["k_curve"]["points"].as_array().unwrap() {
+            let value = &point["metrics"][0]["value"];
+            assert!(
+                page.contains(&format!("<td class=\"n\">{value}</td>")),
+                "{value}: {page}"
             );
         }
         // The comparison shows the CLI's verdict and the overview its intervals.
