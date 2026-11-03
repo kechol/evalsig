@@ -311,9 +311,14 @@ fn main() -> ExitCode {
             .skip(1)
             .filter(|a| !a.starts_with('-'))
             .collect();
-        let out = output::Output::success(help::envelope(&Cli::command(), &path));
-        let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
-        return ExitCode::SUCCESS;
+        return match help::envelope(&Cli::command(), &path) {
+            Ok(e) => {
+                let out = output::Output::success(e);
+                let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
+                ExitCode::SUCCESS
+            }
+            Err(err) => report_error(&err, Format::Json),
+        };
     }
     let cli = match Cli::try_parse_from(&args) {
         Ok(cli) => cli,

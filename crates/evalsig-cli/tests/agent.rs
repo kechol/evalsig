@@ -287,8 +287,11 @@ sided = "one"
 [holdout]
 budget = 4
 "#;
-    let w = world(gate, None);
-    let run = |c: &mut Command, k: u32| {
+    // Two referees with the same holdout and approval: one is used without agent mode,
+    // the other with it; each gets the same submissions in the same order.
+    let plain_w = world(gate, None);
+    let agent_w = world(gate, None);
+    let submit_in = |w: &World, c: &mut Command, records: std::path::PathBuf| {
         c.args([
             "gate",
             "--approved",
@@ -297,44 +300,70 @@ budget = 4
             "triage-v2",
             "--records",
         ])
-        .arg(variant(w.referee.path(), k))
+        .arg(records)
         .arg("--referee")
         .arg(w.home.path())
         .output()
         .unwrap()
     };
-    let plain = run(evalsig(w.referee.path()).args(["--format", "json"]), 1);
-    let agent = run(&mut as_agent(w.referee.path()), 2);
-    assert_eq!(plain.status.code(), agent.status.code());
-    let (a, b) = (json(&plain), stdout_json(&agent));
-    assert_eq!(a["verdict"], b["verdict"]);
-    assert_eq!(a["results"]["conditions"], b["results"]["conditions"]);
-    assert_eq!(b["results"]["budget"]["used"], 2);
-    // A refusal is the same refusal.
-    let refused = |c: &mut Command| {
-        c.args([
-            "gate",
-            "--approved",
-            &w.approved,
-            "--candidate",
-            "triage-v2",
-            "--records",
-        ])
-        .arg(candidate(w.referee.path(), "grader.jsonl", |rows| {
-            rows[0]["grader"]["version"] = "9".into()
-        }))
-        .arg("--referee")
-        .arg(w.home.path())
-        .output()
-        .unwrap()
+    let submissions = |w: &World| {
+        vec![
+            variant(w.referee.path(), 1),
+            candidate(w.referee.path(), "grader.jsonl", |rows| {
+                rows[0]["grader"]["version"] = "9".into()
+            }),
+            variant(w.referee.path(), 1),
+        ]
     };
-    let x = refused(evalsig(w.referee.path()).args(["--format", "json"]));
-    let y = refused(&mut as_agent(w.referee.path()));
-    assert_eq!(x.status.code(), Some(3));
-    assert_eq!(y.status.code(), Some(3));
-    let ex: Value = serde_json::from_slice(&x.stderr).unwrap();
-    let ey: Value = serde_json::from_slice(&y.stderr).unwrap();
-    assert_eq!(ex["error"]["code"], ey["error"]["code"]);
+    for (records_a, records_b) in submissions(&plain_w).into_iter().zip(submissions(&agent_w)) {
+        let a = submit_in(
+            &plain_w,
+            evalsig(plain_w.referee.path()).args(["--format", "json"]),
+            records_a,
+        );
+        let b = submit_in(&agent_w, &mut as_agent(agent_w.referee.path()), records_b);
+        assert_eq!(a.status.code(), b.status.code());
+        let read = |o: &std::process::Output| -> Value {
+            serde_json::from_slice(if o.stdout.is_empty() {
+                &o.stderr
+            } else {
+                &o.stdout
+            })
+            .unwrap()
+        };
+        let (va, vb) = (read(&a), read(&b));
+        assert_eq!(va["verdict"], vb["verdict"]);
+        assert_eq!(va["results"]["conditions"], vb["results"]["conditions"]);
+        assert_eq!(va["results"]["budget"], vb["results"]["budget"]);
+        assert_eq!(va["error"]["code"], vb["error"]["code"]);
+    }
+    // The referee ledgers hold the same lines, apart from times and hashes.
+    let lines = |w: &World| -> Vec<Value> {
+        referee_ledger(w)
+            .into_iter()
+            .map(|e| {
+                let mut s = e["summary"].clone();
+                for k in ["approved", "agent_ledger_head"] {
+                    s.as_object_mut().map(|o| o.remove(k));
+                }
+                serde_json::json!({ "kind": e["kind"], "summary": s })
+            })
+            .collect()
+    };
+    let (la, lb) = (lines(&plain_w), lines(&agent_w));
+    assert_eq!(
+        la.iter().filter(|e| e["kind"] == "gate").count(),
+        2,
+        "{la:?}"
+    );
+    assert_eq!(
+        la.iter()
+            .filter(|e| e["kind"] == "gate" || e["kind"] == "holdout_access")
+            .collect::<Vec<_>>(),
+        lb.iter()
+            .filter(|e| e["kind"] == "gate" || e["kind"] == "holdout_access")
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

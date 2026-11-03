@@ -5,6 +5,7 @@
 use clap::{Arg, Command};
 use serde_json::{Value, json};
 
+use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{Envelope, VerdictCode};
 
@@ -60,28 +61,23 @@ fn command(cmd: &Command) -> Value {
 }
 
 /// The whole tree, or only the command at `path` (`help --json compare`).
-pub fn envelope(root: &Command, path: &[String]) -> Envelope {
+pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, CliError> {
     let mut root = root.clone();
     root.build();
     if !path.is_empty() {
         let mut cmd = &root;
         for name in path {
-            match cmd.find_subcommand(name) {
-                Some(c) => cmd = c,
-                None => {
-                    return Envelope::new(
-                        "evalsig.help/1",
-                        json!({ "error": format!("no command {}", path.join(" ")) }),
-                    );
-                }
-            }
+            cmd = cmd.find_subcommand(name).ok_or_else(|| {
+                CliError::usage(format!("no command {:?}", path.join(" ")))
+                    .with_hint("list the commands with evalsig help --json")
+            })?;
         }
-        return Envelope::new(
+        return Ok(Envelope::new(
             "evalsig.help/1",
             json!({ "tool": root.get_name(), "global_args": args(&root, true), "commands": [command(cmd)] }),
-        );
+        ));
     }
-    Envelope::new(
+    Ok(Envelope::new(
         "evalsig.help/1",
         json!({
             "tool": root.get_name(),
@@ -90,5 +86,5 @@ pub fn envelope(root: &Command, path: &[String]) -> Envelope {
             "exit_codes": Exit::ALL.iter().map(|e| json!({"code": e.code(), "meaning": e.meaning()})).collect::<Vec<_>>(),
             "verdict_codes": VerdictCode::ALL.iter().map(|c| json!({"code": c.as_str(), "meaning": c.meaning()})).collect::<Vec<_>>(),
         }),
-    )
+    ))
 }

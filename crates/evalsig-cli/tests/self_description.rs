@@ -72,6 +72,12 @@ fn help_json_lists_every_command_clap_defines() {
             .iter()
             .all(|a| a["long"] != "agent")
     }));
+    // An unknown command is a usage error, as with every other bad name.
+    let none = bin()
+        .args(["help", "--json", "no-such-command"])
+        .output()
+        .unwrap();
+    assert_eq!(none.status.code(), Some(64));
     // Arguments, exit codes and verdict codes come along.
     let compare = commands.iter().find(|c| c["name"] == "compare").unwrap();
     assert!(

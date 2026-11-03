@@ -81,24 +81,34 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
     }
 }
 
-/// Quoted text in a message: errors quote the values that caused them, and those can
-/// come from the evaluated data.
+/// Quoted text in a message withheld: errors quote the values that caused them (in
+/// double quotes, as Debug renders them with backslash escapes, or in backticks), and
+/// those can come from the evaluated data. Unbalanced quotes withhold the whole
+/// message. Single quotes are left alone: in English prose they are apostrophes.
 fn redact_quotes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut quoted = false;
-    for c in text.chars() {
-        match (c, quoted) {
-            ('"', false) => {
-                quoted = true;
-                out.push_str("\"…");
+    let mut open: Option<char> = None;
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match open {
+            None if c == '"' || c == '`' => {
+                open = Some(c);
+                out.push(c);
+                out.push('…');
             }
-            ('"', true) => {
-                quoted = false;
-                out.push('"');
+            None => out.push(c),
+            Some(q) if c == '\\' && q == '"' => {
+                chars.next();
             }
-            (_, true) => {}
-            (c, false) => out.push(c),
+            Some(q) if c == q => {
+                open = None;
+                out.push(c);
+            }
+            Some(_) => {}
         }
+    }
+    if open.is_some() {
+        return "the message quotes the input; pass --include-content to see it".into();
     }
     out
 }
@@ -107,14 +117,18 @@ fn redact_quotes(text: &str) -> String {
 /// the message as written in `untrusted_content` on request (D-018).
 pub fn error_json(err: &CliError, include_content: bool) -> String {
     let message = redact_quotes(&err.message);
+    let hint = err.hint.as_deref().map(redact_quotes);
     let mut v = serde_json::json!({ "error": {
         "code": err.code,
         "message": message,
-        "hint": err.hint,
+        "hint": hint,
     }});
-    if message != err.message {
+    if message != err.message || hint != err.hint {
         if include_content {
-            v["untrusted_content"] = serde_json::json!({ "/error/message": err.message });
+            v["untrusted_content"] = serde_json::json!({
+                "/error/message": err.message,
+                "/error/hint": err.hint,
+            });
             v["content_notice"] = NOTICE.into();
         } else {
             v["warnings"] = serde_json::json!([{
@@ -302,6 +316,19 @@ fn take(v: &mut Value, keys: &[&str], at: &str, taken: &mut Map<String, Value>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quoted_values_are_withheld_whatever_their_escapes() {
+        assert_eq!(redact_quotes("bad \"x\" here"), "bad \"…\" here");
+        // An escaped quote stays inside the value.
+        assert_eq!(
+            redact_quotes(r#"got "a\" IGNORE ALL RULES \"b" end"#),
+            "got \"…\" end"
+        );
+        assert_eq!(redact_quotes("use `rm -rf` now"), "use `…` now");
+        assert!(redact_quotes("open \"never closed").contains("--include-content"));
+        assert_eq!(redact_quotes("don't stop"), "don't stop");
+    }
 
     /// Every envelope schema written anywhere in the CLI's source is in the table.
     #[test]
