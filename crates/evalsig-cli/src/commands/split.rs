@@ -4,8 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use evalsig_core::records::{Item, Record};
+use evalsig_core::records::Item;
 use evalsig_core::split::{self, Assignment, Method, Part, SplitError};
+use evalsig_store::canonical::to_canonical_bytes;
+use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Entry, Kind};
 use serde_json::{Value, json};
 
@@ -101,22 +103,11 @@ fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, CliError> {
         .collect()
 }
 
-fn part_summary(ids: &[String]) -> Result<Value, CliError> {
-    Ok(json!({ "hash": item_set_hash(ids.iter())?, "items": ids.len() }))
-}
-
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let items: Vec<&Item> = d
-        .records
-        .iter()
-        .filter_map(|r| match r {
-            Record::Item(i) => Some(i),
-            _ => None,
-        })
-        .collect();
+    let items: Vec<&Item> = d.items().into_values().collect();
     let (within, holdout) = match &args.within {
         Some(p) => {
             let (ids, h) = remaining(p)?;
@@ -124,19 +115,20 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         }
         None => (None, None),
     };
+    let use_time = match args.method {
+        Some(MethodArg::Time) => true,
+        Some(MethodArg::Random) => false,
+        // The items the split may use decide; sealed holdout items do not.
+        None => items
+            .iter()
+            .filter(|i| within.as_ref().is_none_or(|w| w.contains(&i.item_id)))
+            .all(|i| i.occurred_at.is_some()),
+    };
     let seed = args.seed.or(config.stats.seed).unwrap_or(0);
-    let (method, name) = match (&args.assign, args.method) {
-        (Some(p), _) => (Method::Assign(assignment_file(p)?), "assign"),
-        (None, Some(MethodArg::Time)) => (Method::Time, "time"),
-        (None, Some(MethodArg::Random)) => (
-            Method::Random {
-                seed,
-                stratum: args.stratum.clone(),
-            },
-            "random",
-        ),
-        (None, None) if items.iter().all(|i| i.occurred_at.is_some()) => (Method::Time, "time"),
-        (None, None) => (
+    let (method, name) = match &args.assign {
+        Some(p) => (Method::Assign(assignment_file(p)?), "assign"),
+        None if use_time => (Method::Time, "time"),
+        None => (
             Method::Random {
                 seed,
                 stratum: args.stratum.clone(),
@@ -144,6 +136,13 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "random",
         ),
     };
+    let random = name == "random";
+    if !random && (args.stratum.is_some() || args.seed.is_some()) {
+        return Err(CliError::usage(
+            "--stratum and --seed apply to random splits",
+        ));
+    }
+    let seed = random.then_some(seed);
     let a: Assignment =
         split::split(&items, within.as_ref(), &method, args.validation).map_err(|e| match e {
             SplitError::CrossesCluster { .. } => rejected("split_crosses_cluster", e.to_string()),
@@ -151,22 +150,34 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             SplitError::Share => CliError::usage(e.to_string()),
             _ => rejected("split", e.to_string()),
         })?;
-    let (dev, validation) = (part_summary(&a.dev)?, part_summary(&a.validation)?);
-    let name_hash = validation["hash"]
-        .as_str()
-        .expect("hashes are strings")
-        .to_owned();
+    let part = |ids: &[String]| -> Result<Value, CliError> {
+        Ok(json!({ "hash": item_set_hash(ids.iter())?, "items": ids.len() }))
+    };
+    let summary = json!({
+        "method": name,
+        "seed": seed,
+        "dev": part(&a.dev)?,
+        "validation": part(&a.validation)?,
+        "holdout": holdout,
+    });
+    // The file is named by both parts, so two splits sharing one part stay apart.
+    let name_hash = ContentHash::blake3(
+        &to_canonical_bytes(&json!({"dev": a.dev, "validation": a.validation}))
+            .map_err(CliError::store)?,
+    )
+    .to_string();
     let dir = project.splits_dir();
     std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;
-    let path = dir.join(format!(
+    let file_name = format!(
         "{}.json",
         name_hash.strip_prefix("blake3:").unwrap_or(&name_hash)
-    ));
+    );
+    let path = dir.join(&file_name);
     let file = json!({
         "schema": "evalsig.split/1",
         "method": name,
-        "seed": (name == "random").then_some(seed),
-        "stratum": args.stratum,
+        "seed": seed,
+        "stratum": random.then_some(&args.stratum),
         "validation_share": args.validation,
         "holdout": holdout,
         "dev": a.dev,
@@ -175,25 +186,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut text = serde_json::to_string_pretty(&file).expect("splits serialize");
     text.push('\n');
     std::fs::write(&path, text).map_err(|e| io_error(&path, &e))?;
-    let summary = json!({
-        "method": name,
-        "seed": (name == "random").then_some(seed),
-        "dev": dev,
-        "validation": validation,
-        "holdout": holdout,
-    });
-    let mut envelope = Envelope::new(
-        "evalsig.split/1",
-        json!({
-            "method": name,
-            "dev": dev,
-            "validation": validation,
-            "holdout": holdout,
-            "holdout_excluded": within.is_some(),
-            "file": format!(".evalsig/splits/{}", path.file_name().and_then(|n| n.to_str()).unwrap_or_default()),
-        }),
-    );
-    let snapshots: Vec<String> = d.snapshots.iter().map(ToString::to_string).collect();
+    let mut results = summary.clone();
+    results["holdout_excluded"] = json!(within.is_some());
+    results["file"] = json!(format!(".evalsig/splits/{file_name}"));
+    let mut envelope = Envelope::new("evalsig.split/1", results);
+    let snapshots = d.snapshot_ids();
     envelope.provenance.snapshots = snapshots.clone();
     project.record(
         &mut envelope,

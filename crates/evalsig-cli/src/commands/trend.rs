@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use evalsig_core::compare::{self, Options};
+use evalsig_core::compare::{self, Drift, Options};
 use evalsig_core::records::{Judgment, Label};
-use evalsig_core::report::{self, ReportError};
+use evalsig_core::report;
 use evalsig_core::time::{Instant, Period};
 use serde_json::{Value, json};
 
@@ -52,6 +52,7 @@ pub struct Args {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    args.analysis.without_proxy("trend")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
@@ -103,9 +104,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             )
         })?,
     };
-    let failed = |e: ReportError| CliError::new("report", e.to_string(), Exit::Rejected);
-    let prepare =
-        |js: &Vec<&Judgment>| report::prepare(run, js, &items, &labels, &settings).map_err(failed);
+    let prepare = |js: &Vec<&Judgment>| {
+        report::prepare(run, js, &items, &labels, &settings).map_err(CliError::report)
+    };
     let base = prepare(&periods[&baseline])?;
     let options = Options {
         level: settings.level,
@@ -113,32 +114,40 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         seed: settings.seed,
         min_effect: config.compare.min_effect.clone(),
         excluded: BTreeSet::new(),
+        scope: None,
     };
     let mut rows = Vec::new();
     let mut primary_status = None;
     for (period, js) in &periods {
-        let r = report::build(run, js, &items, &labels, &settings).map_err(failed)?;
-        let vs: Vec<Value> = if *period == baseline {
-            Vec::new()
+        // Each period is prepared once, for its report and its comparison.
+        let p = if *period == baseline {
+            None
         } else {
-            let p = prepare(js)?;
-            compare::unpaired(&base, &p, &options)
-                .metrics
-                .iter()
-                .map(|m| {
-                    json!({
-                        "metric": m.metric,
-                        "delta": m.delta,
-                        "ci": m.ci,
-                        "interval": m.interval,
-                        "status": compare::drift(m),
-                    })
-                })
-                .collect()
+            Some(prepare(js)?)
         };
-        if let Some(first) = vs.first() {
-            primary_status = first["status"].as_str().map(str::to_owned);
-        }
+        let r = report::from_prepared(p.as_ref().unwrap_or(&base), &items, &labels)
+            .map_err(CliError::report)?;
+        let vs: Vec<Value> = match &p {
+            None => Vec::new(),
+            Some(p) => {
+                let deltas = compare::unpaired(&base, p, &options).metrics;
+                if let Some(first) = deltas.first() {
+                    primary_status = Some((first.metric, compare::drift(first)));
+                }
+                deltas
+                    .iter()
+                    .map(|m| {
+                        json!({
+                            "metric": m.metric,
+                            "delta": m.delta,
+                            "ci": m.ci,
+                            "interval": m.interval,
+                            "status": compare::drift(m),
+                        })
+                    })
+                    .collect()
+            }
+        };
         rows.push(json!({
             "period": period,
             "n_items": r.n_items,
@@ -146,16 +155,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "vs_baseline": vs,
         }));
     }
-    let primary = rows
-        .first()
-        .and_then(|r| r["metrics"][0]["metric"].as_str())
-        .map(str::to_owned);
+    // The metric the verdict reads: the first one the periods are compared on.
+    let primary = primary_status.map(|(m, _)| m.to_owned()).or_else(|| {
+        rows.first()
+            .and_then(|r| r["metrics"][0]["metric"].as_str())
+            .map(str::to_owned)
+    });
     let latest = periods.keys().next_back().cloned();
     let mut envelope = Envelope::new(
         "evalsig.trend/1",
         round_numbers(json!({
             "run": args.run,
-            "by": match args.by { By::Day => "day", By::Week => "week", By::Month => "month" },
+            "by": Period::from(args.by),
             "baseline_period": baseline,
             "primary_metric": primary,
             "periods": rows,
@@ -163,26 +174,24 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         })),
     );
     // The verdict is the latest period's status on the primary metric.
-    envelope.verdict = match (
-        latest.as_deref() == Some(baseline.as_str()),
-        primary_status.as_deref(),
-    ) {
-        (true, _) | (_, None) => None,
-        (false, Some(s)) => {
-            let code = match s {
-                "drifted" => VerdictCode::Drifted,
-                "stable" => VerdictCode::Stable,
-                _ => VerdictCode::InsufficientData,
+    envelope.verdict = if latest.as_deref() == Some(baseline.as_str()) {
+        None
+    } else {
+        primary_status.map(|(metric, s)| {
+            let (code, word) = match s {
+                Drift::Drifted => (VerdictCode::Drifted, "drifted"),
+                Drift::Stable => (VerdictCode::Stable, "stable"),
+                Drift::InsufficientData => (VerdictCode::InsufficientData, "undecided"),
             };
-            Some(Verdict {
+            Verdict {
                 code,
                 text: format!(
-                    "{}: the latest period {} is {s} against {baseline}",
-                    primary.as_deref().unwrap_or("?"),
+                    "{}: the latest period {} is {word} against {baseline}",
+                    metric,
                     latest.as_deref().unwrap_or("?"),
                 ),
-            })
-        }
+            }
+        })
     };
     if !undated.is_empty() {
         envelope.warnings.push(Warning {
@@ -193,6 +202,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             ),
         });
     }
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     Ok(Output::success(envelope))
 }

@@ -54,6 +54,12 @@ pub struct Condition {
     /// `auto`, the only method a check offers.
     #[serde(default)]
     pub interval: Option<String>,
+    /// For `rate_at_least`: the score threshold t.
+    #[serde(default)]
+    pub threshold: Option<f64>,
+    /// This condition's confidence level, instead of the configured one.
+    #[serde(default)]
+    pub level: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -64,6 +70,8 @@ pub enum CheckError {
         "rule {0:?} needs arms or a referee; a check allows lower_bound_at_least and upper_bound_at_most"
     )]
     GateRule(String),
+    #[error("min_effect applies to gate's difference rules; a check's rules are absolute")]
+    MinEffect,
     #[error("interval {0:?} is not available in a check; use auto")]
     Interval(String),
     #[error("a check needs at least one condition")]
@@ -91,6 +99,9 @@ pub fn parse(text: &str) -> Result<CheckFile, CheckError> {
         {
             return Err(CheckError::GateRule(rule.to_owned()));
         }
+        if c.get("min_effect").is_some() {
+            return Err(CheckError::MinEffect);
+        }
         if let Some(i) = c.get("interval").and_then(|i| i.as_str())
             && i != "auto"
         {
@@ -105,8 +116,10 @@ pub fn parse(text: &str) -> Result<CheckFile, CheckError> {
 }
 
 impl Condition {
-    /// The two-sided level whose interval gives this condition's bound at `level`.
+    /// The two-sided level whose interval gives this condition's bound, at its own
+    /// level or else the configured `level`.
     pub fn interval_level(&self, level: f64) -> f64 {
+        let level = self.level.unwrap_or(level);
         match self.sided {
             Sided::One => 2.0 * level - 1.0,
             Sided::Two => level,
@@ -162,6 +175,13 @@ sided = "one"
             parse("name = \"x\"\nconditions = []\n"),
             Err(CheckError::NoConditions)
         );
+        assert_eq!(
+            parse(&format!("{OK}min_effect = 0.02\n")),
+            Err(CheckError::MinEffect)
+        );
+        let own = parse(&format!("{OK}level = 0.99\nthreshold = 0.5\n")).unwrap();
+        assert_eq!(own.conditions[0].threshold, Some(0.5));
+        assert!((own.conditions[0].interval_level(0.95) - 0.98).abs() < 1e-12);
     }
 
     #[test]

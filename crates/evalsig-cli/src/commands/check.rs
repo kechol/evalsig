@@ -1,14 +1,14 @@
 //! `evalsig check <check.toml> --run <id>`: a non-preregistered check of one run
 //! against interval-based absolute criteria (D-021, SPEC §3.2, §10.1).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_core::criteria::{self, Condition};
 use evalsig_core::interval::{clopper_pearson, clopper_pearson_upper};
 use evalsig_core::missing::Side;
 use evalsig_core::records::Label;
-use evalsig_core::report::{self, Report, ReportError};
+use evalsig_core::report::{self, Report};
 use evalsig_core::validity;
 use serde_json::json;
 
@@ -38,6 +38,7 @@ fn rejected(message: impl Into<String>) -> CliError {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    args.analysis.without_proxy("check")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let text = std::fs::read_to_string(&args.file).map_err(|e| io_error(&args.file, &e))?;
@@ -74,27 +75,44 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     let judgments = d.judgments(&args.run);
     let items = d.items();
-    let failed = |e: ReportError| CliError::new("report", e.to_string(), Exit::Rejected);
-    // One report per interval level the conditions need.
-    let mut reports: BTreeMap<u64, Report> = BTreeMap::new();
-    let mut report_at = |level: f64| -> Result<Report, CliError> {
-        if let Some(r) = reports.get(&level.to_bits()) {
-            return Ok(r.clone());
-        }
-        let s = report::Settings {
-            level,
-            ..settings.clone()
-        };
-        let r = report::build(run, &judgments, &items, &labels, &s).map_err(failed)?;
-        reports.insert(level.to_bits(), r.clone());
-        Ok(r)
+    // One report per (interval level, score threshold) the conditions need.
+    let key = |c: &Condition| {
+        (
+            c.interval_level(settings.level).to_bits(),
+            c.threshold.map(f64::to_bits),
+        )
     };
-    let base = report_at(settings.level)?;
-    let enough = file.min_items.is_none_or(|m| base.n_items as u64 >= m);
+    let mut reports: BTreeMap<(u64, Option<u64>), Report> = BTreeMap::new();
+    for c in &file.conditions {
+        if let std::collections::btree_map::Entry::Vacant(slot) = reports.entry(key(c)) {
+            let s = report::Settings {
+                level: c.interval_level(settings.level),
+                threshold: c.threshold.or(settings.threshold),
+                ..settings.clone()
+            };
+            slot.insert(
+                report::build(run, &judgments, &items, &labels, &s).map_err(CliError::report)?,
+            );
+        }
+    }
+    let n_items = reports.values().next().map_or(0, |r| r.n_items);
+    // `replicates`: every item needs at least that many generation replicates.
+    let mut per_item: BTreeMap<&str, BTreeSet<u32>> = BTreeMap::new();
+    for j in &judgments {
+        per_item
+            .entry(j.item_id.as_str())
+            .or_default()
+            .insert(j.gen_replicate);
+    }
+    let short = file.replicates.map_or(0, |k| {
+        per_item.values().filter(|g| (g.len() as u32) < k).count()
+    });
+    let enough = file.min_items.is_none_or(|m| n_items as u64 >= m) && short == 0;
     let mut rows = Vec::new();
     let mut outcomes = Vec::new();
     for c in &file.conditions {
-        let (estimate, interval) = condition_value(c, &mut report_at, settings.level)?;
+        let (estimate, interval) =
+            condition_value(c, &reports[&key(c)], c.level.unwrap_or(settings.level))?;
         let judged = if enough { c.judge(interval) } else { None };
         outcomes.push(judged.map(|(_, passed)| passed));
         rows.push(json!({
@@ -125,8 +143,10 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             "run": args.run,
             "preregistered": false,
             "level": settings.level,
-            "n_items": base.n_items,
+            "n_items": n_items,
             "min_items": file.min_items,
+            "replicates": file.replicates,
+            "items_with_fewer_replicates": short,
             "conditions": rows,
         })),
     );
@@ -134,7 +154,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         code,
         text: format!("{summary} (a non-preregistered check, not a gate)"),
     });
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     let findings = validity::dataset(
         &d.records,
         &checks::overrides(args.checks, ArmArgs::default()),
@@ -151,12 +171,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 type Measured = (Option<f64>, Option<(f64, f64)>);
 
 /// A condition's point value and the interval at the level its sidedness needs.
-fn condition_value(
-    c: &Condition,
-    report_at: &mut dyn FnMut(f64) -> Result<Report, CliError>,
-    level: f64,
-) -> Result<Measured, CliError> {
-    let r = report_at(c.interval_level(level))?;
+fn condition_value(c: &Condition, r: &Report, level: f64) -> Result<Measured, CliError> {
     if c.metric == "missing_rate" {
         let system: u64 = r
             .missing_by_reason

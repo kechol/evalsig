@@ -235,33 +235,31 @@ fn threshold_compares_two_arms_over_the_cost_ratio_range() {
 
 #[test]
 fn an_indistinguishable_comparison_points_to_power() {
-    let dir = tempfile::tempdir().unwrap();
-    evalsig(dir.path()).arg("init").assert().success();
-    std::fs::write(
-        dir.path().join(".evalsig/config.toml"),
-        include_str!("../../../examples/synthetic/config.toml"),
-    )
-    .unwrap();
-    let records = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../examples/synthetic/records.jsonl"
-    );
-    evalsig(dir.path())
-        .args(["import", records])
-        .assert()
-        .success();
-    let v = json(
-        dir.path(),
-        &[
-            "compare",
-            "triage-v1",
-            "triage-v2",
-            "--metric",
-            "hit_rate",
-            "--scratch",
-        ],
-    );
+    // 60 items; run a is wrong on items 0–9, run b on items 5–15: accuracy 50/60
+    // against 49/60; items 0–4 and 10–15 are right in one run only (11 of 60).
+    let mut l = Vec::new();
+    for run in ["a", "b"] {
+        l.push(format!(
+            r#"{{"record":"run","run_id":"{run}","system":{{"id":"s","version":"{run}"}},"output_type":"binary"}}"#
+        ));
+    }
+    for i in 0..60 {
+        let truth = i % 2 == 0;
+        l.push(format!(r#"{{"record":"item","item_id":"i{i:02}"}}"#));
+        l.push(format!(
+            r#"{{"record":"label","item_id":"i{i:02}","rater_id":"ana","source":"human","value":{truth},"version":1}}"#
+        ));
+        for (run, wrong) in [("a", i < 10), ("b", (5..16).contains(&i))] {
+            l.push(format!(
+                r#"{{"record":"judgment","item_id":"i{i:02}","run_id":"{run}","gen_replicate":0,"output_type":"binary","value":{}}}"#,
+                truth != wrong
+            ));
+        }
+    }
+    let dir = project(l, "[project]\nname = \"hint\"\n");
+    let v = json(dir.path(), &["compare", "a", "b", "--scratch"]);
     assert_eq!(v["verdict"]["code"], "indistinguishable");
     let next = v["next"][0]["command"].as_str().unwrap();
     assert!(next.starts_with("evalsig power --delta "), "{next}");
+    assert!(next.contains("--discordance 0.1833"), "{next}");
 }

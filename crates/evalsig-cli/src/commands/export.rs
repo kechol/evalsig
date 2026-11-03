@@ -53,14 +53,35 @@ struct Table {
     rows: Vec<Map<String, Value>>,
 }
 
-fn kind(r: &Record) -> &'static str {
+/// The table of a record type (D-025); content records describe stored bodies and
+/// are not exported.
+fn kind(r: &Record) -> Option<&'static str> {
     match r {
-        Record::Run(_) => "runs",
-        Record::Item(_) => "items",
-        Record::Judgment(_) => "judgments",
-        Record::Label(_) => "labels",
-        Record::Preference(_) => "preferences",
-        Record::Content(_) => "contents",
+        Record::Run(_) => Some("runs"),
+        Record::Item(_) => Some("items"),
+        Record::Judgment(_) => Some("judgments"),
+        Record::Label(_) => Some("labels"),
+        Record::Preference(_) => Some("preferences"),
+        Record::Content(_) => None,
+    }
+}
+
+/// A run ID as a file-name part: letters, digits, `-`, `_` and `.` kept, anything
+/// else (path separators included) replaced by `_`, and no leading dot.
+fn file_part(id: &str) -> String {
+    let s: String = id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    match s.strip_prefix('.') {
+        Some(rest) => format!("_{rest}"),
+        None => s,
     }
 }
 
@@ -224,11 +245,13 @@ fn write_jsonl(t: &Table, path: &Path) -> Result<(), CliError> {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    args.analysis.without_proxy("export")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
     let mut tables: BTreeMap<&str, Table> = BTreeMap::new();
     for r in &d.records {
+        let Some(k) = kind(r) else { continue };
         let Value::Object(mut row) = serde_json::to_value(r).expect("records serialize") else {
             continue;
         };
@@ -236,7 +259,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         if args.to != To::Jsonl {
             row.remove("record");
         }
-        let k = kind(r);
         tables
             .entry(k)
             .or_insert_with(|| Table {
@@ -259,7 +281,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             &labels,
             &settings,
         )
-        .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
+        .map_err(CliError::report)?;
         let rows = r
             .items
             .iter()
@@ -269,7 +291,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             })
             .collect();
         tables.push(Table {
-            name: format!("items_{run_id}"),
+            name: format!("items_{}", file_part(run_id)),
             rows,
         });
     }
@@ -280,7 +302,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         To::Jsonl => "jsonl",
     };
     let mut written = Vec::new();
-    for t in &tables {
+    for t in tables.iter().filter(|t| !t.rows.is_empty()) {
         let path = args.out.join(format!("{}.{ext}", t.name));
         match args.to {
             To::Parquet => write_parquet(t, &path)?,
@@ -295,6 +317,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         "evalsig.export/1",
         json!({ "format": ext, "tables": written }),
     );
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     Ok(Output::success(envelope))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_part;
+
+    #[test]
+    fn run_ids_become_safe_file_names() {
+        assert_eq!(file_part("triage-v1"), "triage-v1");
+        assert_eq!(file_part("../etc/x"), "_._etc_x");
+        assert_eq!(file_part("a b/c"), "a_b_c");
+    }
 }

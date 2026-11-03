@@ -316,15 +316,19 @@ fn xml_escape(s: &str) -> String {
 
 /// One test case per condition of a check or gate, failed when it does not hold and
 /// skipped when it could not be decided.
-fn junit_conditions(e: &Envelope, conditions: &[Json]) -> String {
-    let failures = conditions.iter().filter(|c| c["passed"] == false).count();
+/// A stop by a validity check adds one failed case, so the suite is never green when
+/// the process was not.
+fn junit_conditions(e: &Envelope, conditions: &[Json], exit: Exit) -> String {
+    let blocked = exit == Exit::Blocked;
+    let failures =
+        conditions.iter().filter(|c| c["passed"] == false).count() + usize::from(blocked);
     let skipped = conditions.iter().filter(|c| c["passed"].is_null()).count();
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = writeln!(
         s,
         "<testsuites><testsuite name=\"{}\" tests=\"{}\" failures=\"{failures}\" skipped=\"{skipped}\">",
         xml_escape(&e.schema),
-        conditions.len(),
+        conditions.len() + usize::from(blocked),
     );
     for c in conditions {
         let name = format!(
@@ -355,13 +359,21 @@ fn junit_conditions(e: &Envelope, conditions: &[Json]) -> String {
         }
         s.push_str("</testcase>\n");
     }
+    if blocked {
+        let msg = e.verdict.as_ref().map_or("", |v| v.text.as_str());
+        let _ = writeln!(
+            s,
+            "<testcase classname=\"evalsig\" name=\"validity checks\"><failure message=\"{}\"/></testcase>",
+            xml_escape(msg)
+        );
+    }
     s.push_str("</testsuite></testsuites>\n");
     s
 }
 
 fn junit(e: &Envelope, exit: Exit) -> String {
     if let Some(conditions) = e.results["conditions"].as_array() {
-        return junit_conditions(e, conditions);
+        return junit_conditions(e, conditions, exit);
     }
     let name = e.verdict.as_ref().map_or("ok", |v| v.code.as_str());
     let failed = exit != Exit::Success;

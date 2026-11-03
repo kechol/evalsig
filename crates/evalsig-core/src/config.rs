@@ -220,6 +220,17 @@ pub struct Cost {
     pub ratio_range: Option<[f64; 2]>,
 }
 
+impl Cost {
+    /// C_FN / C_FP read off the matrix's corners: a positive judged at the lowest
+    /// level against a negative judged at the highest. `None` when either is not a
+    /// positive number.
+    pub fn corner_ratio(&self) -> Option<f64> {
+        let fp = *self.matrix.first()?.last()?;
+        let fn_ = *self.matrix.get(1)?.first()?;
+        (fp > 0.0 && fn_ > 0.0).then(|| fn_ / fp)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Checks {

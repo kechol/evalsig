@@ -60,7 +60,7 @@ pub fn fill(
 ) -> Result<ContentHash, CliError> {
     let out = output_hash(&envelope.results)?;
     let p = &mut envelope.provenance;
-    p.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    p.snapshots = d.snapshot_ids();
     p.config = Some(project.store_config(config)?.to_string());
     p.seed = Some(seed);
     p.request = Some(serde_json::to_value(request).expect("requests serialize"));

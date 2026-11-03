@@ -13,7 +13,6 @@ use crate::analysis::{self, AnalysisArgs};
 use crate::checks::{self, ArmArgs, DatasetArgs};
 use crate::data::{self, Data};
 use crate::error::CliError;
-use crate::exit::Exit;
 use crate::output::{Envelope, Output, Warning, round_numbers};
 use crate::project::Project;
 use crate::provenance::{self, Request};
@@ -65,6 +64,7 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     settings.prevalence = config.cost.as_ref().map(|c| c.prevalence);
     settings.by = args.by.clone();
     settings.items = args.items;
+    settings.detail = true;
     settings.features = args.features;
     let human = matches!(args.analysis.reference, Some(analysis::ReferenceArg::Human));
     if human != args.proxy.is_some() {
@@ -75,11 +75,12 @@ pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliEr
     settings.proxy = args.proxy.clone();
     let judgments = d.judgments(&args.run);
     let items = d.items();
-    let failed = |e: report::ReportError| CliError::new("report", e.to_string(), Exit::Rejected);
-    let report = report::build(run, &judgments, &items, &labels, &settings).map_err(failed)?;
+    let report =
+        report::build(run, &judgments, &items, &labels, &settings).map_err(CliError::report)?;
     let mut results = serde_json::to_value(&report).expect("report serializes");
     if args.k_curve {
-        let curve = kcurve::build(run, &judgments, &items, &labels, &settings).map_err(failed)?;
+        let curve =
+            kcurve::build(run, &judgments, &items, &labels, &settings).map_err(CliError::report)?;
         results["k_curve"] = serde_json::to_value(curve).expect("curves serialize");
     }
     let findings = validity::dataset(

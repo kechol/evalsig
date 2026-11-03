@@ -87,6 +87,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             Exit::Rejected,
         ));
     }
+    args.analysis.without_proxy("agree")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
@@ -97,12 +98,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .iter()
         .map(|l| (l.rater_id.as_str(), l.source))
         .collect();
-    let positive: Option<Rule> = config.positive().for_task(task).copied().or_else(|| {
-        labels
-            .iter()
-            .any(|l| matches!(l.value, Some(RecordValue::Bool(_))))
-            .then_some(Rule::Equals(RecordValue::Bool(true)))
-    });
+    let positive: Option<Rule> =
+        report::positive_rule(config.positive().for_task(task).copied(), &labels);
     let raw = ratings(&labels, |l| l.value.map(RecordValue::as_f64));
     let decided = positive.map(|p| {
         ratings(&labels, |l| {
@@ -114,9 +111,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let is_ordered = ordered(&raw);
     let evaluate = |a: &str, b: &str| -> (usize, MetaEvaluation, Option<MetaEvaluation>) {
         let values = shared(&raw[a], &raw[b]);
-        let decisions = decided
-            .as_ref()
-            .map(|r| meta::evaluate(&shared(&r[a], &r[b]), false));
+        // A rater whose values the positive rule cannot read has no decisions.
+        let decisions = decided.as_ref().and_then(|r| {
+            let (x, y) = (r.get(a)?, r.get(b)?);
+            Some(meta::evaluate(&shared(x, y), false))
+        });
         (values.len(), meta::evaluate(&values, is_ordered), decisions)
     };
     let raters: Vec<&str> = raw.keys().copied().collect();
@@ -166,58 +165,30 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         })
         .collect();
     if let Some(run_id) = &args.run {
-        let run = d.run(run_id)?;
-        let settings = analysis::settings(&config, &args.analysis);
-        let items = d.items();
-        let judgments = d.judgments(run_id);
-        let prepared = report::prepare(run, &judgments, &items, &labels, &settings)
-            .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
-        let judged = prepared.judged();
-        let system: BTreeMap<&str, bool> = judged
-            .iter()
-            .map(|(item, (v, _))| (item.as_str(), *v >= 0.5))
-            .collect();
-        let human_votes: BTreeMap<&str, BTreeMap<&str, bool>> = decided
+        let votes: BTreeMap<&str, BTreeMap<&str, bool>> = decided
             .as_ref()
             .map(|r| {
                 humans
                     .iter()
                     .filter_map(|h| {
                         r.get(h)
-                            .map(|m| (*h, m.iter().map(|(i, v)| (*i, *v >= 0.5)).collect()))
+                            .map(|m| (*h, m.iter().map(|(i, v)| (*i, *v == 1.0)).collect()))
                     })
                     .collect()
             })
             .unwrap_or_default();
-        let (mean, each) = reference::kappa_vs_raters(&system, &human_votes).unzip();
-        same_rule.push(json!({
-            "who": run_id,
-            "kind": "system",
-            "mean_kappa": mean,
-            "humans_compared": each.map_or(0, |e| e.len()),
-        }));
+        same_rule.push(system_row(
+            &d,
+            &config,
+            &args.analysis,
+            &labels,
+            run_id,
+            &votes,
+        )?);
     }
-    let shares: Vec<f64> = positive
+    let shares = positive
         .as_ref()
-        .map(|p| {
-            let mut by_item: BTreeMap<&str, Vec<&Label>> = BTreeMap::new();
-            for l in &labels {
-                by_item.entry(l.item_id.as_str()).or_default().push(l);
-            }
-            by_item
-                .values()
-                .filter_map(|ls| {
-                    let human: Vec<&Label> = ls
-                        .iter()
-                        .copied()
-                        .filter(|l| l.source == Source::Human)
-                        .collect();
-                    reference::of(&human, p, evalsig_core::config::ReferenceMode::Soft)
-                        .map(|r| r.share)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+        .map_or_else(Vec::new, |p| soft_shares(&labels, p));
     let variability: BTreeMap<String, Value> = agreement::variability(labels.iter().copied())
         .into_iter()
         .map(|(t, (within, between))| {
@@ -252,8 +223,57 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         results["preference"] = preference_block(&prefs, &config, &mut findings)?;
     }
     let mut envelope = Envelope::new("evalsig.agree/1", round_numbers(results));
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     Ok(checks::apply(envelope, &findings))
+}
+
+/// The same-rule row of a run: Cohen's κ of its decisions against each human rater's
+/// decisions, averaged.
+fn system_row(
+    d: &data::Data,
+    config: &evalsig_core::config::Config,
+    analysis_args: &AnalysisArgs,
+    labels: &[&Label],
+    run_id: &str,
+    human_votes: &BTreeMap<&str, BTreeMap<&str, bool>>,
+) -> Result<Value, CliError> {
+    let settings = analysis::settings(config, analysis_args);
+    let prepared = report::prepare(
+        d.run(run_id)?,
+        &d.judgments(run_id),
+        &d.items(),
+        labels,
+        &settings,
+    )
+    .map_err(CliError::report)?;
+    let judged = prepared.judged();
+    // The run's decision on an item: positive when most of its replicates are.
+    let system: BTreeMap<&str, bool> = judged
+        .iter()
+        .map(|(item, (v, _))| (item.as_str(), *v >= 0.5))
+        .collect();
+    let (mean, each) = reference::kappa_vs_raters(&system, human_votes).unzip();
+    Ok(json!({
+        "who": run_id,
+        "kind": "system",
+        "mean_kappa": mean,
+        "humans_compared": each.map_or(0, |e| e.len()),
+    }))
+}
+
+/// Each item's soft reference from its human raters, for the ceiling, which is
+/// defined against the soft reference whatever `--reference` says (metrics spec §9.1).
+fn soft_shares(labels: &[&Label], positive: &Rule) -> Vec<f64> {
+    let mut by_item: BTreeMap<&str, Vec<&Label>> = BTreeMap::new();
+    for l in labels.iter().filter(|l| l.source == Source::Human) {
+        by_item.entry(l.item_id.as_str()).or_default().push(l);
+    }
+    by_item
+        .values()
+        .filter_map(|ls| {
+            reference::of(ls, positive, evalsig_core::config::ReferenceMode::Soft).map(|r| r.share)
+        })
+        .collect()
 }
 
 /// Rater agreement on normalised preference verdicts and each rater's position bias,

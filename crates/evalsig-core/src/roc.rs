@@ -27,17 +27,20 @@ pub struct Weighted {
     pub weight: f64,
 }
 
-/// The AUC of weighted positive and negative scores: Σ w_i w_j ψ / Σ w_i w_j.
+/// The AUC of weighted positive and negative scores: Σ w_i w_j ψ / Σ w_i w_j, the soft
+/// AUC of items whose shares are 1 and 0.
 pub fn auc(pos: &[Weighted], neg: &[Weighted]) -> Option<f64> {
-    let den = sum(pos
+    let item = |w: &Weighted, share: f64| SoftItem {
+        score: w.score,
+        share,
+        weight: w.weight,
+    };
+    let items: Vec<SoftItem> = pos
         .iter()
-        .flat_map(|p| neg.iter().map(move |n| p.weight * n.weight)));
-    (den > 0.0).then(|| {
-        sum(pos.iter().flat_map(|p| {
-            neg.iter()
-                .map(move |n| p.weight * n.weight * psi(p.score, n.score))
-        })) / den
-    })
+        .map(|w| item(w, 1.0))
+        .chain(neg.iter().map(|w| item(w, 0.0)))
+        .collect();
+    auc_soft(&items)
 }
 
 /// The empirical ROC as (false-alarm rate, hit rate) points: one threshold at each
@@ -48,17 +51,29 @@ pub fn roc_points(pos: &[Weighted], neg: &[Weighted]) -> Vec<(f64, f64)> {
     if tp <= 0.0 || tn <= 0.0 {
         return Vec::new();
     }
-    let mut thresholds: Vec<f64> = pos.iter().chain(neg).map(|x| x.score).collect();
-    thresholds.sort_by(|a, b| b.total_cmp(a));
-    thresholds.dedup();
-    let at_least =
-        |xs: &[Weighted], t: f64| sum(xs.iter().filter(|x| x.score >= t).map(|x| x.weight));
+    // One sweep from the strongest score, accumulating each score's weights.
+    let mut scored: Vec<(f64, f64, f64)> = pos
+        .iter()
+        .map(|x| (x.score, x.weight, 0.0))
+        .chain(neg.iter().map(|x| (x.score, 0.0, x.weight)))
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     let mut out = vec![(0.0, 0.0)];
-    out.extend(
-        thresholds
-            .iter()
-            .map(|&t| (at_least(neg, t) / tn, at_least(pos, t) / tp)),
-    );
+    let (mut hits, mut alarms, mut start) = (Vec::new(), Vec::new(), 0);
+    while start < scored.len() {
+        let end = start
+            + scored[start..]
+                .iter()
+                .take_while(|x| x.0 == scored[start].0)
+                .count();
+        hits.extend(scored[start..end].iter().map(|x| x.1));
+        alarms.extend(scored[start..end].iter().map(|x| x.2));
+        out.push((
+            sum(alarms.iter().copied()) / tn,
+            sum(hits.iter().copied()) / tp,
+        ));
+        start = end;
+    }
     if out.last() != Some(&(1.0, 1.0)) {
         out.push((1.0, 1.0));
     }
@@ -153,13 +168,32 @@ fn covariance(xs: &[f64], ys: &[f64]) -> f64 {
 
 /// Structural components V10 (per positive) and V01 (per negative).
 fn components(pos: &[f64], neg: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let sorted = |xs: &[f64]| {
+        let mut v = xs.to_vec();
+        v.sort_by(f64::total_cmp);
+        v
+    };
+    let (sp, sn) = (sorted(pos), sorted(neg));
+    // ψ summed over the other class: those strictly below count 1, ties ½.
+    let below_and_tied = |others: &[f64], x: f64| {
+        let below = others.partition_point(|y| *y < x);
+        let at_most = others.partition_point(|y| *y <= x);
+        (below as f64, (at_most - below) as f64)
+    };
     let v10 = pos
         .iter()
-        .map(|&x| sum(neg.iter().map(|&y| psi(x, y))) / neg.len() as f64)
+        .map(|&x| {
+            let (b, t) = below_and_tied(&sn, x);
+            (b + 0.5 * t) / neg.len() as f64
+        })
         .collect();
     let v01 = neg
         .iter()
-        .map(|&y| sum(pos.iter().map(|&x| psi(x, y))) / pos.len() as f64)
+        .map(|&y| {
+            let (b, t) = below_and_tied(&sp, y);
+            let above = pos.len() as f64 - b - t;
+            (above + 0.5 * t) / pos.len() as f64
+        })
         .collect();
     (v10, v01)
 }

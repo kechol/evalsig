@@ -59,6 +59,11 @@ pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
         (Some(m), Some(rho)) => power::with_design_effect(n, m, rho),
         _ => n,
     };
+    // Given items in clusters are worth fewer independent ones: n / (1 + (m̄ − 1)ρ).
+    let effective = |n: u64| match (args.cluster_size, args.icc) {
+        (Some(m), Some(rho)) => (n as f64 / (1.0 + (m - 1.0) * rho)).floor() as u64,
+        _ => n,
+    };
     let level = power::bonferroni(args.alpha, args.budget);
     let two_sided = !args.one_sided;
     let mut results = json!({ "alpha": args.alpha, "budget": args.budget, "level": level, "two_sided": two_sided });
@@ -87,13 +92,22 @@ pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
             paired["approximation"] =
                 json!(power::mcnemar_n_connor(p10, p01, args.power, level, two_sided).map(effect));
             if let Some(n) = args.n {
-                paired["pass_probability"] =
-                    json!(power::mcnemar_power(n as usize, p10, p01, level, two_sided));
+                paired["pass_probability"] = json!(power::mcnemar_power(
+                    effective(n) as usize,
+                    p10,
+                    p01,
+                    level,
+                    two_sided
+                ));
             }
         }
         if let Some(n) = args.n {
             paired["mde"] = json!(power::minimum_detectable_difference(
-                n, psi, args.power, level, two_sided
+                effective(n),
+                psi,
+                args.power,
+                level,
+                two_sided
             ));
         }
         results["paired"] = paired;
@@ -127,6 +141,7 @@ pub struct ThresholdArgs {
 }
 
 pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, CliError> {
+    args.analysis.without_proxy("threshold")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let c = config.cost.clone().ok_or_else(|| {
@@ -137,9 +152,9 @@ pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, CliError> 
     let labels: Vec<&Label> = all.iter().collect();
     let settings = analysis::settings(&config, &args.analysis);
     let items = d.items();
-    let failed = |e: report::ReportError| CliError::new("report", e.to_string(), Exit::Rejected);
     let prepare = |id: &str| -> Result<report::Prepared<'_>, CliError> {
-        report::prepare(d.run(id)?, &d.judgments(id), &items, &labels, &settings).map_err(failed)
+        report::prepare(d.run(id)?, &d.judgments(id), &items, &labels, &settings)
+            .map_err(CliError::report)
     };
     let p = prepare(&args.run)?;
     let levels = c.matrix.first().map_or(0, Vec::len);
@@ -150,8 +165,9 @@ pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, CliError> 
             Exit::InsufficientData,
         )
     })?;
-    let corner = c.matrix[1][0] / c.matrix[0][levels - 1];
-    let ratio = args.ratio.unwrap_or(corner);
+    let ratio = args.ratio.or_else(|| c.corner_ratio()).ok_or_else(|| {
+        CliError::usage("the [cost] matrix's corners give no cost ratio; pass --ratio")
+    })?;
     let binary = cost::ratio_matrix(ratio);
     let mut results = json!({
         "run": args.run,

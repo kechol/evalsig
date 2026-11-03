@@ -112,6 +112,6 @@ pub fn capabilities(root: &Path, run: Option<&str>) -> Result<Output, CliError> 
         "evalsig.capabilities/1",
         serde_json::json!({"run": run, "capabilities": c}),
     );
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     Ok(Output::success(envelope))
 }

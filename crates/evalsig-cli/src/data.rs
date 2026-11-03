@@ -60,6 +60,11 @@ pub fn layered(snapshots: Vec<ContentHash>, read: Vec<Vec<Record>>) -> Data {
 }
 
 impl Data {
+    /// The snapshot references, as provenance records them.
+    pub fn snapshot_ids(&self) -> Vec<String> {
+        self.snapshots.iter().map(ToString::to_string).collect()
+    }
+
     pub fn run(&self, id: &str) -> Result<&Run, CliError> {
         self.records
             .iter()

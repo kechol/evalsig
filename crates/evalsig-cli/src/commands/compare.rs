@@ -212,6 +212,10 @@ pub fn validation_uses(entries: &[Entry], split: &str) -> u64 {
 
 /// Add `validation_uses` to the results and warn past the configured limit.
 pub fn count_uses(results: &mut Value, warnings: &mut Vec<Warning>, entries: &[Entry], limit: u32) {
+    // Dev comparisons are expected to repeat; only validation reuse is counted.
+    if results["split_part"] == "dev" {
+        return;
+    }
     let Some(split) = results["split"].as_str() else {
         return;
     };
@@ -237,7 +241,10 @@ fn power_hint(results: &Value, verdict: Option<VerdictCode>) -> Option<Next> {
     ) {
         return None;
     }
-    let primary = results["primary_metric"].as_str()?;
+    // The McNemar sizing of `power` is for accuracy, whose items all count.
+    let primary = results["primary_metric"]
+        .as_str()
+        .filter(|m| *m == "accuracy")?;
     let m = results["metrics"]
         .as_array()?
         .iter()
@@ -259,7 +266,7 @@ fn power_hint(results: &Value, verdict: Option<VerdictCode>) -> Option<Next> {
     .sum();
     let psi = moved / results["n_used"].as_f64().filter(|n| *n > 0.0)?;
     (psi > delta).then(|| Next {
-        command: format!("evalsig power --delta {delta:.4} --discordance {psi:.4}"),
+        command: format!("evalsig power --delta {delta} --discordance {psi}"),
         why: "how many paired items would detect this difference".into(),
     })
 }
@@ -283,16 +290,12 @@ pub fn compute(
     let items = d.items();
     let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = labels.iter().collect();
-    if matches!(args.analysis.reference, Some(analysis::ReferenceArg::Human)) {
-        return Err(CliError::usage(
-            "--reference human applies to report --proxy; compare uses single, majority or soft",
-        ));
-    }
+    args.analysis.without_proxy("compare")?;
     let settings = analysis::settings(config, &args.analysis);
     let prepare = |id: &str| -> Result<(&Run, Prepared<'_>), CliError> {
         let run = d.run(id)?;
         let p = report::prepare(run, &d.judgments(id), &items, &labels, &settings)
-            .map_err(|e| CliError::new("report", e.to_string(), Exit::Rejected))?;
+            .map_err(CliError::report)?;
         Ok((run, p))
     };
     let (base_run, base) = prepare(&args.baseline)?;
@@ -331,21 +334,13 @@ pub fn compute(
             changed_inputs(&items, &base, &cand, &overrides)
         };
         findings.extend(input_findings);
-        let mut left_out = excluded.clone();
-        if let Some(s) = scope {
-            left_out.extend(
-                base.judged()
-                    .into_keys()
-                    .chain(cand.judged().into_keys())
-                    .filter(|i| !s.items.contains(i)),
-            );
-        }
         let options = Options {
             level: settings.level,
             bootstrap: settings.bootstrap,
             seed: settings.seed,
             min_effect: config.compare.min_effect.clone(),
-            excluded: left_out,
+            excluded: excluded.clone(),
+            scope: scope.map(|s| s.items.clone()),
         };
         let c = if args.unpaired {
             compare::unpaired(&base, &cand, &options)

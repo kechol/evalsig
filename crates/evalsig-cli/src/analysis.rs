@@ -48,6 +48,18 @@ impl From<ReferenceArg> for ReferenceMode {
     }
 }
 
+impl AnalysisArgs {
+    /// Refuse `--reference human`, which only `report --proxy` reads.
+    pub fn without_proxy(&self, command: &str) -> Result<(), crate::error::CliError> {
+        if matches!(self.reference, Some(ReferenceArg::Human)) {
+            return Err(crate::error::CliError::usage(format!(
+                "--reference human applies to report --proxy; {command} uses single, majority or soft"
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// The settings for these options under a configuration; `prevalence`, `by` and
 /// `items` are left for the command to set.
 pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
@@ -66,6 +78,7 @@ pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
         prevalence: None,
         by: None,
         items: false,
+        detail: false,
         features: false,
         proxy: None,
     }

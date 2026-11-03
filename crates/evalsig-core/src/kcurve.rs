@@ -75,6 +75,10 @@ pub fn build(
                 estimand,
                 by: None,
                 items: false,
+                // Each point is read for its metrics only.
+                detail: false,
+                features: false,
+                proxy: None,
                 ..s.clone()
             };
             let r = report::build(run, judgments, items, labels, &settings)?;

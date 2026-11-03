@@ -50,6 +50,15 @@ pub struct Options {
     pub min_effect: BTreeMap<String, f64>,
     /// Items left out of the comparison (inputs that changed between arms).
     pub excluded: BTreeSet<String>,
+    /// When set, only these items are compared (a part of a split).
+    pub scope: Option<BTreeSet<String>>,
+}
+
+impl Options {
+    /// Whether an item takes part: in the scope, if any, and not excluded.
+    pub fn counts(&self, item: &str) -> bool {
+        self.scope.as_ref().is_none_or(|s| s.contains(item)) && !self.excluded.contains(item)
+    }
 }
 
 /// One arm's per-item values for a metric under the policy, worst and best fills.
@@ -144,21 +153,20 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
     let a = base.prepared;
     let ids = shared_ids(a, b);
     let judged_b = b.judged();
+    let in_scope = |k: &&String| o.scope.as_ref().is_none_or(|s| s.contains(*k));
     let in_both: BTreeSet<&str> = base
         .judged
         .keys()
+        .filter(in_scope)
         .filter(|k| judged_b.contains_key(*k))
         .map(String::as_str)
         .collect();
-    let paired: BTreeSet<&str> = in_both
-        .iter()
-        .copied()
-        .filter(|k| !o.excluded.contains(*k))
-        .collect();
+    let paired: BTreeSet<&str> = in_both.iter().copied().filter(|k| o.counts(k)).collect();
     let union = base
         .judged
         .keys()
         .chain(judged_b.keys())
+        .filter(in_scope)
         .collect::<BTreeSet<_>>()
         .len();
     let n_unpaired = (union - in_both.len()) as u64;
@@ -366,7 +374,12 @@ pub fn unpaired(a: &Prepared<'_>, b: &Prepared<'_>, o: &Options) -> Comparison {
         .map(|id| unpaired_delta(id, a, b, o, independent, has_system_missing))
         .collect();
     Comparison {
-        n_used: a.judged().len() + b.judged().len(),
+        n_used: a
+            .judged()
+            .keys()
+            .chain(b.judged().keys())
+            .filter(|k| o.counts(k))
+            .count(),
         n_unpaired: 0,
         metrics,
         transition: None,
@@ -385,7 +398,7 @@ fn unpaired_delta(
     let values = |p: &Prepared<'_>, fill| -> BTreeMap<String, ItemValue> {
         p.item_values(id, fill)
             .into_iter()
-            .filter(|(k, _)| !o.excluded.contains(k))
+            .filter(|(k, _)| o.counts(k))
             .collect()
     };
     let (pa, pb) = (values(a, Fill::Policy), values(b, Fill::Policy));
@@ -499,7 +512,7 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
             let value = |v: &ItemValue| v.numerator / v.denominator;
             let mut ds: Vec<f64> = pa
                 .iter()
-                .filter(|(k, x)| !o.excluded.contains(*k) && x.denominator > 0.0)
+                .filter(|(k, x)| o.counts(k) && x.denominator > 0.0)
                 .filter_map(|(k, x)| {
                     pb.get(k)
                         .filter(|y| y.denominator > 0.0)
@@ -538,12 +551,20 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
 /// A period's trend label against the baseline period: `drifted` when the interval of
 /// the unpaired difference excludes 0, `stable` otherwise, `insufficient_data` without
 /// an interval (metrics spec §7.3).
-pub fn drift(d: &MetricDelta) -> &'static str {
+pub fn drift(d: &MetricDelta) -> Drift {
     match d.ci {
-        None => "insufficient_data",
-        Some((lo, hi)) if lo > 0.0 || hi < 0.0 => "drifted",
-        Some(_) => "stable",
+        None => Drift::InsufficientData,
+        Some((lo, hi)) if lo > 0.0 || hi < 0.0 => Drift::Drifted,
+        Some(_) => Drift::Stable,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Drift {
+    Drifted,
+    Stable,
+    InsufficientData,
 }
 
 /// The decision metric, Holm-adjusted p-values and best candidate of several

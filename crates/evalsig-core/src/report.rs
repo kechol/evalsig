@@ -42,6 +42,9 @@ pub struct Settings {
     pub prevalence: Option<f64>,
     pub by: Option<String>,
     pub items: bool,
+    /// Add the detail tier's ROC and calibration (`report`; other commands that only
+    /// read the metrics leave it off).
+    pub detail: bool,
     /// Add the feature likelihood ratios (`report --features`).
     pub features: bool,
     /// Correct the human-scale value with this model rater's labels (PPI++,
@@ -274,14 +277,10 @@ pub fn prepare<'a>(
     }
 
     let positive = if semantics == ValueSemantics::Decision {
-        let label_binary = labels
-            .iter()
-            .any(|l| matches!(l.value, Some(Value::Bool(_))));
-        Some(match s.positive {
-            Some(p) => p,
-            None if label_binary => Rule::Equals(Value::Bool(true)),
-            None => return Err(ReportError::NoPositiveDefinition("ordinal and score")),
-        })
+        Some(
+            positive_rule(s.positive, labels)
+                .ok_or(ReportError::NoPositiveDefinition("ordinal and score"))?,
+        )
     } else {
         None
     };
@@ -312,7 +311,8 @@ pub fn prepare<'a>(
         let mut at_least_reps = Vec::new();
         let mut grades = Vec::new();
         let mut raw = Vec::new();
-        let mut fired: BTreeMap<String, (f64, f64)> = BTreeMap::new();
+        let mut fired: BTreeMap<String, f64> = BTreeMap::new();
+        let mut n_judgments = 0.0;
         for reps in gens.values() {
             let mut values = Vec::new();
             let mut reason = None;
@@ -322,10 +322,9 @@ pub fn prepare<'a>(
                 {
                     raw.push(v.as_f64());
                 }
+                n_judgments += 1.0;
                 for f in j.features.iter().flatten() {
-                    let e = fired.entry(f.feature_id.clone()).or_default();
-                    e.0 += f64::from(u8::from(f.fired));
-                    e.1 += 1.0;
+                    *fired.entry(f.feature_id.clone()).or_default() += f64::from(u8::from(f.fired));
                 }
                 match (&j.missing, judged_value(j, rule.as_ref(), semantics)) {
                     (Some(m), _) => {
@@ -382,7 +381,11 @@ pub fn prepare<'a>(
             weight: item.map_or(1.0, |i| i.weight()) * inverse_inclusion.unwrap_or(1.0),
             inclusion_weighted: inverse_inclusion.is_some(),
             raw: mean(raw.iter().copied()),
-            fired: fired.into_iter().map(|(k, (f, n))| (k, f / n)).collect(),
+            // A judgment that does not report a feature counts as not firing it.
+            fired: fired
+                .into_iter()
+                .map(|(k, f)| (k, f / n_judgments))
+                .collect(),
             stratum: s.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
@@ -443,6 +446,16 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
+/// The configured positive definition, or `true` when the labels are booleans.
+pub fn positive_rule(configured: Option<Rule>, labels: &[&Label]) -> Option<Rule> {
+    configured.or_else(|| {
+        labels
+            .iter()
+            .any(|l| matches!(l.value, Some(Value::Bool(_))))
+            .then_some(Rule::Equals(Value::Bool(true)))
+    })
+}
+
 /// Build the report of one run from its records.
 pub fn build(
     run: &Run,
@@ -452,6 +465,17 @@ pub fn build(
     s: &Settings,
 ) -> Result<Report, ReportError> {
     let p = prepare(run, judgments, items, labels, s)?;
+    from_prepared(&p, items, labels)
+}
+
+/// The report of units already prepared (with `items` and `labels` they came from,
+/// which the proxy correction reads).
+pub fn from_prepared(
+    p: &Prepared<'_>,
+    items: &BTreeMap<&str, &Item>,
+    labels: &[&Label],
+) -> Result<Report, ReportError> {
+    let s = p.settings;
     let calc = p.calc();
     let units = &p.units;
     let semantics = p.semantics;
@@ -567,8 +591,8 @@ pub fn build(
         reproducibility,
         by,
         items: item_rows,
-        roc: p.roc(),
-        calibration: p.calibration(),
+        roc: s.detail.then(|| p.roc()).flatten(),
+        calibration: s.detail.then(|| p.calibration()).flatten(),
         features: s
             .features
             .then(|| p.features(crate::features::Thresholds::default(), s.prevalence)),

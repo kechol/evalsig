@@ -160,7 +160,8 @@ pub fn split(
 }
 
 /// Validation takes clusters from the end of `ordered` until it holds `share` of the
-/// items; the rest is dev. Each side keeps at least one cluster when there are two.
+/// items; the rest is dev. With two or more clusters each side keeps at least one; a
+/// lone cluster stays in dev, the side that is looked at.
 fn latest_share(ordered: Vec<(&str, usize)>, share: f64) -> BTreeMap<&str, Part> {
     let total: usize = ordered.iter().map(|(_, n)| n).sum();
     let target = share * total as f64;
@@ -168,7 +169,7 @@ fn latest_share(ordered: Vec<(&str, usize)>, share: f64) -> BTreeMap<&str, Part>
     let mut taken = 0;
     let last = ordered.len();
     for (k, (cluster, n)) in ordered.into_iter().enumerate().rev() {
-        let keep_dev = k == 0 && last > 1;
+        let keep_dev = k == 0;
         let validation = !keep_dev && ((taken as f64) < target || k + 1 == last);
         if validation {
             taken += n;
@@ -257,6 +258,20 @@ mod tests {
         let ja = a.validation.iter().filter(|i| i.as_str() >= "i10").count();
         assert_eq!((a.validation.len(), ja), (8, 4));
         assert_eq!(split(&refs, None, &method, 0.4).unwrap(), a);
+    }
+
+    #[test]
+    fn a_stratum_with_one_cluster_stays_in_dev() {
+        let mut s = sample();
+        s[19].strata = Some(serde_json::from_str(r#"{"lang":"rare"}"#).unwrap());
+        s[18].strata = s[19].strata.clone();
+        let refs: Vec<&Item> = s.iter().collect();
+        let method = Method::Random {
+            seed: 3,
+            stratum: Some("lang".into()),
+        };
+        let a = split(&refs, None, &method, 0.4).unwrap();
+        assert!(a.dev.contains(&"i18".to_owned()) && a.dev.contains(&"i19".to_owned()));
     }
 
     #[test]

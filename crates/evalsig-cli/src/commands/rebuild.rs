@@ -25,6 +25,6 @@ pub fn run(root: &Path) -> Result<Output, CliError> {
         "evalsig.rebuild/1",
         json!({ "cache": db.display().to_string(), "rows": counts }),
     );
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+    envelope.provenance.snapshots = d.snapshot_ids();
     Ok(Output::success(envelope))
 }

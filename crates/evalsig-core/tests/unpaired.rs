@@ -30,6 +30,7 @@ fn settings(positive: Option<Rule>) -> Settings {
         prevalence: None,
         by: None,
         items: false,
+        detail: false,
         features: false,
         proxy: None,
     }
@@ -42,6 +43,7 @@ fn options() -> Options {
         seed: 1,
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
+        scope: None,
     }
 }
 
@@ -128,7 +130,7 @@ fn zero_one_rates_use_newcombe() {
     assert!((acc.delta.unwrap() - 0.2).abs() < 1e-12);
     close(acc.ci.unwrap().0, &c["expected"]["newcombe95"][0], "lo");
     close(acc.ci.unwrap().1, &c["expected"]["newcombe95"][1], "hi");
-    assert_eq!(compare::drift(acc), "drifted");
+    assert_eq!(compare::drift(acc), compare::Drift::Drifted);
 }
 
 #[test]

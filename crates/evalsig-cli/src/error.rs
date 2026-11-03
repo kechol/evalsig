@@ -26,6 +26,11 @@ impl CliError {
         }
     }
 
+    /// A report that cannot be computed from these records and settings.
+    pub fn report(e: evalsig_core::report::ReportError) -> Self {
+        CliError::new("report", e.to_string(), Exit::Rejected)
+    }
+
     pub fn usage(message: impl Into<String>) -> Self {
         CliError::new("usage", message, Exit::Usage)
     }
