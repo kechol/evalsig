@@ -101,7 +101,7 @@ pub(crate) fn parse_size(s: &str) -> Result<u64, String> {
 }
 
 /// A file read within the size limit; a refusal names the limit that applies.
-fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliError> {
+pub(crate) fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliError> {
     limits::read_file(path, limits).map_err(|e| match e {
         LimitError::Io(io) => io_error(path, &io),
         other => {

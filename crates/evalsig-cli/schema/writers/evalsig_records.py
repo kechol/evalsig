@@ -14,6 +14,7 @@ match the format before they reach evalsig. Check the output with
         w.judgment("t-1", "triage-v1", gen_replicate=1, output_type="binary", missing=missing("timeout"))
 """
 import json
+import math
 
 RECORDS_VERSION = "records/1"
 MISSING_REASONS = (
@@ -53,8 +54,8 @@ def _value_or_missing(record, value, missing_value):
     if (value is None) == (missing_value is None):
         raise ValueError("give exactly one of value and missing")
     if value is not None:
-        if isinstance(value, float) and value != value:
-            raise ValueError("NaN is not a value; give missing(...) instead")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("NaN and infinities are not values; give missing(...) instead")
         record["value"] = value
     else:
         record["missing"] = missing_value
@@ -68,7 +69,7 @@ class Writer:
         self.f = f
 
     def write(self, record):
-        self.f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        self.f.write(json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
 
     def run(self, run_id, system_id, system_version, output_type, value_semantics="decision",
             levels=None, grader=None):

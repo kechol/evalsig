@@ -12,10 +12,10 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Kind};
 use serde_json::json;
 
-use crate::commands::import::parse_size;
+use crate::commands::import::{parse_size, read_within};
 use crate::error::CliError;
 use crate::exit::Exit;
-use crate::mapped::Bodies;
+use crate::mapped::{self, Bodies};
 use crate::output::{Envelope, Next, Output, Verdict, VerdictCode};
 use crate::project::{Project, io_error};
 use crate::validate::RecordValidator;
@@ -75,29 +75,116 @@ pub enum MapCommand {
     },
 }
 
-fn shape_of(path: &Path) -> Result<Shape, CliError> {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("eval" | "zip") => Ok(Shape::Zip),
-        Some("json") => Ok(Shape::Json),
-        Some("jsonl" | "ndjson") => Ok(Shape::Jsonl),
-        Some("csv") => Ok(Shape::Csv),
-        _ => Err(
-            CliError::usage(format!("cannot tell the format of {}", path.display()))
-                .with_hint("name the file .json, .jsonl, .csv or .eval"),
-        ),
-    }
+fn probe_file(file: &Path, max_bytes: u64, no_values: bool) -> Result<probe::Probe, CliError> {
+    probe_rows(file, max_bytes, no_values).map(|(p, _)| p)
 }
 
-fn probe_file(file: &Path, max_bytes: u64, no_values: bool) -> Result<probe::Probe, CliError> {
-    let shape = shape_of(file)?;
+/// The probe of a file and the rows it was taken from.
+fn probe_rows(
+    file: &Path,
+    max_bytes: u64,
+    no_values: bool,
+) -> Result<(probe::Probe, Vec<serde_json::Value>), CliError> {
+    let shape = Shape::from_extension(file).ok_or_else(|| {
+        CliError::usage(format!("cannot tell the format of {}", file.display()))
+            .with_hint("name the file .json, .jsonl, .ndjson, .csv, .eval or .zip")
+    })?;
     let limits = Limits {
         max_bytes,
         ..Limits::default()
     };
-    let bytes = evalsig_adapters::limits::read_file(file, &limits)
-        .map_err(|e| CliError::invalid_input(file, e))?;
+    let bytes = read_within(file, &limits)?;
     let rows = probe::rows(shape, &bytes, &limits).map_err(|e| CliError::invalid_input(file, e))?;
-    Ok(probe::probe(shape, &rows, no_values))
+    Ok((probe::probe(shape, &rows, no_values), rows))
+}
+
+fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output, CliError> {
+    let p = probe_file(file, max_bytes, no_values)?;
+    let mut envelope = Envelope::new(
+        "evalsig.map.probe/1",
+        json!({ "file": file.display().to_string(), "probe": p }),
+    );
+    envelope.next = vec![
+        match p.known.as_ref().and_then(|k| k.adapter.map(|a| (a, k))) {
+            Some((a, k)) => Next {
+                command: format!("evalsig import --adapter {a} {}", file.display()),
+                why: k.hint.into(),
+            },
+            None => Next {
+                command: format!("evalsig map draft {} --out mapping.toml", file.display()),
+                why: "draft a mapping; its choices are left to a person".into(),
+            },
+        },
+    ];
+    Ok(Output::success(envelope))
+}
+
+fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result<Output, CliError> {
+    if out.exists() && !force {
+        return Err(CliError::usage(format!("{} exists", out.display()))
+            .with_hint("pass --force to replace it"));
+    }
+    if Shape::from_extension(file) == Some(Shape::Zip) {
+        return Err(
+            CliError::usage("archives are read by harness adapters, not mappings")
+                .with_hint("for an Inspect log: evalsig import --adapter inspect <file>"),
+        );
+    }
+    let (mut p, rows) = probe_rows(file, max_bytes, false)?;
+    // A JSON document whose rows sit in one array: draft for the array's elements.
+    let mut records_path = None;
+    if p.shape == Shape::Json
+        && p.rows == 1
+        && let Some(rp) = p.records_path_candidates.first().cloned()
+        && let Ok(path) = mapping::path::Path::parse(&rp)
+    {
+        let vars = std::collections::BTreeMap::new();
+        let elements = path.eval(mapping::path::Scope {
+            row: &rows[0],
+            current: None,
+            vars: &vars,
+        });
+        p = probe::probe(Shape::Json, elements, false);
+        records_path = Some(rp);
+    }
+    let name = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("records")
+        .to_owned();
+    let d = draft::draft(&name, &p, records_path.as_deref());
+    let text = toml::to_string(&d.mapping).expect("tables serialize");
+    std::fs::write(out, text).map_err(|e| io_error(out, &e))?;
+    let n = d.decisions_needed.len();
+    let mut envelope = Envelope::new(
+        "evalsig.map.draft/1",
+        json!({
+            "source": {"path": file.display().to_string(), "format": p.shape, "rows": p.rows},
+            "detected_format": p.known,
+            "mapping_written": out.display().to_string(),
+            "candidates": {
+                "item_key": p.key_candidates,
+                "replicate": p.replicate_candidates,
+                "records_path": p.records_path_candidates,
+            },
+            "decisions_needed": d.decisions_needed,
+        }),
+    );
+    envelope.verdict = Some(Verdict {
+        code: VerdictCode::NeedsDecisions,
+        text: format!(
+            "Drafted {}. {n} choices that change results are left to a person: show them the options and effects instead of choosing.",
+            out.display()
+        ),
+    });
+    envelope.next = vec![Next {
+        command: format!(
+            "evalsig map decide item_key '<path or template>' --by user:<name> --mapping {}",
+            out.display()
+        ),
+        why: "record the answer a person chose; an agent does not choose".into(),
+    }];
+    Ok(Output::success(envelope))
 }
 
 pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, CliError> {
@@ -106,76 +193,13 @@ pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, CliError> {
             file,
             no_values,
             max_bytes,
-        } => {
-            let p = probe_file(file, *max_bytes, *no_values)?;
-            let mut envelope = Envelope::new(
-                "evalsig.map.probe/1",
-                json!({ "file": file.display().to_string(), "probe": p }),
-            );
-            envelope.next = vec![
-                match p.known.as_ref().and_then(|k| k.adapter.map(|a| (a, k))) {
-                    Some((a, k)) => Next {
-                        command: format!("evalsig import --adapter {a} {}", file.display()),
-                        why: k.hint.into(),
-                    },
-                    None => Next {
-                        command: format!("evalsig map draft {} --out mapping.toml", file.display()),
-                        why: "draft a mapping; its choices are left to a person".into(),
-                    },
-                },
-            ];
-            Ok(Output::success(envelope))
-        }
+        } => probe_command(file, *no_values, *max_bytes),
         MapCommand::Draft {
             file,
             out,
             force,
             max_bytes,
-        } => {
-            if out.exists() && !force {
-                return Err(CliError::usage(format!("{} exists", out.display()))
-                    .with_hint("pass --force to replace it"));
-            }
-            let p = probe_file(file, *max_bytes, false)?;
-            let name = file
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("records")
-                .to_owned();
-            let d = draft::draft(&name, &p);
-            let text = toml::to_string(&d.mapping).expect("tables serialize");
-            std::fs::write(out, text).map_err(|e| io_error(out, &e))?;
-            let n = d.decisions_needed.len();
-            let mut envelope = Envelope::new(
-                "evalsig.map.draft/1",
-                json!({
-                    "source": {"path": file.display().to_string(), "format": p.shape, "rows": p.rows},
-                    "detected_format": p.known,
-                    "mapping_written": out.display().to_string(),
-                    "candidates": {
-                        "item_key": p.key_candidates,
-                        "replicate": p.replicate_candidates,
-                        "records_path": p.records_path_candidates,
-                    },
-                    "decisions_needed": d.decisions_needed,
-                }),
-            );
-            envelope.verdict = Some(Verdict {
-                code: VerdictCode::NeedsDecisions,
-                text: format!(
-                    "Drafted {}. {n} choices that change results are left to a person: show them the options and effects instead of choosing.",
-                    out.display()
-                ),
-            });
-            envelope.next = vec![Next {
-                command: format!(
-                    "evalsig map decide item_key '<path or template>' --by user:<name> --mapping {}",
-                    out.display()
-                ),
-                why: "record the answer a person chose; an agent does not choose".into(),
-            }];
-            Ok(Output::success(envelope))
-        }
+        } => draft_command(file, out, *force, *max_bytes),
         MapCommand::Decide {
             id,
             choice,
@@ -206,10 +230,11 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
         .len() as u64;
     draft::decide(&mut table, id, choice, by, seq).map_err(CliError::usage)?;
     let after = toml::to_string(&table).expect("tables serialize");
-    let remaining = mapping::parse(&after)
-        .and_then(|m| mapping::compile(&m))
-        .map(|c| c.undecided)
-        .map_err(|e| CliError::invalid_input(path, e))?;
+    let remaining = mapped::compile_text(path, &after)?.undecided;
+    // Written beside the file and renamed after the ledger line, so the file never
+    // holds a half-written mapping or a choice the ledger lacks.
+    let staged = path.with_extension("toml.tmp");
+    std::fs::write(&staged, &after).map_err(|e| io_error(&staged, &e))?;
     let mut envelope = Envelope::new(
         "evalsig.map.decide/1",
         json!({
@@ -227,10 +252,24 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
         vec![ContentHash::blake3(after.as_bytes()).to_string()],
         json!({"mapping": path.display().to_string(), "id": id, "choice": choice, "decided_by": by}),
     )?;
-    std::fs::write(path, after).map_err(|e| io_error(path, &e))?;
+    std::fs::rename(&staged, path).map_err(|e| io_error(path, &e))?;
     if id == "positive" {
+        let rules: serde_json::Value = serde_json::from_str(choice).expect("checked by decide");
+        let line = |k: &str| {
+            rules
+                .get(k)
+                .and_then(|r| toml::Value::try_from(r).ok())
+                .map(|v| format!("{k} = {v}"))
+        };
+        let lines: Vec<String> = ["positive", "decision"]
+            .into_iter()
+            .filter_map(line)
+            .collect();
         envelope.next = vec![Next {
-            command: "edit [project] positive and decision in .evalsig/config.toml".into(),
+            command: format!(
+                "add to [project] in .evalsig/config.toml: {}",
+                lines.join("; ")
+            ),
             why: "the positive definition and the decision rule live in the configuration".into(),
         }];
     }
@@ -244,26 +283,8 @@ fn test(
     max_bytes: u64,
 ) -> Result<Output, CliError> {
     let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
-    let compiled = mapping::parse(&text)
-        .and_then(|m| mapping::compile(&m))
-        .map_err(|e| {
-            CliError::new(
-                "invalid_mapping",
-                format!("{}: {e}", path.display()),
-                Exit::Rejected,
-            )
-        })?;
-    if !compiled.undecided.is_empty() {
-        return Err(CliError::new(
-            "undecided_mapping",
-            format!(
-                "the mapping still says DECIDE at {}",
-                compiled.undecided.join(", ")
-            ),
-            Exit::Blocked,
-        )
-        .with_hint("decide them with `evalsig map decide`"));
-    }
+    let compiled = mapped::compile_text(path, &text)?;
+    mapped::require_decided(&compiled)?;
     let limits = Limits {
         max_bytes,
         ..Limits::default()
@@ -272,10 +293,9 @@ fn test(
     let mut host = Bodies::new(args, &config, limits)?;
     let (mut rows, mut records, mut issues) = (Vec::new(), Vec::new(), Vec::new());
     for file in files {
-        let bytes = evalsig_adapters::limits::read_file(file, &limits)
-            .map_err(|e| CliError::invalid_input(file, e))?;
-        // Rows are numbered across the files.
-        let base = rows.len();
+        let bytes = read_within(file, &limits)?;
+        // Rows are numbered across the files, after the last number used so far.
+        let base = rows.last().map_or(0, |(n, _)| *n);
         let these = mapping::rows(&compiled, &bytes, &limits)
             .map_err(|e| CliError::invalid_input(file, e))?;
         let (r, i) = mapping::apply(&compiled, &these, &mut host)
@@ -287,16 +307,23 @@ fn test(
         }));
         rows.extend(these.into_iter().map(|(n, v)| (base + n, v)));
     }
-    let report = maptest::report(&rows, &records, &issues, compiled.maps_labels(), &text);
+    let report = maptest::report(&rows, &records, &issues, &compiled);
+    drop(rows);
     let validator = RecordValidator::new();
     let mut valid = Vec::new();
-    let mut invalid = 0;
+    let mut invalid = Vec::new();
     for (n, v) in records {
         match validator.check_value(n, v) {
             Ok(r) => valid.push(r),
-            Err(_) => invalid += 1,
+            Err(found) => invalid.extend(found),
         }
     }
+    let n_invalid = invalid.len();
+    let invalid: Vec<_> = invalid
+        .into_iter()
+        .take(20)
+        .map(|i| json!({"row": i.line, "code": i.code, "path": i.path, "message": i.message}))
+        .collect();
     let tests_path = path.with_extension("tests.jsonl");
     let cases = match std::fs::read_to_string(&tests_path) {
         Ok(t) => Some(
@@ -315,7 +342,8 @@ fn test(
             "unused_paths": report.unused_paths,
             "integrity": report.integrity,
             "values": report.values,
-            "invalid_records": invalid,
+            "invalid_records": n_invalid,
+            "invalid_examples": invalid,
             "capabilities": capabilities::of(&valid, None),
             "tests": cases,
         }),

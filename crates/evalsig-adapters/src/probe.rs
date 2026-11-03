@@ -3,7 +3,10 @@
 //! and, for strings, the longest length. Values are listed only for short categorical
 //! paths with few values; free text and secret-like strings are never printed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::{Hash, Hasher};
 
 use evalsig_core::validity::secret_shape;
 use serde::Serialize;
@@ -17,8 +20,9 @@ use crate::source;
 pub const MAX_LISTED: usize = 20;
 /// Longer strings are free text.
 pub const MAX_LISTED_LEN: usize = 32;
-/// Distinct values are counted up to this many.
-const DISTINCT_CAP: usize = 10_000;
+/// Objects with more keys than this are maps keyed by data (IDs, names): their values
+/// are walked under one `{*}` path, and the keys are not shown.
+pub const MAX_KEYS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +31,19 @@ pub enum Shape {
     Jsonl,
     Csv,
     Zip,
+}
+
+impl Shape {
+    /// The shape a file's extension names, in any letter case.
+    pub fn from_extension(path: &std::path::Path) -> Option<Shape> {
+        match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+            "eval" | "zip" => Some(Shape::Zip),
+            "json" => Some(Shape::Json),
+            "jsonl" | "ndjson" => Some(Shape::Jsonl),
+            "csv" => Some(Shape::Csv),
+            _ => None,
+        }
+    }
 }
 
 /// A format evalsig has an adapter or recipe for.
@@ -72,11 +89,16 @@ pub struct Probe {
 struct Acc {
     types: BTreeSet<&'static str>,
     rows: usize,
-    seen_in_row: bool,
-    distinct: BTreeSet<String>,
+    /// The last row counted in `rows`, plus one (0 before any).
+    last_row: usize,
+    /// Hashes of every distinct value, to count them without keeping them.
+    distinct: HashSet<u64>,
+    /// The values themselves while few enough to be listed.
+    values: BTreeSet<String>,
     max_len: Option<usize>,
     free_text: bool,
     secret: bool,
+    /// The range of integer values, until a value that is not an integer.
     ints: Option<(i64, i64)>,
     non_int: bool,
 }
@@ -93,46 +115,75 @@ fn kind(v: &Json) -> &'static str {
     }
 }
 
-fn walk(v: &Json, path: String, stats: &mut BTreeMap<String, Acc>, arrays: &mut BTreeSet<String>) {
-    let acc = stats.entry(path.clone()).or_default();
+/// Visit a value at `path` (a buffer the walk extends and restores) in row `row`.
+fn walk(
+    v: &Json,
+    path: &mut String,
+    row: usize,
+    stats: &mut BTreeMap<String, Acc>,
+    arrays: &mut BTreeSet<String>,
+) {
+    if !stats.contains_key(path.as_str()) {
+        stats.insert(path.clone(), Acc::default());
+    }
+    let acc = stats.get_mut(path.as_str()).expect("inserted above");
     acc.types.insert(kind(v));
-    if !acc.seen_in_row {
-        acc.seen_in_row = true;
+    if acc.last_row != row + 1 {
+        acc.last_row = row + 1;
         acc.rows += 1;
     }
     match v {
         Json::Object(m) => {
+            let keyed_by_data = m.len() > MAX_KEYS;
             for (k, x) in m {
-                walk(x, format!("{path}.{k}"), stats, arrays);
+                let len = path.len();
+                path.push('.');
+                path.push_str(if keyed_by_data { "{*}" } else { k });
+                walk(x, path, row, stats, arrays);
+                path.truncate(len);
             }
         }
         Json::Array(xs) => {
             if xs.iter().any(Json::is_object) {
                 arrays.insert(path.clone());
             }
+            let len = path.len();
+            path.push_str("[*]");
             for x in xs {
-                walk(x, format!("{path}[*]"), stats, arrays);
+                walk(x, path, row, stats, arrays);
             }
+            path.truncate(len);
         }
         scalar => {
-            let text = match scalar {
-                Json::String(s) => {
-                    acc.max_len = Some(acc.max_len.unwrap_or(0).max(s.chars().count()));
-                    acc.free_text |= s.chars().count() > MAX_LISTED_LEN;
-                    acc.secret |= secret_shape(s).is_some();
-                    s.clone()
-                }
-                other => other.to_string(),
-            };
-            match scalar.as_i64() {
-                Some(i) if scalar.is_i64() || scalar.is_u64() => {
+            match scalar {
+                Json::Number(n) if n.is_i64() => {
+                    let i = n.as_i64().expect("an i64");
                     let (lo, hi) = acc.ints.unwrap_or((i, i));
                     acc.ints = Some((lo.min(i), hi.max(i)));
                 }
                 _ => acc.non_int = true,
             }
-            if acc.distinct.len() < DISTINCT_CAP {
-                acc.distinct.insert(text);
+            let text = match scalar {
+                Json::String(s) => {
+                    let len = s.chars().count();
+                    acc.max_len = Some(acc.max_len.unwrap_or(0).max(len));
+                    acc.free_text |= len > MAX_LISTED_LEN;
+                    // Once a path is withheld, its later values need no secret check.
+                    if !acc.secret && !acc.free_text {
+                        acc.secret = secret_shape(s).is_some();
+                    }
+                    Cow::Borrowed(s.as_str())
+                }
+                other => Cow::Owned(other.to_string()),
+            };
+            let mut h = DefaultHasher::new();
+            text.hash(&mut h);
+            if acc.distinct.insert(h.finish())
+                && !acc.free_text
+                && !acc.secret
+                && acc.values.len() <= MAX_LISTED
+            {
+                acc.values.insert(text.into_owned());
             }
         }
     }
@@ -153,7 +204,23 @@ pub fn rows(shape: Shape, bytes: &[u8], limits: &Limits) -> Result<Vec<Json>, St
         Shape::Jsonl => Format::Jsonl,
         Shape::Csv => Format::Csv,
     };
-    let rows = source::parse(format, bytes, limits)?;
+    let mut rows = source::parse(format, bytes, limits)?;
+    if format == Format::Csv {
+        // Cells are text; read them as a plain CSV import would, so numbers count as
+        // numbers for key, replicate and value candidates.
+        for (_, row) in &mut rows {
+            if let Json::Object(m) = row {
+                for v in m.values_mut() {
+                    if let Some(typed) = v
+                        .as_str()
+                        .and_then(|s| crate::table::map_value(s, None, None).ok())
+                    {
+                        *v = typed;
+                    }
+                }
+            }
+        }
+    }
     Ok(match format {
         Format::Json => source::elements(
             rows.into_iter()
@@ -169,8 +236,8 @@ pub fn rows(shape: Shape, bytes: &[u8], limits: &Limits) -> Result<Vec<Json>, St
 }
 
 /// Recognise a format by the keys its records always have.
-pub fn fingerprint(shape: Shape, rows: &[Json]) -> Option<Known> {
-    let first = rows.first()?;
+pub fn fingerprint(shape: Shape, rows: &[&Json]) -> Option<Known> {
+    let first = *rows.first()?;
     let has = |keys: &[&str]| keys.iter().all(|k| first.get(k).is_some());
     let inspect = Known {
         format: "inspect",
@@ -214,14 +281,13 @@ pub fn fingerprint(shape: Shape, rows: &[Json]) -> Option<Known> {
 }
 
 /// Probe rows. With `no_values`, no value is listed at all.
-pub fn probe(shape: Shape, rows: &[Json], no_values: bool) -> Probe {
+pub fn probe<'r>(shape: Shape, rows: impl IntoIterator<Item = &'r Json>, no_values: bool) -> Probe {
+    let rows: Vec<&Json> = rows.into_iter().collect();
     let mut stats: BTreeMap<String, Acc> = BTreeMap::new();
     let mut arrays = BTreeSet::new();
-    for row in rows {
-        for acc in stats.values_mut() {
-            acc.seen_in_row = false;
-        }
-        walk(row, "$".into(), &mut stats, &mut arrays);
+    let mut path = String::from("$");
+    for (i, row) in rows.iter().enumerate() {
+        walk(row, &mut path, i, &mut stats, &mut arrays);
     }
     let n = rows.len();
     let mut key_candidates = Vec::new();
@@ -267,7 +333,7 @@ pub fn probe(shape: Shape, rows: &[Json], no_values: bool) -> Probe {
                 rows: a.rows,
                 distinct,
                 max_len: a.max_len,
-                values: listed.then(|| a.distinct.into_iter().collect()),
+                values: listed.then(|| a.values.into_iter().collect()),
                 values_withheld: withheld.filter(|_| distinct > 0),
             }
         })
@@ -275,7 +341,7 @@ pub fn probe(shape: Shape, rows: &[Json], no_values: bool) -> Probe {
     Probe {
         shape,
         rows: n,
-        known: fingerprint(shape, rows),
+        known: fingerprint(shape, &rows),
         paths,
         key_candidates,
         replicate_candidates,
@@ -299,7 +365,7 @@ mod tests {
 
     fn known(shape: Shape, bytes: &[u8]) -> Option<&'static str> {
         let rows = rows(shape, bytes, &Limits::default()).unwrap();
-        fingerprint(shape, &rows).map(|k| k.format)
+        fingerprint(shape, &rows.iter().collect::<Vec<_>>()).map(|k| k.format)
     }
 
     #[test]
@@ -348,5 +414,49 @@ mod tests {
         assert_eq!(p.replicate_candidates, ["$.trial"]);
         let quiet = serde_json::to_string(&probe(Shape::Jsonl, &rows, true)).unwrap();
         assert!(!quiet.contains("\"yes\""));
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn many_rows_keep_their_key_and_data_keys_stay_hidden() {
+        let rows: Vec<Json> = (0..12_000)
+            .map(
+                |i| json!({"id": format!("t-{i}"), "by_user": {format!("user{i}@example.com"): i}}),
+            )
+            .collect();
+        let p = probe(Shape::Jsonl, &rows, false);
+        assert_eq!(p.key_candidates, ["$.id"]);
+        let wide: Json = Json::Object(
+            (0..200)
+                .map(|i| (format!("user{i}@example.com"), json!(i)))
+                .collect(),
+        );
+        let q = probe(Shape::Json, [&wide], false);
+        let text = serde_json::to_string(&q).unwrap();
+        assert!(!text.contains("example.com"), "{text}");
+        assert!(
+            q.paths
+                .iter()
+                .any(|s| s.path == "${*}" || s.path == "$.{*}")
+        );
+    }
+
+    #[test]
+    fn csv_numbers_count_as_numbers() {
+        let rows = rows(
+            Shape::Csv,
+            b"id,trial,score\na,0,0.1\na,1,0.2\nb,0,0.3\nb,1,0.4\n",
+            &Limits::default(),
+        )
+        .unwrap();
+        let p = probe(Shape::Csv, &rows, false);
+        assert_eq!(p.replicate_candidates, ["$.trial"]);
+        assert!(Shape::from_extension(std::path::Path::new("A.JSONL")).is_some());
     }
 }

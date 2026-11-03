@@ -10,10 +10,8 @@
 use serde_json::{Value as Json, json};
 use toml::{Table, Value};
 
-use crate::mapping::SCHEMA;
+use crate::mapping::{DECIDE, SCHEMA};
 use crate::probe::{PathStat, Probe, Shape};
-
-const DECIDE: &str = "DECIDE";
 
 /// A drafted mapping and what a person must decide.
 #[derive(Debug, Clone)]
@@ -54,8 +52,9 @@ fn value_candidates(p: &Probe) -> Vec<&PathStat> {
         .collect()
 }
 
-/// Draft a mapping for records of this shape.
-pub fn draft(name: &str, p: &Probe) -> Draft {
+/// Draft a mapping for records of this shape; `records_path` selects the rows of a
+/// JSON document.
+pub fn draft(name: &str, p: &Probe, records_path: Option<&str>) -> Draft {
     let mut decisions = Vec::new();
     let format = match p.shape {
         Shape::Jsonl => "jsonl",
@@ -63,10 +62,7 @@ pub fn draft(name: &str, p: &Probe) -> Draft {
         Shape::Json | Shape::Zip => "json",
     };
     let mut source = vec![("format", s(format))];
-    if p.shape == Shape::Json
-        && p.rows == 1
-        && let Some(rp) = p.records_path_candidates.first()
-    {
+    if let Some(rp) = records_path {
         source.push(("records_path", s(rp)));
     }
     let mut m = Table::new();
@@ -131,7 +127,7 @@ pub fn draft(name: &str, p: &Probe) -> Draft {
         decisions.push(json!({
             "id": "replicate_kind",
             "question": format!("Is {r} a re-run of the system or a re-grading of the same output?"),
-            "options": {format!("gen_replicate={r}"): "generation replicate", format!("grade_replicate={r}"): "grading replicate"},
+            "options": {format!("gen_replicate={r}"): "generation replicate", format!("grade_replicate={r}"): "grading replicate", "none": "not a replicate number"},
             "effect": "Whether replicate disagreement measures the system or the grader",
         }));
     }
@@ -160,7 +156,7 @@ pub fn draft(name: &str, p: &Probe) -> Draft {
             "question": format!("Which missing reason does each value of {} become: system side or measurement side?", mp.path),
             "options": {"system side": ["error", "timeout", "refused", "invalid_output", "limit"], "measurement side": ["grader_failed", "not_run", "invalidated", "excluded", "other"]},
             "values": mp.values,
-            "how": "evalsig map decide missing.reason '{\"provider_error\": \"error\"}' --by <who>",
+            "how": "evalsig map decide missing.reason '{\"provider_error\": \"error\", \"*\": \"other\"}' --by <who> (\"*\" gives values not listed a reason)",
             "effect": "System-side missing values count as failures in gates; measurement-side ones leave the denominator",
         }));
     }
@@ -168,7 +164,8 @@ pub fn draft(name: &str, p: &Probe) -> Draft {
     decisions.push(json!({
         "id": "positive",
         "question": "Which reference label is positive, and from which judgment value is a decision positive?",
-        "options": {"positive": [{"equals": true}], "decision": [{"ordinal_at_least": 2}]},
+        "options": {"positive": {"equals": true}, "decision": {"ordinal_at_least": 2}},
+        "how": "evalsig map decide positive '{\"positive\": {\"equals\": true}, \"decision\": {\"ordinal_at_least\": 2}}' --by <who>",
         "applies_to": "config",
         "effect": "Hit and false-alarm rates; ROC and AUC do not change",
     }));
@@ -176,6 +173,14 @@ pub fn draft(name: &str, p: &Probe) -> Draft {
         mapping: m,
         decisions_needed: decisions,
     }
+}
+
+/// The `positive` decision: the configuration's `[project] positive` and `decision`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Positive {
+    positive: Option<evalsig_core::rules::Rule>,
+    decision: Option<evalsig_core::rules::Rule>,
 }
 
 /// The decision IDs `decide` accepts.
@@ -227,9 +232,10 @@ pub fn decide(
                 table(&[("template", s(expr))])
             };
             item.insert("id".into(), value);
-            if let Some(c) = cluster {
-                item.insert("cluster".into(), s(c));
-            }
+            match cluster {
+                Some(c) => item.insert("cluster".into(), s(c)),
+                None => item.remove("cluster"),
+            };
             "mapping"
         }
         "value_semantics" => {
@@ -254,16 +260,26 @@ pub fn decide(
             }
             let run = get_table(m, "run")?;
             run.insert("output_type".into(), s(kind));
-            if let Some(n) = levels {
-                run.insert("levels".into(), Value::Integer(n));
-            }
+            match levels {
+                Some(n) => run.insert("levels".into(), Value::Integer(n)),
+                None => run.remove("levels"),
+            };
             "mapping"
         }
         "value" => {
             if !choice.starts_with('$') {
                 return Err("value is a path such as $.verdict".into());
             }
-            get_table(m, "judgment")?.insert("value".into(), s(choice));
+            let j = get_table(m, "judgment")?;
+            // A value map decided before keeps applying to the new path.
+            match j.get_mut("value").and_then(Value::as_table_mut) {
+                Some(t) => {
+                    t.insert("path".into(), s(choice));
+                }
+                None => {
+                    j.insert("value".into(), s(choice));
+                }
+            }
             "mapping"
         }
         "value.none" => {
@@ -285,19 +301,25 @@ pub fn decide(
             "mapping"
         }
         "replicate_kind" => {
-            let (kind, path) = choice
-                .split_once('=')
-                .ok_or("replicate_kind is gen_replicate=<path> or grade_replicate=<path>")?;
-            if !matches!(kind, "gen_replicate" | "grade_replicate") {
-                return Err("replicate_kind is gen_replicate or grade_replicate".into());
-            }
             let j = get_table(m, "judgment")?;
             j.remove("gen_replicate");
-            j.insert(kind.into(), s(path));
+            j.remove("grade_replicate");
+            if choice != "none" {
+                let (kind, path) = choice.split_once('=').ok_or(
+                    "replicate_kind is gen_replicate=<path>, grade_replicate=<path> or none",
+                )?;
+                if !matches!(kind, "gen_replicate" | "grade_replicate") {
+                    return Err("replicate_kind is gen_replicate, grade_replicate or none".into());
+                }
+                j.insert(kind.into(), s(path));
+            }
             "mapping"
         }
         "missing.reason" => {
-            let map = json_choice(choice)?;
+            let mut map = json_choice(choice)?;
+            // Values not listed have no reason unless the person gives one with "*":
+            // the import then reports them instead of choosing a side.
+            let default = map.remove("*");
             let j = get_table(m, "judgment")?;
             let rule = j
                 .get_mut("missing_if")
@@ -311,18 +333,20 @@ pub fn decide(
                 .and_then(Value::as_str)
                 .ok_or("missing_if has no when.path")?
                 .to_owned();
-            rule.insert(
-                "reason".into(),
-                table(&[
-                    ("path", s(&path)),
-                    ("value_map", Value::Table(map)),
-                    ("default", s("other")),
-                ]),
-            );
+            let mut reason = vec![("path", s(&path)), ("value_map", Value::Table(map))];
+            reason.extend(default.map(|d| ("default", d)));
+            rule.insert("reason".into(), table(&reason));
             "mapping"
         }
         "positive" => {
-            json_choice(choice)?;
+            // The rules use the configuration's own types, so a choice that does not
+            // read as [project] positive and decision is refused here.
+            let rules: Positive = serde_json::from_str(choice).map_err(|e| {
+                format!("positive is {{\"positive\": <rule>, \"decision\": <rule>}}: {e}")
+            })?;
+            if rules.positive.is_none() && rules.decision.is_none() {
+                return Err("give positive, decision or both".into());
+            }
             "config"
         }
         other => {
@@ -359,7 +383,7 @@ mod tests {
 
     fn drafted() -> Draft {
         let rows = probe::rows(Shape::Jsonl, LOG, &Limits::default()).unwrap();
-        draft("support", &probe::probe(Shape::Jsonl, &rows, false))
+        draft("support", &probe::probe(Shape::Jsonl, &rows, false), None)
     }
 
     #[test]
@@ -383,6 +407,8 @@ mod tests {
             .iter()
             .map(|x| x["id"].as_str().unwrap())
             .collect();
+        // Every decision a draft asks for is one `decide` can record.
+        assert!(ids.iter().all(|id| DECISIONS.contains(id)), "{ids:?}");
         for id in [
             "item_key",
             "value_semantics",

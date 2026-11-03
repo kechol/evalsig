@@ -22,7 +22,7 @@ use crate::source;
 pub use crate::source::Numbered;
 
 pub const SCHEMA: &str = "evalsig.mapping/1";
-const DECIDE: &str = "DECIDE";
+pub const DECIDE: &str = "DECIDE";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MapError {
@@ -784,6 +784,66 @@ impl Compiled {
     /// Whether the mapping maps reference labels.
     pub fn maps_labels(&self) -> bool {
         self.label.is_some()
+    }
+
+    /// Every path the mapping reads from source rows, insertions and filter tests
+    /// included. The join path reads the joined file, not the row, and is left out.
+    pub fn read_paths(&self) -> Vec<&Path> {
+        fn expr<'c>(e: &'c Expr, out: &mut Vec<&'c Path>) {
+            match &e.src {
+                Src::Path(p) => out.push(p),
+                Src::Template(t) => out.extend(t.paths()),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        let mut exprs: Vec<&Expr> = Vec::new();
+        if let Some(r) = &self.run {
+            exprs.extend([&r.run_id, &r.system.0, &r.system.1]);
+            exprs.extend(r.grader.iter().map(|(_, e)| e));
+        }
+        let i = &self.item;
+        exprs.push(&i.id);
+        exprs.extend(i.fields.iter().chain(&i.bodies).map(|(_, e)| e));
+        exprs.extend(i.strata.iter().map(|(_, e)| e));
+        if let Some(e) = &self.expect {
+            out.push(&e.path);
+        }
+        if let Some(j) = &self.judgment {
+            if let Spread::Path(p) = &j.spread {
+                out.push(p);
+            }
+            exprs.extend(j.replicates.iter().chain(&j.bodies).map(|(_, e)| e));
+            exprs.extend(j.cost.iter().map(|(_, e)| e));
+            exprs.extend(j.task.iter());
+            exprs.push(&j.value);
+            if let Some((p, id, fired, strength)) = &j.features {
+                out.push(p);
+                exprs.extend([id, fired].into_iter().chain(strength));
+            }
+            for (cond, reason, detail) in &j.missing_if {
+                out.push(&cond.path);
+                exprs.extend(std::iter::once(reason).chain(detail));
+            }
+        }
+        if let Some(l) = &self.label {
+            exprs.extend(l.fields.iter().map(|(_, e)| e).chain([&l.value]));
+            if let Some((file, _, path)) = &l.join {
+                exprs.push(file);
+                out.extend(path.inner());
+            }
+        }
+        for e in exprs {
+            expr(e, &mut out);
+        }
+        // Insertions and filter tests are paths too.
+        let mut i = 0;
+        while i < out.len() {
+            let inner = out[i].inner();
+            out.extend(inner);
+            i += 1;
+        }
+        out
     }
 }
 

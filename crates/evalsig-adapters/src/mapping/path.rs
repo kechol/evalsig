@@ -125,6 +125,14 @@ impl Template {
         Ok(Template(parts))
     }
 
+    /// The paths the template inserts.
+    pub fn paths(&self) -> impl Iterator<Item = &Path> {
+        self.0.iter().filter_map(|p| match p {
+            Part::Path(p) => Some(p),
+            _ => None,
+        })
+    }
+
     /// The text, or `None` if an insertion has no value.
     pub fn render(&self, scope: Scope<'_>) -> Option<String> {
         let mut out = String::new();
@@ -214,6 +222,38 @@ impl Path {
             },
         };
         self.walk(start, scope)
+    }
+
+    /// Whether the path starts at the row (`$`) rather than the current element.
+    pub fn from_row(&self) -> bool {
+        self.root == Root::Row
+    }
+
+    /// The names the path walks: `None` where a name is inserted; indices, wildcards and
+    /// filters add nothing, as they select within the array the last name reached.
+    pub fn names(&self) -> Vec<Option<String>> {
+        self.segs
+            .iter()
+            .filter_map(|s| match s {
+                Seg::Key(Template(parts)) => Some(match parts.as_slice() {
+                    [Part::Lit(name)] => Some(name.clone()),
+                    _ => None,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The paths inside this one: insertions in names and the tests of filters.
+    pub fn inner(&self) -> Vec<&Path> {
+        self.segs
+            .iter()
+            .flat_map(|s| match s {
+                Seg::Key(t) => t.paths().collect::<Vec<_>>(),
+                Seg::Filter(p, _) => vec![p.as_ref()],
+                _ => Vec::new(),
+            })
+            .collect()
     }
 
     /// The first value the path reaches from `start` instead of its root; insertions

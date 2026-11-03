@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
-use serde_json::{Value as Json, json};
+use serde_json::Value as Json;
 
 use crate::mapping::{self, Compiled, Host, Issue, MapError};
 use crate::probe::{self, Shape};
@@ -64,90 +64,69 @@ pub struct Report {
     pub values: Values,
 }
 
-/// `$` and `@` paths written anywhere in the mapping file, as segment patterns.
-fn written_paths(mapping_text: &str) -> (Vec<Vec<String>>, BTreeSet<String>) {
-    let chars: Vec<char> = mapping_text.chars().collect();
-    let (mut rooted, mut relative) = (Vec::new(), BTreeSet::new());
-    let mut i = 0;
-    while i < chars.len() {
-        if (chars[i] == '$' || chars[i] == '@') && chars.get(i + 1) == Some(&'.') {
-            let root = chars[i];
-            let mut depth = 0i32;
-            let mut j = i + 1;
-            while j < chars.len() {
-                match chars[j] {
-                    '{' | '[' => depth += 1,
-                    '}' | ']' if depth == 0 => break,
-                    '}' | ']' => depth -= 1,
-                    '"' | '\'' | ' ' | ',' | '\n' | '(' | ')' if depth == 0 => break,
-                    _ => {}
-                }
-                j += 1;
-            }
-            let token: String = chars[i + 2..j].iter().collect();
-            let segments = segments(&token);
-            // A path that starts with an insertion reads a joined file, not the row.
-            if root == '$' && segments.first().is_some_and(|s| s != "*") {
-                rooted.push(segments);
-            } else if let Some(last) = segments.last() {
-                relative.insert(last.clone());
-            }
-        }
-        // Step one character, so paths inside this one (filters, insertions) are read too.
-        i += 1;
-    }
-    (rooted, relative)
-}
-
-/// Path segments without brackets; `{...}` insertions become `*`.
-fn segments(path: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut depth = 0;
-    for c in path.chars() {
-        match c {
-            '[' | '{' => {
-                if c == '{' && depth == 0 {
-                    cur.push('*');
-                }
-                depth += 1;
-            }
-            ']' | '}' => depth -= 1,
-            '.' if depth == 0 => out.push(std::mem::take(&mut cur)),
-            _ if depth == 0 => cur.push(c),
-            _ => {}
-        }
-    }
-    out.push(cur);
-    out.retain(|s| !s.is_empty());
-    out
-}
-
-fn matches(pattern: &[String], path: &[String]) -> bool {
-    pattern.len() <= path.len()
-        && pattern
-            .iter()
-            .zip(path)
-            .all(|(p, s)| p == s || p.contains('*'))
+/// Path names of a probed leaf: `$.a.b[*].c` is `a`, `b`, `c`.
+fn probed_names(path: &str) -> Vec<&str> {
+    path.trim_start_matches('$')
+        .split('.')
+        .map(|s| s.trim_end_matches("[*]"))
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Leaf paths of the source that the mapping never reads.
-fn unused(rows: &[(usize, Json)], mapping_text: &str) -> Vec<String> {
-    let values: Vec<Json> = rows.iter().map(|(_, r)| r.clone()).collect();
-    let probed = probe::probe(Shape::Jsonl, &values, true);
-    let (rooted, relative) = written_paths(mapping_text);
+fn unused(rows: &[(usize, Json)], compiled: &Compiled) -> Vec<String> {
+    let read = compiled.read_paths();
+    let rooted: Vec<Vec<Option<String>>> = read
+        .iter()
+        .filter(|p| p.from_row())
+        .map(|p| p.names())
+        .collect();
+    // Paths from the current element (features, filters) are matched by their last name.
+    let relative: BTreeSet<String> = read
+        .iter()
+        .filter(|p| !p.from_row())
+        .filter_map(|p| p.names().last().cloned().flatten())
+        .collect();
+    let probed = probe::probe(Shape::Jsonl, rows.iter().map(|(_, r)| r), true);
     probed
         .paths
         .into_iter()
         .filter(|s| !s.types.iter().any(|t| *t == "object" || *t == "array"))
         .map(|s| s.path)
         .filter(|p| {
-            let segs = segments(p.trim_start_matches('$').trim_start_matches('.'));
-            let read = rooted.iter().any(|pat| matches(pat, &segs))
-                || segs.last().is_some_and(|l| relative.contains(l));
-            !read
+            let names = probed_names(p);
+            let covered = rooted.iter().any(|pat| {
+                pat.len() <= names.len()
+                    && pat
+                        .iter()
+                        .zip(&names)
+                        .all(|(want, got)| want.as_deref().is_none_or(|w| w == *got))
+            });
+            !covered && !names.last().is_some_and(|l| relative.contains(*l))
         })
         .collect()
+}
+
+/// A judgment's primary key: item, run, task and the two replicates.
+type JudgmentKey<'r> = (&'r Json, &'r Json, String, Option<u64>, Option<u64>);
+
+/// More distinct values than this are summarised under `OTHERS`.
+const MAX_VALUES: usize = 20;
+const OTHERS: &str = "(other values)";
+
+/// Count a value; long or secret-like text is counted without being shown, as in
+/// `map probe`.
+fn count(map: &mut BTreeMap<String, usize>, value: &str) {
+    let shown = if value.chars().count() > crate::probe::MAX_LISTED_LEN
+        || evalsig_core::validity::secret_shape(value).is_some()
+    {
+        "(withheld text)"
+    } else if map.len() >= MAX_VALUES && !map.contains_key(value) {
+        OTHERS
+    } else {
+        value
+    };
+    *map.entry(shown.to_owned()).or_insert(0) += 1;
 }
 
 fn text(v: &Json) -> String {
@@ -162,8 +141,7 @@ pub fn report(
     rows: &[(usize, Json)],
     records: &[(usize, Json)],
     issues: &[Issue],
-    maps_labels: bool,
-    mapping_text: &str,
+    compiled: &Compiled,
 ) -> Report {
     let failed: BTreeSet<usize> = issues.iter().map(|i| i.row).collect();
     let mut dropped_by = BTreeMap::new();
@@ -178,8 +156,8 @@ pub fn report(
     };
     let mut integrity = Integrity::default();
     let mut values = Values::default();
-    let mut keys = BTreeSet::new();
-    let mut items: BTreeMap<String, Json> = BTreeMap::new();
+    let mut keys: std::collections::HashSet<JudgmentKey<'_>> = std::collections::HashSet::new();
+    let mut items: BTreeMap<String, &Json> = BTreeMap::new();
     let mut labelled = BTreeSet::new();
     let mut replicates: BTreeMap<(String, String, String), BTreeSet<u64>> = BTreeMap::new();
     for (_, r) in records {
@@ -187,10 +165,10 @@ pub fn report(
             Some("item") => {
                 let id = text(&r["item_id"]);
                 match items.get(&id) {
-                    Some(prev) if prev != r => integrity.conflicting_items += 1,
+                    Some(prev) if *prev != r => integrity.conflicting_items += 1,
                     Some(_) => {}
                     None => {
-                        items.insert(id, r.clone());
+                        items.insert(id, r);
                     }
                 }
             }
@@ -199,14 +177,13 @@ pub fn report(
             }
             Some("judgment") => {
                 let task = r["task"].as_str().unwrap_or("default").to_owned();
-                let key = json!([
-                    r["item_id"],
-                    r["run_id"],
-                    task,
-                    r["gen_replicate"],
-                    r["grade_replicate"]
-                ])
-                .to_string();
+                let key = (
+                    &r["item_id"],
+                    &r["run_id"],
+                    task.clone(),
+                    r["gen_replicate"].as_u64(),
+                    r["grade_replicate"].as_u64(),
+                );
                 if !keys.insert(key) {
                     integrity.duplicate_judgments += 1;
                 }
@@ -217,7 +194,7 @@ pub fn report(
                         .insert(g);
                 }
                 match (&r["value"], &r["missing"]) {
-                    (v, _) if !v.is_null() => *values.judgments.entry(text(v)).or_insert(0) += 1,
+                    (v, _) if !v.is_null() => count(&mut values.judgments, &text(v)),
                     (_, m) => {
                         *values.missing.entry(text(&m["reason"])).or_insert(0) += 1;
                         if let Some(raw) = m["detail"]
@@ -228,7 +205,7 @@ pub fn report(
                                     .map(|(_, v)| v.trim_matches('"').to_owned())
                             })
                         {
-                            *values.not_mapped.entry(raw).or_insert(0) += 1;
+                            count(&mut values.not_mapped, &raw);
                         }
                     }
                 }
@@ -240,13 +217,13 @@ pub fn report(
         .values()
         .filter(|g| g.last().is_some_and(|max| *max + 1 != g.len() as u64))
         .count();
-    if maps_labels {
+    if compiled.maps_labels() {
         integrity.items_without_label =
             Some(items.keys().filter(|i| !labelled.contains(*i)).count());
     }
     Report {
         coverage,
-        unused_paths: unused(rows, mapping_text),
+        unused_paths: unused(rows, compiled),
         integrity,
         values,
     }
@@ -266,13 +243,19 @@ pub fn cases(c: &Compiled, tests: &str, host: &mut dyn Host) -> Result<Cases, Ma
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty())
     {
-        let case: Json = serde_json::from_str(line)
-            .map_err(|e| MapError::Read(format!("tests line {}: {e}", i + 1)))?;
-        let expected = sorted(case["records"].as_array().cloned().unwrap_or_default());
-        let (got, _) = mapping::apply(c, &[(1, case["input"].clone())], host)?;
+        let bad = |m: &str| MapError::Read(format!("tests line {}: {m}", i + 1));
+        let case: Json = serde_json::from_str(line).map_err(|e| bad(&e.to_string()))?;
+        let expected = sorted(
+            case["records"]
+                .as_array()
+                .cloned()
+                .ok_or_else(|| bad("needs \"input\" and \"records\""))?,
+        );
+        let (got, issues) = mapping::apply(c, &[(1, case["input"].clone())], host)?;
         let got = sorted(got.into_iter().map(|(_, r)| r).collect());
         out.cases += 1;
-        if got == expected {
+        // A row the mapping cannot map fails its case, whatever records it gave.
+        if issues.is_empty() && got == expected {
             out.passed += 1;
         } else {
             out.failures.push(CaseFailure {
@@ -290,14 +273,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn written_paths_cover_templates_insertions_and_filters() {
-        let text = r#"id = { template = "{$.task}:{$.ticket_id}" }
-value = { path = "$.runs.{r}.level" }
-features = { explode = "$.runs.{r}.rules[?(@.applies)]", feature_id = "@.rule_id" }"#;
-        let (rooted, relative) = written_paths(text);
-        assert!(rooted.contains(&vec!["task".to_owned()]));
-        assert!(rooted.contains(&vec!["runs".into(), "*".into(), "level".into()]));
-        assert!(rooted.contains(&vec!["runs".into(), "*".into(), "rules".into()]));
-        assert!(relative.contains("rule_id") && relative.contains("applies"));
+    fn read_paths_cover_templates_insertions_and_filters() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/mapping.toml"
+        ))
+        .unwrap();
+        let c = crate::mapping::compile(&crate::mapping::parse(&text).unwrap()).unwrap();
+        let rows: Vec<(usize, Json)> = vec![(
+            1,
+            serde_json::json!({"schema": "triage-run/1", "task": "t", "ticket_id": "x",
+                "runs": {"a": {"level": "low", "rules": [{"rule_id": "r", "applies": true, "fired": false}]}},
+                "extra": {"unused": 1}}),
+        )];
+        assert_eq!(unused(&rows, &c), ["$.extra.unused"]);
     }
 }

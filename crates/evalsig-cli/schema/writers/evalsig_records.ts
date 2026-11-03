@@ -43,12 +43,14 @@ type Json = Record<string, unknown>;
 
 function put(record: Json, fields: Json): Json {
   for (const [k, v] of Object.entries(fields)) {
-    if (v !== undefined) record[k] = v;
+    if (v !== undefined && v !== null) record[k] = v;
   }
   return record;
 }
 
-function valueOrMissing(record: Json, value?: Value, m?: Missing): Json {
+function valueOrMissing(record: Json, value?: Value | null, m?: Missing | null): Json {
+  value = value ?? undefined;
+  m = m ?? undefined;
   if ((value === undefined) === (m === undefined)) {
     throw new Error("give exactly one of value and missing");
   }
@@ -108,11 +110,21 @@ export class RecordsWriter {
     weight?: number;
     occurredAt?: string;
     inputRef?: string;
+    referenceRef?: string;
+    attrs?: Json;
   }): void {
     this.write(
       put(
         { record: "item", item_id: i.itemId },
-        { cluster: i.cluster, strata: i.strata, weight: i.weight, occurred_at: i.occurredAt, input_ref: i.inputRef },
+        {
+          cluster: i.cluster,
+          strata: i.strata,
+          weight: i.weight,
+          occurred_at: i.occurredAt,
+          input_ref: i.inputRef,
+          reference_ref: i.referenceRef,
+          attrs: i.attrs,
+        },
       ),
     );
   }
@@ -121,14 +133,17 @@ export class RecordsWriter {
     itemId: string;
     raterId: string;
     source: Source;
-    value?: Value;
-    missing?: Missing;
+    value?: Value | null;
+    missing?: Missing | null;
     version?: number;
     task?: string;
+    reason?: string;
+    labeledAt?: string;
+    levels?: number;
   }): void {
     const record = put(
       { record: "label", item_id: l.itemId, rater_id: l.raterId, source: l.source, version: l.version ?? 1 },
-      { task: l.task },
+      { task: l.task, reason: l.reason, labeled_at: l.labeledAt, levels: l.levels },
     );
     this.write(valueOrMissing(record, l.value, l.missing));
   }
@@ -138,15 +153,25 @@ export class RecordsWriter {
     runId: string;
     genReplicate: number;
     outputType: OutputType;
-    value?: Value;
-    missing?: Missing;
+    value?: Value | null;
+    missing?: Missing | null;
     levels?: number;
     task?: string;
     gradeReplicate?: number;
+    features?: { feature_id: string; fired: boolean; strength?: number }[];
+    outputRef?: string;
+    judgedAt?: string;
   }): void {
     const record = put(
       { record: "judgment", item_id: j.itemId, run_id: j.runId, gen_replicate: j.genReplicate, output_type: j.outputType },
-      { levels: j.levels, task: j.task, grade_replicate: j.gradeReplicate },
+      {
+        levels: j.levels,
+        task: j.task,
+        grade_replicate: j.gradeReplicate,
+        features: j.features,
+        output_ref: j.outputRef,
+        judged_at: j.judgedAt,
+      },
     );
     this.write(valueOrMissing(record, j.value, j.missing));
   }

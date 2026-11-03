@@ -361,3 +361,77 @@ fn capabilities_name_what_the_data_lack() {
         .assert()
         .code(64);
 }
+
+#[test]
+fn drafts_read_rows_of_a_json_document_and_refuse_archives() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("results.json");
+    let rows: Vec<Value> = (0..5)
+        .map(|i| serde_json::json!({"id": format!("q{i}"), "verdict": i % 2 == 0}))
+        .collect();
+    std::fs::write(&doc, serde_json::json!({"results": rows}).to_string()).unwrap();
+    let out = evalsig(dir.path())
+        .args(["map", "draft"])
+        .arg(&doc)
+        .arg("--out")
+        .arg(dir.path().join("m.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        v["results"]["candidates"]["item_key"],
+        serde_json::json!(["$.id"])
+    );
+    let text = std::fs::read_to_string(dir.path().join("m.toml")).unwrap();
+    assert!(text.contains("records_path = \"$.results[*]\""), "{text}");
+    evalsig(dir.path())
+        .args(["map", "draft"])
+        .arg(fixture("harness/inspect/probe.eval"))
+        .arg("--out")
+        .arg(dir.path().join("n.toml"))
+        .assert()
+        .code(64);
+}
+
+#[test]
+fn deciding_again_keeps_earlier_choices_consistent() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let mapping = dir.path().join("mapping.toml");
+    evalsig(dir.path())
+        .args(["map", "draft"])
+        .arg(fixture("probe/secret-like.jsonl"))
+        .arg("--out")
+        .arg(&mapping)
+        .assert()
+        .success();
+    let decide = |id: &str, choice: &str, code: i32| {
+        evalsig(dir.path())
+            .args([
+                "map",
+                "decide",
+                id,
+                choice,
+                "--by",
+                "user:alice",
+                "--mapping",
+            ])
+            .arg(&mapping)
+            .assert()
+            .code(code);
+    };
+    decide("value", "$.verdict", 0);
+    decide("value.none", r#"{"approve": true, "reject": false}"#, 0);
+    decide("value", "$.verdict", 0);
+    decide("output_type", "ordinal:3", 0);
+    decide("output_type", "binary", 0);
+    decide("replicate_kind", "none", 0);
+    decide("positive", r#"{"positive": [1]}"#, 64);
+    let text = std::fs::read_to_string(&mapping).unwrap();
+    assert!(text.contains("value_map"), "{text}");
+    assert!(!text.contains("levels"), "{text}");
+    assert!(!text.contains("gen_replicate"), "{text}");
+}

@@ -56,6 +56,29 @@ fn invalid(e: impl std::fmt::Display) -> CliError {
     CliError::new("invalid_mapping", e.to_string(), Exit::Rejected)
 }
 
+/// Parse and check a mapping file's text.
+pub fn compile_text(path: &Path, text: &str) -> Result<Compiled, CliError> {
+    mapping::parse(text)
+        .and_then(|m| mapping::compile(&m))
+        .map_err(|e| invalid(format!("{}: {e}", path.display())))
+}
+
+/// Refuse a mapping that still says DECIDE anywhere.
+pub fn require_decided(c: &Compiled) -> Result<(), CliError> {
+    if c.undecided.is_empty() {
+        return Ok(());
+    }
+    Err(CliError::new(
+        "undecided_mapping",
+        format!(
+            "the mapping still says DECIDE at {}",
+            c.undecided.join(", ")
+        ),
+        Exit::Blocked,
+    )
+    .with_hint("record each choice with `evalsig map decide`"))
+}
+
 /// The files a block's `path` names, relative to the project root. `*` may appear
 /// in the last component.
 fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, CliError> {
@@ -100,9 +123,7 @@ pub fn resolve(
             let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
             let text = std::str::from_utf8(&bytes)
                 .map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
-            let compiled = mapping::parse(text)
-                .and_then(|m| mapping::compile(&m))
-                .map_err(|e| invalid(format!("{}: {e}", path.display())))?;
+            let compiled = compile_text(path, text)?;
             Via {
                 adapter: format!("mapping:{}", compiled.name),
                 reader: Reader::Mapping(Box::new(compiled)),
@@ -148,18 +169,8 @@ pub fn resolve(
         }
         (None, None) => return Ok(None),
     };
-    if let Reader::Mapping(c) = &via.reader
-        && !c.undecided.is_empty()
-    {
-        return Err(CliError::new(
-            "undecided_mapping",
-            format!(
-                "the mapping still says DECIDE at {}",
-                c.undecided.join(", ")
-            ),
-            Exit::Blocked,
-        )
-        .with_hint("replace each DECIDE with a choice before importing"));
+    if let Reader::Mapping(c) = &via.reader {
+        require_decided(c)?;
     }
     Ok(Some(via))
 }
