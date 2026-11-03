@@ -107,7 +107,27 @@
     "seed": 20261029,
     "tool": "evalsig <VERSION>",
     "ledger": "agent",
-    "ledger_seq": 1
+    "ledger_seq": 1,
+    "request": {
+      "args": {
+        "analysis": {
+          "estimand": null,
+          "labels_as_of": null,
+          "reference": null,
+          "task": "default",
+          "threshold": null
+        },
+        "by": null,
+        "checks": {
+          "allow_unexplained_missing": false,
+          "fail_on_secret": false
+        },
+        "items": false,
+        "run": "r-base"
+      },
+      "command": "report"
+    },
+    "output": "blake3:d446e8a6794bbc40dd4a9820e38334d4a4845d6e42ae15c5e57dee3e11fe5dcf"
   },
   "truncated": null
 }

@@ -7,3 +7,4 @@ pub mod rebuild;
 pub mod report;
 pub mod schema;
 pub mod validate;
+pub mod verify;

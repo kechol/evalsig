@@ -143,7 +143,35 @@
     "seed": 20261103,
     "tool": "evalsig <VERSION>",
     "ledger": "agent",
-    "ledger_seq": 1
+    "ledger_seq": 1,
+    "request": {
+      "args": {
+        "analysis": {
+          "estimand": null,
+          "labels_as_of": null,
+          "reference": null,
+          "task": "default",
+          "threshold": null
+        },
+        "arms": {
+          "allow_input_change": false,
+          "allow_mixed_grader": false
+        },
+        "baseline": "triage-v1",
+        "candidates": [
+          "triage-v2"
+        ],
+        "dataset": {
+          "allow_unexplained_missing": false,
+          "fail_on_secret": false
+        },
+        "items": false,
+        "metric": null,
+        "scratch": false
+      },
+      "command": "compare"
+    },
+    "output": "blake3:d3998ffdf82e5cdc53a5c4dba556ea62ea31b00c81967aedb5b2832205a846c0"
   },
   "truncated": null
 }

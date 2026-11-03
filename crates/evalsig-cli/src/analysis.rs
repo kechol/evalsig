@@ -5,7 +5,7 @@ use evalsig_core::config::{Config, Estimand, ReferenceMode};
 use evalsig_core::records::DEFAULT_TASK;
 use evalsig_core::report::Settings;
 
-#[derive(Debug, Clone, clap::Args)]
+#[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisArgs {
     /// The judgment task.
     #[arg(long, default_value = DEFAULT_TASK)]
@@ -24,7 +24,8 @@ pub struct AnalysisArgs {
     pub reference: Option<ReferenceArg>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ReferenceArg {
     Single,
     Majority,

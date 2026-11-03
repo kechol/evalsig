@@ -123,6 +123,12 @@ pub struct Provenance {
     pub ledger: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ledger_seq: Option<u64>,
+    /// The command and options that produced the results, so `verify` can recompute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<Json>,
+    /// Hash of the canonical results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 impl Provenance {

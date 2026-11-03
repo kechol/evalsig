@@ -86,6 +86,30 @@ impl Project {
         Ok(())
     }
 
+    /// Keep the configuration (with defaults filled in) as an object named by its
+    /// hash, so `verify` can recompute with exactly the settings a result used.
+    pub fn store_config(
+        &self,
+        config: &Config,
+    ) -> Result<evalsig_store::hash::ContentHash, CliError> {
+        let bytes = evalsig_store::canonical::to_canonical_bytes(&config.to_json())
+            .map_err(CliError::store)?;
+        self.objects()
+            .put(&bytes)
+            .map(|(h, _)| h)
+            .map_err(CliError::store)
+    }
+
+    /// A stored configuration by its hash.
+    pub fn stored_config(
+        &self,
+        hash: &evalsig_store::hash::ContentHash,
+    ) -> Result<Config, CliError> {
+        let bytes = self.objects().get(hash).map_err(CliError::store)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))
+    }
+
     pub fn config(&self) -> Result<Config, CliError> {
         let path = self.config_path();
         let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, &e))?;

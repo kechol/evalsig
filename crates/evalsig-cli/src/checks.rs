@@ -7,7 +7,7 @@ use crate::exit::Exit;
 use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 
 /// Flags for the checks that run over one dataset.
-#[derive(Debug, Clone, Copy, Default, clap::Args)]
+#[derive(Debug, Clone, Copy, Default, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct DatasetArgs {
     /// Continue although some missing values have no explained reason.
     #[arg(long)]
@@ -18,7 +18,7 @@ pub struct DatasetArgs {
 }
 
 /// Flags for the checks that compare two arms.
-#[derive(Debug, Clone, Copy, Default, clap::Args)]
+#[derive(Debug, Clone, Copy, Default, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct ArmArgs {
     /// Continue although the compared arms used different grader versions.
     #[arg(long)]

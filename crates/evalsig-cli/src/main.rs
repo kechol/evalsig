@@ -9,6 +9,7 @@ mod exit;
 mod markdown;
 mod output;
 mod project;
+mod provenance;
 mod schemas;
 mod validate;
 
@@ -79,6 +80,8 @@ enum Command {
         #[command(flatten)]
         checks: checks::DatasetArgs,
     },
+    /// Recompute a saved result from its snapshots and configuration.
+    Verify(commands::verify::Args),
     /// Show the tool, record-format and output-schema versions.
     Version,
 }
@@ -120,6 +123,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
             list_checks,
             checks,
         } => commands::validate::project(&cli.project, checks, list_checks),
+        Command::Verify(ref args) => commands::verify::run(&cli.project, args),
         Command::Version => Ok(Output::success(Envelope::new(
             "evalsig.version/1",
             json!({

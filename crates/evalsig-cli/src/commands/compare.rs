@@ -6,18 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use evalsig_core::checks::{Finding, Overrides};
 use evalsig_core::compare::{self, Baseline, Comparison, Options};
+use evalsig_core::config::Config;
 use evalsig_core::paired::Verdict;
 use evalsig_core::records::{Item, Label, Run};
 use evalsig_core::report::{self, Prepared};
 use evalsig_core::validity;
-use evalsig_store::canonical::to_canonical_bytes;
-use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
 use crate::checks::{self, ArmArgs, DatasetArgs};
-use crate::data;
+use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{
@@ -25,7 +24,7 @@ use crate::output::{
 };
 use crate::project::Project;
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct Args {
     /// The baseline run.
     pub baseline: String,
@@ -128,14 +127,20 @@ fn changed_inputs(
     )
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
-    let project = Project::open(root)?;
-    let config = project.config()?;
-    let d = data::load(&project)?;
+/// What a comparison computes from data and configuration alone; `verify` repeats it.
+pub struct Computed {
+    pub results: Value,
+    pub verdict: Option<EnvelopeVerdict>,
+    pub findings: Vec<Finding>,
+    pub warnings: Vec<Warning>,
+    pub seed: u64,
+}
+
+pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliError> {
     let items = d.items();
     let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = labels.iter().collect();
-    let settings = analysis::settings(&config, &args.analysis);
+    let settings = analysis::settings(config, &args.analysis);
     let prepare = |id: &str| -> Result<(&Run, Prepared<'_>), CliError> {
         let run = d.run(id)?;
         let p = report::prepare(run, &d.judgments(id), &items, &labels, &settings)
@@ -255,18 +260,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             .find(|m| m.metric == primary)
             .cloned()
     });
-    let results = round_numbers(results);
-    let output_hash = ContentHash::blake3(&to_canonical_bytes(&results).map_err(CliError::store)?);
-    let cfg = config_hash(&config);
-    let mut envelope = Envelope::new("evalsig.compare/1", results);
-    if let Some(m) = &verdict {
-        envelope.verdict = Some(EnvelopeVerdict {
-            code: VerdictCode::from(m.verdict),
-            text: verdict_text(primary, m, settings.level),
-        });
-    }
+    let mut warnings = Vec::new();
     if comparisons.len() > 1 {
-        envelope.warnings.push(Warning {
+        warnings.push(Warning {
             code: "selected_after_comparison".into(),
             message:
                 "the best of several candidates is biased upwards; confirm it on another split"
@@ -274,37 +270,57 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         });
     }
     if undated_skipped > 0 {
-        envelope.warnings.push(Warning {
+        warnings.push(Warning {
             code: "undated_label_revisions".into(),
             message: format!("{undated_skipped} labels have newer undated revisions that --labels-as-of cannot place in time"),
         });
     }
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
-    envelope.provenance.config = Some(cfg.to_string());
-    envelope.provenance.seed = Some(settings.seed);
-    if !args.scratch {
+    Ok(Computed {
+        results: round_numbers(results),
+        verdict: verdict.as_ref().map(|m| EnvelopeVerdict {
+            code: VerdictCode::from(m.verdict),
+            text: verdict_text(primary, m, settings.level),
+        }),
+        findings,
+        warnings,
+        seed: settings.seed,
+    })
+}
+
+pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    let project = Project::open(root)?;
+    let config = project.config()?;
+    let d = data::load(&project)?;
+    let c = compute(&d, &config, args)?;
+    let mut envelope = Envelope::new("evalsig.compare/1", c.results);
+    envelope.verdict = c.verdict;
+    envelope.warnings = c.warnings;
+    let request = json!({ "command": "compare", "args": args });
+    if args.scratch {
+        envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
+        envelope.provenance.config = Some(config_hash(&config).to_string());
+        envelope.provenance.seed = Some(c.seed);
+        envelope.provenance.request = Some(request);
+        envelope.provenance.output =
+            Some(crate::provenance::output_hash(&envelope.results)?.to_string());
+    } else {
         let summary = json!({
             "baseline": args.baseline,
             "candidates": args.candidates,
-            "metric": primary,
-            "verdict": verdict.as_ref().map(|m| m.verdict),
+            "verdict": envelope.verdict.as_ref().map(|v| v.code),
         });
-        let inputs = envelope
-            .provenance
-            .snapshots
-            .iter()
-            .cloned()
-            .chain([cfg.to_string()])
-            .collect();
-        project.record(
+        crate::provenance::finish(
+            &project,
+            &config,
+            &d,
             &mut envelope,
+            c.seed,
+            request,
             Kind::Compare,
-            inputs,
-            vec![output_hash.to_string()],
-            summary.as_object().expect("object").clone(),
+            summary,
         )?;
     }
-    Ok(checks::apply(envelope, &findings))
+    Ok(checks::apply(envelope, &c.findings))
 }
 
 fn merge(target: &mut Value, extra: &Value) {

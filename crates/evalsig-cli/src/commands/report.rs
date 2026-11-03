@@ -2,23 +2,23 @@
 
 use std::path::Path;
 
+use evalsig_core::checks::Finding;
+use evalsig_core::config::Config;
 use evalsig_core::records::Label;
 use evalsig_core::report;
 use evalsig_core::validity;
-use evalsig_store::canonical::to_canonical_bytes;
-use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::analysis::{self, AnalysisArgs};
 use crate::checks::{self, ArmArgs, DatasetArgs};
-use crate::data;
+use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
-use crate::output::{Envelope, Output, Warning, config_hash, round_numbers};
-use crate::project::{Project, io_error};
+use crate::output::{Envelope, Output, Warning, round_numbers};
+use crate::project::Project;
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
 pub struct Args {
     /// The run to report.
     pub run: String,
@@ -34,14 +34,19 @@ pub struct Args {
     pub checks: DatasetArgs,
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
-    let project = Project::open(root)?;
-    let config = project.config()?;
-    let d = data::load(&project)?;
+/// What a report computes from data and configuration alone; `verify` repeats it.
+pub struct Computed {
+    pub results: Value,
+    pub findings: Vec<Finding>,
+    pub warnings: Vec<Warning>,
+    pub seed: u64,
+}
+
+pub fn compute(d: &Data, config: &Config, args: &Args) -> Result<Computed, CliError> {
     let run = d.run(&args.run)?;
     let (labels, undated_skipped) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = labels.iter().collect();
-    let mut settings = analysis::settings(&config, &args.analysis);
+    let mut settings = analysis::settings(config, &args.analysis);
     settings.prevalence = config.cost.as_ref().map(|c| c.prevalence);
     settings.by = args.by.clone();
     settings.items = args.items;
@@ -51,47 +56,43 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         &d.records,
         &checks::overrides(args.checks, ArmArgs::default()),
     );
-    let results = round_numbers(serde_json::to_value(&report).expect("report serializes"));
-    let output_hash = ContentHash::blake3(&to_canonical_bytes(&results).map_err(CliError::store)?);
-    let cfg = config_hash(&config);
-    let mut envelope = Envelope::new("evalsig.report/1", results);
+    let mut warnings = Vec::new();
     if undated_skipped > 0 {
-        envelope.warnings.push(Warning {
+        warnings.push(Warning {
             code: "undated_label_revisions".into(),
             message: format!("{undated_skipped} labels have newer undated revisions that --labels-as-of cannot place in time"),
         });
     }
-    envelope.provenance.snapshots = d.snapshots.iter().map(ToString::to_string).collect();
-    envelope.provenance.config = Some(cfg.to_string());
-    envelope.provenance.seed = Some(settings.seed);
+    Ok(Computed {
+        results: round_numbers(serde_json::to_value(&report).expect("report serializes")),
+        findings,
+        warnings,
+        seed: settings.seed,
+    })
+}
+
+pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+    let project = Project::open(root)?;
+    let config = project.config()?;
+    let d = data::load(&project)?;
+    let c = compute(&d, &config, args)?;
+    let mut envelope = Envelope::new("evalsig.report/1", c.results);
+    envelope.warnings = c.warnings;
     let summary = json!({
         "run": args.run,
-        "task": settings.task,
-        "estimand": settings.estimand.to_string(),
-        "seed": settings.seed,
+        "task": args.analysis.task,
+        "seed": c.seed,
     });
-    // Save the report before the ledger names its hash, so a recorded output always
-    // exists; the saved copy carries everything but the ledger position.
-    let path = project
-        .dir
-        .join("reports")
-        .join(format!("{}.json", output_hash.hex()));
-    let mut saved = serde_json::to_string_pretty(&envelope).expect("envelope serializes");
-    saved.push('\n');
-    std::fs::write(&path, saved).map_err(|e| io_error(&path, &e))?;
-    let inputs = envelope
-        .provenance
-        .snapshots
-        .iter()
-        .cloned()
-        .chain([cfg.to_string()])
-        .collect();
-    project.record(
+    let request = json!({ "command": "report", "args": args });
+    crate::provenance::finish(
+        &project,
+        &config,
+        &d,
         &mut envelope,
+        c.seed,
+        request,
         Kind::Report,
-        inputs,
-        vec![output_hash.to_string()],
-        summary.as_object().expect("object").clone(),
+        summary,
     )?;
-    Ok(checks::apply(envelope, &findings))
+    Ok(checks::apply(envelope, &c.findings))
 }

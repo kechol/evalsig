@@ -21,6 +21,12 @@ pub struct Data {
 
 pub fn load(project: &Project) -> Result<Data, CliError> {
     let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    let snapshots = imported(&entries)?;
+    load_snapshots(project, snapshots)
+}
+
+/// The snapshots named by `import` lines, in import order, each once (its last import).
+fn imported(entries: &[ledger::Entry]) -> Result<Vec<ContentHash>, CliError> {
     let mut snapshots: Vec<ContentHash> = Vec::new();
     for e in entries.iter().filter(|e| e.kind == Kind::Import) {
         let h: ContentHash = e
@@ -31,6 +37,11 @@ pub fn load(project: &Project) -> Result<Data, CliError> {
         snapshots.retain(|s| *s != h);
         snapshots.push(h);
     }
+    Ok(snapshots)
+}
+
+/// The data of exactly these snapshots, layered in the given order.
+pub fn load_snapshots(project: &Project, snapshots: Vec<ContentHash>) -> Result<Data, CliError> {
     let store = project.objects();
     let read = snapshots
         .iter()
