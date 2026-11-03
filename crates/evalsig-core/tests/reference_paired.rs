@@ -2,25 +2,15 @@
 
 use evalsig_core::interval::{Z95, newcombe};
 use evalsig_core::paired::{Discordant, mcnemar, tango};
-use serde_json::Value;
+mod common;
 
-const REFERENCE: &str = include_str!("../../../tests/fixtures/reference-values.json");
-
-fn close(a: f64, b: &Value, what: &str) {
-    let b = b.as_f64().unwrap();
-    assert!((a - b).abs() <= 1e-9, "{what}: {a} vs {b}");
-}
-
-fn doc() -> Value {
-    serde_json::from_str(REFERENCE).unwrap()
-}
+use common::{cases, close};
 
 #[test]
 fn tango_intervals_match() {
-    let doc = doc();
-    let cases = doc["cases"]["paired_difference"].as_array().unwrap();
+    let cases = cases("paired_difference");
     assert_eq!(cases.len(), 5);
-    for c in cases {
+    for c in &cases {
         let i = &c["input"];
         // In the reference, b is positive only in arm 1 (the candidate B).
         let d = Discordant {
@@ -41,8 +31,7 @@ fn tango_intervals_match() {
 
 #[test]
 fn newcombe_intervals_match_including_the_published_example() {
-    let doc = doc();
-    for c in doc["cases"]["unpaired_difference"].as_array().unwrap() {
+    for c in cases("unpaired_difference") {
         let i = &c["input"];
         let f = |k: &str| i[k].as_f64().unwrap();
         let (lo, hi) = newcombe(f("k1"), f("n1"), f("k2"), f("n2"), Z95);
@@ -59,8 +48,7 @@ fn newcombe_intervals_match_including_the_published_example() {
 
 #[test]
 fn mcnemar_matches() {
-    let doc = doc();
-    for c in doc["cases"]["mcnemar"].as_array().unwrap() {
+    for c in cases("mcnemar") {
         let (b, cc) = (
             c["input"]["b"].as_u64().unwrap(),
             c["input"]["c"].as_u64().unwrap(),

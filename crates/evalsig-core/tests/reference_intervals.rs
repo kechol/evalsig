@@ -4,21 +4,15 @@ use evalsig_core::interval::{
     clopper_pearson, clopper_pearson_upper, jeffreys, wilson_two_sided, wilson_upper,
     zero_event_items,
 };
-use serde_json::Value;
+mod common;
 
-const REFERENCE: &str = include_str!("../../../tests/fixtures/reference-values.json");
-
-fn close(a: f64, b: &Value, what: &str) {
-    let b = b.as_f64().unwrap();
-    assert!((a - b).abs() <= 1e-9, "{what}: {a} vs {b}");
-}
+use common::{cases, close};
 
 #[test]
 fn proportion_intervals_match() {
-    let doc: Value = serde_json::from_str(REFERENCE).unwrap();
-    let cases = doc["cases"]["proportion_interval"].as_array().unwrap();
+    let cases = cases("proportion_interval");
     assert_eq!(cases.len(), 8);
-    for c in cases {
+    for c in &cases {
         let k = c["input"]["k"].as_f64().unwrap();
         let n = c["input"]["n"].as_f64().unwrap();
         let e = &c["expected"];
@@ -46,14 +40,13 @@ fn proportion_intervals_match() {
 
 #[test]
 fn zero_event_sample_sizes_reproduce() {
-    let doc: Value = serde_json::from_str(REFERENCE).unwrap();
     let mut seen = 0;
-    for c in doc["cases"]["misc"].as_array().unwrap() {
+    for c in cases("misc") {
         let Some(u) = c["input"]["upper_bound"].as_f64() else {
             continue;
         };
         let level = c["input"]["confidence_one_sided"].as_f64().unwrap();
-        let (exact, wilson) = zero_event_items(u, level);
+        let (exact, wilson) = zero_event_items(u, level).unwrap();
         assert_eq!(
             exact,
             c["expected"]["n_exact"].as_u64().unwrap(),
@@ -68,5 +61,7 @@ fn zero_event_sample_sizes_reproduce() {
     }
     assert_eq!(seen, 2);
     // The specification's headline numbers: below 1% needs 299 (exact) and 268 (Wilson).
-    assert_eq!(zero_event_items(0.01, 0.95), (299, 268));
+    assert_eq!(zero_event_items(0.01, 0.95), Some((299, 268)));
+    assert_eq!(zero_event_items(0.0, 0.95), None);
+    assert_eq!(zero_event_items(0.01, 1.0), None);
 }

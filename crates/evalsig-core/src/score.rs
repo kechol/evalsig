@@ -1,7 +1,7 @@
 //! Metrics of score-type judgments (`value_semantics = "score"`, metrics spec §0.2):
 //! the judgment grades an output, and no reference label is needed.
 
-use crate::numeric::sum;
+use crate::numeric::{mean, weighted_mean};
 use crate::replicates::{Rule, at_k};
 
 /// One item's score and weight. With replicates, the score is the item's mean over
@@ -13,8 +13,7 @@ pub struct Scored {
 }
 
 fn weighted(items: &[Scored], value: impl Fn(f64) -> f64) -> Option<f64> {
-    let w = sum(items.iter().map(|i| i.weight));
-    (w > 0.0).then(|| sum(items.iter().map(|i| i.weight * value(i.score))) / w)
+    weighted_mean(items.iter().map(|i| (value(i.score), i.weight)))
 }
 
 /// Weighted mean score.
@@ -39,7 +38,7 @@ pub fn mean_pass_at_k(items: &[(u64, u64)], k: u64) -> Option<f64> {
         .iter()
         .map(|&(c, n)| pass_at_k(c, n, k))
         .collect::<Option<_>>()?;
-    (!values.is_empty()).then(|| sum(values.iter().copied()) / values.len() as f64)
+    mean(values)
 }
 
 #[cfg(test)]

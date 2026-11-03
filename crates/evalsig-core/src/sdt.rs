@@ -8,7 +8,9 @@ use serde::Serialize;
 
 use crate::numeric::norm_ppf;
 
-/// Weighted counts of reference class × decision.
+/// Weighted counts of reference class × decision, on the item scale: an item adds its
+/// item weight (1 by default), split across cells by a soft reference or by the share
+/// of positive replicates. The log-linear correction (+½, +1) is in these units.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
 pub struct Confusion {
     /// Reference positive, judged positive.
@@ -94,14 +96,30 @@ impl Confusion {
         (self.false_alarms + 0.5) / (self.negatives() + 1.0)
     }
 
+    /// (z(H′), z(F′)), shared by d′ and c.
+    fn z_rates(&self) -> (f64, f64) {
+        (
+            norm_ppf(self.corrected_hit_rate()),
+            norm_ppf(self.corrected_false_alarm_rate()),
+        )
+    }
+
     /// Sensitivity index d′ = z(H′) − z(F′).
     pub fn dprime(&self) -> f64 {
-        norm_ppf(self.corrected_hit_rate()) - norm_ppf(self.corrected_false_alarm_rate())
+        let (zh, zf) = self.z_rates();
+        zh - zf
     }
 
     /// Criterion c = −(z(H′) + z(F′)) / 2; negative means liberal.
     pub fn criterion(&self) -> f64 {
-        -(norm_ppf(self.corrected_hit_rate()) + norm_ppf(self.corrected_false_alarm_rate())) / 2.0
+        let (zh, zf) = self.z_rates();
+        -(zh + zf) / 2.0
+    }
+
+    /// d′ and c together, computing each quantile once (for resampling loops).
+    pub fn dprime_and_criterion(&self) -> (f64, f64) {
+        let (zh, zf) = self.z_rates();
+        (zh - zf, -(zh + zf) / 2.0)
     }
 
     /// The same decisions read against the opposite positive class.

@@ -77,6 +77,19 @@ impl VerdictCode {
     }
 }
 
+impl From<evalsig_core::paired::Verdict> for VerdictCode {
+    fn from(v: evalsig_core::paired::Verdict) -> Self {
+        use evalsig_core::paired::Verdict as V;
+        match v {
+            V::Improved => VerdictCode::Improved,
+            V::Negligible => VerdictCode::Negligible,
+            V::Worsened => VerdictCode::Worsened,
+            V::Indistinguishable => VerdictCode::Indistinguishable,
+            V::InsufficientData => VerdictCode::InsufficientData,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Verdict {
     pub code: VerdictCode,
@@ -379,6 +392,23 @@ fn write_text_fields(s: &mut String, m: &Map<String, Json>, depth: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn core_verdicts_keep_their_names() {
+        use evalsig_core::paired::Verdict as V;
+        for v in [
+            V::Improved,
+            V::Negligible,
+            V::Worsened,
+            V::Indistinguishable,
+            V::InsufficientData,
+        ] {
+            assert_eq!(
+                serde_json::to_value(v).unwrap(),
+                VerdictCode::from(v).as_str()
+            );
+        }
+    }
 
     #[test]
     fn verdict_names_match_their_serialization() {

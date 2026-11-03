@@ -1,16 +1,15 @@
 //! Binary signal-detection metrics against the reference values (absolute 1e-9).
 
 use evalsig_core::sdt::Confusion;
-use serde_json::Value;
+mod common;
 
-const REFERENCE: &str = include_str!("../../../tests/fixtures/reference-values.json");
+use common::{cases, close};
 
 #[test]
 fn sdt_binary_cases_match() {
-    let doc: Value = serde_json::from_str(REFERENCE).unwrap();
-    let cases = doc["cases"]["sdt_binary"].as_array().unwrap();
+    let cases = cases("sdt_binary");
     assert_eq!(cases.len(), 4);
-    for c in cases {
+    for c in &cases {
         let i = &c["input"];
         let (kh, np) = (i["k_hit"].as_f64().unwrap(), i["n_pos"].as_f64().unwrap());
         let (kf, nn) = (i["k_fa"].as_f64().unwrap(), i["n_neg"].as_f64().unwrap());
@@ -29,8 +28,7 @@ fn sdt_binary_cases_match() {
             ("dprime", conf.dprime()),
             ("c", conf.criterion()),
         ] {
-            let want = e[name].as_f64().unwrap();
-            assert!((got - want).abs() <= 1e-9, "{name}: {got} vs {want}");
+            close(got, &e[name], name);
         }
     }
 }

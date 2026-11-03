@@ -31,7 +31,7 @@ impl Discordant {
 /// replicates or clusters (those use the paired bootstrap).
 pub fn tango(d: Discordant, z: f64) -> Option<(f64, f64)> {
     let n = d.n as f64;
-    if d.n == 0 {
+    if d.n == 0 || d.only_a + d.only_b > d.n {
         return None;
     }
     // In Tango's notation b is positive only in the first arm (B), c only in A.
@@ -161,8 +161,12 @@ pub fn verdict(delta: f64, interval: Option<(f64, f64)>, min_effect: f64) -> Ver
     }
 }
 
-/// Holm's step-down adjustment of p-values, returned in the input order.
-pub fn holm(p: &[f64]) -> Vec<f64> {
+/// Holm's step-down adjustment of p-values, returned in the input order. `None` if
+/// any p-value is NaN or outside [0, 1], so an uncomputed test never reads as 1.
+pub fn holm(p: &[f64]) -> Option<Vec<f64>> {
+    if p.iter().any(|x| !(0.0..=1.0).contains(x)) {
+        return None;
+    }
     let m = p.len();
     let mut order: Vec<usize> = (0..m).collect();
     order.sort_by(|&a, &b| p[a].total_cmp(&p[b]));
@@ -172,7 +176,7 @@ pub fn holm(p: &[f64]) -> Vec<f64> {
         running = running.max(((m - rank) as f64 * p[i]).min(1.0));
         adjusted[i] = running;
     }
-    adjusted
+    Some(adjusted)
 }
 
 /// One resampling unit of a paired comparison: the sums of an outcome in each arm and
@@ -219,9 +223,25 @@ mod tests {
 
     #[test]
     fn holm_adjusts_in_order() {
-        let adj = holm(&[0.01, 0.04, 0.03]);
-        assert_eq!(adj, vec![0.03, 0.06, 0.06]);
-        assert_eq!(holm(&[]), Vec::<f64>::new());
+        assert_eq!(holm(&[0.01, 0.04, 0.03]), Some(vec![0.03, 0.06, 0.06]));
+        assert_eq!(holm(&[]), Some(Vec::new()));
+        assert_eq!(holm(&[0.01, f64::NAN]), None);
+        assert_eq!(holm(&[1.5]), None);
+    }
+
+    #[test]
+    fn tango_rejects_inconsistent_counts() {
+        assert_eq!(
+            tango(
+                Discordant {
+                    only_a: 30,
+                    only_b: 30,
+                    n: 40
+                },
+                1.96
+            ),
+            None
+        );
     }
 
     #[test]

@@ -15,33 +15,43 @@ pub fn required_resamples(alpha: f64) -> u32 {
     (50.0 / alpha).ceil() as u32
 }
 
-/// One resample: indices into the units, drawn with replacement. With strata, each
-/// stratum keeps its own size (used only for metrics conditioned on the reference
-/// class, such as H, F and d′).
-pub fn resample(n_units: usize, strata: Option<&[usize]>, rng: &mut Rng) -> Vec<usize> {
-    match strata {
-        None => (0..n_units)
-            .map(|_| rng.below(n_units as u64) as usize)
-            .collect(),
-        Some(of_unit) => {
-            assert_eq!(of_unit.len(), n_units, "one stratum per unit");
-            let mut groups: Vec<Vec<usize>> = Vec::new();
-            for (unit, &s) in of_unit.iter().enumerate() {
-                if groups.len() <= s {
-                    groups.resize_with(s + 1, Vec::new);
-                }
-                groups[s].push(unit);
+/// Units grouped by stratum, built once and reused by every resample.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Strata {
+    groups: Vec<Vec<usize>>,
+    n_units: usize,
+}
+
+impl Strata {
+    /// `of_unit[i]` is the stratum of unit i.
+    pub fn new(of_unit: &[usize]) -> Self {
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        for (unit, &s) in of_unit.iter().enumerate() {
+            if groups.len() <= s {
+                groups.resize_with(s + 1, Vec::new);
             }
-            groups
-                .iter()
-                .flat_map(|g| {
-                    let g = g.clone();
-                    let len = g.len() as u64;
-                    (0..g.len())
-                        .map(|_| g[rng.below(len) as usize])
-                        .collect::<Vec<_>>()
-                })
-                .collect()
+            groups[s].push(unit);
+        }
+        Strata {
+            groups,
+            n_units: of_unit.len(),
+        }
+    }
+}
+
+/// Draw one resample into `out`: indices into the units, with replacement. With
+/// strata, each stratum keeps its own size (used only for metrics conditioned on the
+/// reference class, such as H, F and d′).
+pub fn resample_into(out: &mut Vec<usize>, n_units: usize, strata: Option<&Strata>, rng: &mut Rng) {
+    out.clear();
+    match strata {
+        None => out.extend((0..n_units).map(|_| rng.below(n_units as u64) as usize)),
+        Some(st) => {
+            assert_eq!(st.n_units, n_units, "one stratum per unit");
+            for g in &st.groups {
+                let len = g.len() as u64;
+                out.extend((0..g.len()).map(|_| g[rng.below(len) as usize]));
+            }
         }
     }
 }
@@ -51,15 +61,16 @@ pub fn resample(n_units: usize, strata: Option<&[usize]>, rng: &mut Rng) -> Vec<
 /// dropped resamples is returned so callers can report it.
 pub fn replicates(
     n_units: usize,
-    strata: Option<&[usize]>,
+    strata: Option<&Strata>,
     b: u32,
     rng: &mut Rng,
     mut statistic: impl FnMut(&[usize]) -> Option<f64>,
 ) -> (Vec<f64>, u32) {
     let mut out = Vec::with_capacity(b as usize);
     let mut dropped = 0;
+    let mut idx = Vec::with_capacity(n_units);
     for _ in 0..b {
-        let idx = resample(n_units, strata, rng);
+        resample_into(&mut idx, n_units, strata, rng);
         match statistic(&idx) {
             Some(v) if v.is_finite() => out.push(v),
             _ => dropped += 1,
@@ -87,7 +98,9 @@ pub fn percentile_interval(mut replicates: Vec<f64>, level: f64) -> Option<(f64,
 }
 
 /// Two-sided p-value of an observed difference: the share of resampled differences,
-/// shifted to centre on 0, at least as far from 0 as the observed one.
+/// shifted to centre on 0, at least as far from 0 as the observed one, with the +1
+/// correction so it never reaches 0 (a bootstrap cannot resolve below 1/(B + 1)).
+/// Callers report dropped resamples next to it.
 pub fn p_value(replicates: &[f64], observed: f64) -> Option<f64> {
     if replicates.is_empty() {
         return None;
@@ -96,7 +109,7 @@ pub fn p_value(replicates: &[f64], observed: f64) -> Option<f64> {
         .iter()
         .filter(|d| (*d - observed).abs() >= observed.abs())
         .count();
-    Some(extreme as f64 / replicates.len() as f64)
+    Some((extreme + 1) as f64 / (replicates.len() + 1) as f64)
 }
 
 #[cfg(test)]
@@ -163,9 +176,11 @@ mod tests {
     #[test]
     fn strata_keep_their_sizes() {
         let strata = [0, 0, 0, 1, 1];
+        let st = Strata::new(&strata);
         let mut rng = Rng::new(3);
+        let mut idx = Vec::new();
         for _ in 0..100 {
-            let idx = resample(5, Some(&strata), &mut rng);
+            resample_into(&mut idx, 5, Some(&st), &mut rng);
             assert_eq!(idx.iter().filter(|&&i| strata[i] == 0).count(), 3);
             assert_eq!(idx.len(), 5);
         }
@@ -175,7 +190,8 @@ mod tests {
     fn helpers() {
         assert_eq!(required_resamples(0.0025), 20000);
         assert_eq!(quantile(&[1.0, 2.0, 3.0, 4.0], 0.5), 2.5);
-        assert_eq!(p_value(&[0.0, 0.2, 0.5], 0.2), Some(2.0 / 3.0));
+        assert_eq!(p_value(&[0.0, 0.2, 0.5], 0.2), Some(3.0 / 4.0));
+        assert_eq!(p_value(&[4.0, 5.5], 5.0), Some(1.0 / 3.0));
         assert_eq!(percentile_interval(vec![], 0.95), None);
     }
 }

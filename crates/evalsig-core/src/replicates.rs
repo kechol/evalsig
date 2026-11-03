@@ -5,7 +5,9 @@
 
 use crate::config::Estimand;
 use crate::interval::clopper_pearson_upper;
-use crate::numeric::sum;
+use statrs::function::factorial::ln_binomial;
+
+use crate::numeric::{mean, sum};
 
 /// How k replicates are combined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,12 +20,14 @@ pub enum Rule {
     All,
 }
 
-fn choose(n: u64, k: u64) -> f64 {
-    if k > n {
+/// C(a, j) C(b, k − j) / C(a + b, k): the hypergeometric probability of j positives
+/// in k draws from a positives and b negatives, in log space so large replicate
+/// counts do not overflow.
+fn hypergeometric(a: u64, b: u64, k: u64, j: u64) -> f64 {
+    if j > a || k - j > b {
         return 0.0;
     }
-    let k = k.min(n - k);
-    (0..k).fold(1.0, |acc, i| acc * (n - i) as f64 / (i + 1) as f64)
+    (ln_binomial(a, j) + ln_binomial(b, k - j) - ln_binomial(a + b, k)).exp()
 }
 
 /// The probability that a rule over k replicates drawn without replacement from
@@ -32,12 +36,22 @@ pub fn at_k(c: u64, big_k: u64, k: u64, rule: Rule) -> Option<f64> {
     if k == 0 || k > big_k || c > big_k {
         return None;
     }
-    let total = choose(big_k, k);
+    let (pos, neg) = (c as f64, (big_k - c) as f64);
+    let big = big_k as f64;
     Some(match rule {
-        Rule::Any => 1.0 - choose(big_k - c, k) / total,
-        Rule::All => choose(c, k) / total,
+        // Products of ratios: exact for small counts and free of overflow.
+        Rule::Any => {
+            1.0 - (0..k)
+                .map(|i| (neg - i as f64) / (big - i as f64))
+                .product::<f64>()
+                .max(0.0)
+        }
+        Rule::All => (0..k)
+            .map(|i| (pos - i as f64) / (big - i as f64))
+            .product::<f64>()
+            .max(0.0),
         Rule::Majority => sum((0..=k).map(|j| {
-            let w = choose(c, j) * choose(big_k - c, k - j) / total;
+            let w = hypergeometric(c, big_k - c, k, j);
             match (2 * j).cmp(&k) {
                 std::cmp::Ordering::Greater => w,
                 std::cmp::Ordering::Equal => 0.5 * w,
@@ -52,7 +66,8 @@ pub fn at_k(c: u64, big_k: u64, k: u64, rule: Rule) -> Option<f64> {
 /// such items are left out and counted as `n_insufficient_replicates`.
 pub fn item_value(positives: u64, replicates: u64, estimand: Estimand) -> Option<f64> {
     match estimand {
-        Estimand::SingleShot => (replicates > 0).then(|| positives as f64 / replicates as f64),
+        Estimand::SingleShot => (replicates > 0 && positives <= replicates)
+            .then(|| positives as f64 / replicates as f64),
         Estimand::Majority(k) => at_k(positives, replicates, u64::from(k), Rule::Majority),
         Estimand::Any(k) => at_k(positives, replicates, u64::from(k), Rule::Any),
         Estimand::All(k) => at_k(positives, replicates, u64::from(k), Rule::All),
@@ -94,11 +109,10 @@ impl Disagreement {
     pub fn of<T: PartialEq>(items: &[Vec<T>]) -> Option<Disagreement> {
         let per_item: Vec<(f64, bool)> =
             items.iter().filter_map(|r| item_disagreement(r)).collect();
-        let n = per_item.len();
-        (n > 0).then(|| Disagreement {
-            pairwise: sum(per_item.iter().map(|(p, _)| *p)) / n as f64,
-            any_item: per_item.iter().filter(|(_, any)| *any).count() as f64 / n as f64,
-            items: n as u64,
+        Some(Disagreement {
+            pairwise: mean(per_item.iter().map(|(p, _)| *p))?,
+            any_item: mean(per_item.iter().map(|(_, any)| f64::from(u8::from(*any))))?,
+            items: per_item.len() as u64,
         })
     }
 
@@ -116,8 +130,8 @@ pub fn run_to_run_sd(values: &[f64]) -> Option<f64> {
     if r < 2 {
         return None;
     }
-    let mean = sum(values.iter().copied()) / r as f64;
-    let ss = sum(values.iter().map(|v| (v - mean).powi(2)));
+    let m = mean(values.iter().copied())?;
+    let ss = sum(values.iter().map(|v| (v - m).powi(2)));
     Some((ss / (r - 1) as f64).sqrt())
 }
 
@@ -168,7 +182,17 @@ mod tests {
     }
 
     #[test]
+    fn large_replicate_counts_stay_finite() {
+        for rule in [Rule::Majority, Rule::Any, Rule::All] {
+            let v = at_k(1000, 2000, 1000, rule).unwrap();
+            assert!(v.is_finite() && (0.0..=1.0).contains(&v), "{rule:?} {v}");
+        }
+        assert!((at_k(1000, 2000, 1000, Rule::Majority).unwrap() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
     fn estimands_and_insufficient_replicates() {
+        assert_eq!(item_value(5, 4, Estimand::SingleShot), None);
         assert_eq!(item_value(2, 4, Estimand::SingleShot), Some(0.5));
         assert_eq!(item_value(2, 4, Estimand::Any(5)), None);
         assert_eq!(item_value(4, 4, Estimand::All(3)), Some(1.0));

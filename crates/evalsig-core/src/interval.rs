@@ -34,9 +34,12 @@ pub fn wilson_upper(k: f64, n: f64, level: f64) -> f64 {
     wilson(k, n, norm_ppf(level)).1
 }
 
+// Every interval function returns the vacuous [0, 1] when n = 0, so callers decide
+// once, when reporting, how an empty denominator is shown.
+
 /// Clopper-Pearson lower bound with one-sided confidence `level`.
 pub fn clopper_pearson_lower(k: f64, n: f64, level: f64) -> f64 {
-    if k <= 0.0 {
+    if k <= 0.0 || n <= 0.0 {
         0.0
     } else {
         beta_ppf(1.0 - level, k, n - k + 1.0)
@@ -45,7 +48,7 @@ pub fn clopper_pearson_lower(k: f64, n: f64, level: f64) -> f64 {
 
 /// Clopper-Pearson upper bound with one-sided confidence `level`; 1 when k = n.
 pub fn clopper_pearson_upper(k: f64, n: f64, level: f64) -> f64 {
-    if k >= n {
+    if k >= n || n <= 0.0 {
         1.0
     } else {
         beta_ppf(level, k + 1.0, n - k)
@@ -63,6 +66,9 @@ pub fn clopper_pearson(k: f64, n: f64, level: f64) -> (f64, f64) {
 
 /// Two-sided Jeffreys interval at confidence `level`.
 pub fn jeffreys(k: f64, n: f64, level: f64) -> (f64, f64) {
+    if n <= 0.0 {
+        return (0.0, 1.0);
+    }
     let a = (1.0 - level) / 2.0;
     let lo = if k <= 0.0 {
         0.0
@@ -80,7 +86,10 @@ pub fn jeffreys(k: f64, n: f64, level: f64) -> (f64, f64) {
 /// Newcombe's hybrid score interval (method 10) for p_a − p_b of two independent
 /// proportions, from Wilson intervals at the given z.
 pub fn newcombe(ka: f64, na: f64, kb: f64, nb: f64, z: f64) -> (f64, f64) {
-    let (pa, pb) = (ka / na.max(1.0), kb / nb.max(1.0));
+    if na <= 0.0 || nb <= 0.0 {
+        return (-1.0, 1.0);
+    }
+    let (pa, pb) = (ka / na, kb / nb);
     let (la, ua) = wilson(ka, na, z);
     let (lb, ub) = wilson(kb, nb, z);
     let d = pa - pb;
@@ -91,19 +100,20 @@ pub fn newcombe(ka: f64, na: f64, kb: f64, nb: f64, z: f64) -> (f64, f64) {
 }
 
 /// The smallest number of items with zero events whose one-sided upper bound at
-/// `level` falls below `bound`, for the exact method and for Wilson.
-pub fn zero_event_items(bound: f64, level: f64) -> (u64, u64) {
-    let smallest = |upper: &dyn Fn(f64) -> f64| {
+/// `level` falls below `bound`, for the exact method and for Wilson. `None` unless
+/// both lie strictly between 0 and 1.
+pub fn zero_event_items(bound: f64, level: f64) -> Option<(u64, u64)> {
+    if !(bound > 0.0 && bound < 1.0 && level > 0.0 && level < 1.0) {
+        return None;
+    }
+    let smallest = |upper: fn(f64, f64, f64) -> f64| {
         let mut n = 1u64;
-        while upper(n as f64) >= bound {
+        while upper(0.0, n as f64, level) >= bound {
             n += 1;
         }
         n
     };
-    (
-        smallest(&|n| clopper_pearson_upper(0.0, n, level)),
-        smallest(&|n| wilson_upper(0.0, n, level)),
-    )
+    Some((smallest(clopper_pearson_upper), smallest(wilson_upper)))
 }
 
 /// What an interval is for.
@@ -216,6 +226,13 @@ mod tests {
             select(Rate, false, Gate, IntervalMethod::Bootstrap, Some(6)),
             Ok(Method::Bootstrap)
         );
+    }
+
+    #[test]
+    fn empty_denominators_are_vacuous() {
+        assert_eq!(clopper_pearson(0.0, 0.0, 0.95), (0.0, 1.0));
+        assert_eq!(jeffreys(0.0, 0.0, 0.95), (0.0, 1.0));
+        assert_eq!(wilson_two_sided(0.0, 0.0, 0.95), (0.0, 1.0));
     }
 
     #[test]

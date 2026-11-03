@@ -4,7 +4,6 @@
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::{Rng as _, SeedableRng};
 use statrs::distribution::{Beta, ContinuousCDF, Normal};
-use statrs::function::beta::beta_reg;
 
 /// The only random number generator evalsig uses: ChaCha20 from a recorded seed, so
 /// results repeat on every platform.
@@ -62,7 +61,22 @@ pub fn sum(values: impl IntoIterator<Item = f64>) -> f64 {
         };
         s = t;
     }
-    s + c
+    // With an infinite term the compensation is meaningless (it becomes inf − inf);
+    // the plain sum carries the infinity or NaN.
+    if s.is_finite() { s + c } else { s }
+}
+
+/// Mean in iteration order with the compensated sum; `None` when empty.
+pub fn mean(values: impl IntoIterator<Item = f64>) -> Option<f64> {
+    let mut n = 0usize;
+    let total = sum(values.into_iter().inspect(|_| n += 1));
+    (n > 0).then(|| total / n as f64)
+}
+
+/// Weighted mean Σwv / Σw of (value, weight) pairs; `None` when the weights sum to 0.
+pub fn weighted_mean(pairs: impl IntoIterator<Item = (f64, f64)> + Clone) -> Option<f64> {
+    let w = sum(pairs.clone().into_iter().map(|(_, w)| w));
+    (w > 0.0).then(|| sum(pairs.into_iter().map(|(v, w)| v * w)) / w)
 }
 
 /// Standard normal quantile Φ⁻¹(p).
@@ -70,19 +84,8 @@ pub fn norm_ppf(p: f64) -> f64 {
     standard_normal().inverse_cdf(p)
 }
 
-/// Standard normal distribution function Φ(x).
-pub fn norm_cdf(x: f64) -> f64 {
-    standard_normal().cdf(x)
-}
-
 fn standard_normal() -> Normal {
     Normal::new(0.0, 1.0).expect("standard normal parameters are valid")
-}
-
-/// Regularized incomplete beta function I_x(a, b), the Beta(a, b) distribution
-/// function.
-pub fn beta_cdf(x: f64, a: f64, b: f64) -> f64 {
-    beta_reg(a, b, x.clamp(0.0, 1.0))
 }
 
 /// Beta(a, b) quantile. statrs's inverse of the regularized incomplete beta function
@@ -134,21 +137,25 @@ mod tests {
         let xs = [1e16, 1.0, -1e16, 1.0];
         assert_eq!(sum(xs), 2.0);
         assert_eq!(sum([0.1; 10]), 1.0);
+        assert_eq!(sum([f64::INFINITY, 1.0]), f64::INFINITY);
+        assert_eq!(sum([1.0, f64::NEG_INFINITY]), f64::NEG_INFINITY);
+        assert_eq!(sum([f64::INFINITY, 1.0]), f64::INFINITY);
+        assert_eq!(sum([1.0, f64::NEG_INFINITY]), f64::NEG_INFINITY);
     }
 
     #[test]
     fn quantiles_invert_their_distributions() {
         assert!((norm_ppf(0.975) - 1.959_963_984_540_054).abs() < 1e-12);
-        assert!((norm_cdf(norm_ppf(0.3)) - 0.3).abs() < 1e-12);
+        assert!((standard_normal().cdf(norm_ppf(0.3)) - 0.3).abs() < 1e-12);
         for (p, a, b) in [(0.025, 1.0, 10.0), (0.95, 4.0, 17.0), (0.5, 0.5, 0.5)] {
-            assert!((beta_cdf(beta_ppf(p, a, b), a, b) - p).abs() < 1e-12);
+            let beta = Beta::new(a, b).unwrap();
+            assert!((beta.cdf(beta_ppf(p, a, b)) - p).abs() < 1e-12);
         }
+        assert_eq!(mean([1.0, 2.0, 6.0]), Some(3.0));
+        assert_eq!(mean([]), None);
+        assert_eq!(weighted_mean([(1.0, 3.0), (0.0, 1.0)]), Some(0.75));
+        assert_eq!(weighted_mean([(1.0, 0.0)]), None);
     }
-}
-
-#[cfg(test)]
-mod pinned {
-    use super::*;
 
     /// The ChaCha20 stream and derived values for seed 20261029. The same numbers
     /// must come out on every platform; CI runs this on Linux and macOS.
