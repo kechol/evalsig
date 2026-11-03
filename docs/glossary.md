@@ -108,6 +108,8 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | transition table | `transition` | How many items moved correct→wrong and wrong→correct between two arms |
 | power | `power` | The probability of detecting a real difference |
 | minimum detectable effect | `mde` | The smallest difference detectable with the given size and power |
+| pass probability | `pass_probability` | The probability that a comparison or gate with the given items passes when the hypothesised difference is real |
+| design effect | `cluster_size`, `icc` | The factor 1 + (m̄ − 1)ρ by which clusters of mean size m̄ and intra-cluster correlation ρ multiply the items needed |
 | multiplicity correction | — | Controlling false positives when testing many metrics, strata or candidates at once (Holm) |
 | regression to the mean | — | Picking what looked bad and fixing it makes it look better next time even without a real change |
 | effective sample size | `n_eff` | The loss of sample size under weights. Kish: (Σw)²/Σw² |

@@ -174,6 +174,40 @@ impl Prepared<'_> {
         })
     }
 
+    /// Weighted counts of positives and negatives per judgment level 0 … levels − 1
+    /// (a soft reference splits an item), for the cost of each threshold (metrics spec
+    /// §4). `None` unless every ranked item's mean level is a level in range.
+    pub fn level_counts(&self, levels: usize) -> Option<(Vec<f64>, Vec<f64>)> {
+        let units = self.ranked()?;
+        let (mut pos, mut neg) = (vec![0.0; levels], vec![0.0; levels]);
+        for u in &units {
+            let l = u.raw?;
+            if l.fract() != 0.0 || l < 0.0 || l as usize >= levels {
+                return None;
+            }
+            let s = u.reference.unwrap_or(0.0);
+            pos[l as usize] += u.weight * s;
+            neg[l as usize] += u.weight * (1.0 - s);
+        }
+        (!units.is_empty()).then_some((pos, neg))
+    }
+
+    /// The point hit rate and false-alarm rate under the decision rule.
+    pub fn rates(&self) -> Option<(f64, f64)> {
+        let calc = self.calc();
+        let all: Vec<&Unit> = self.units.iter().collect();
+        let point = |id| {
+            let parts = calc.parts(id, &calc.eligible(id, &all), Fill::Policy);
+            let num: f64 = parts.iter().flatten().map(|p| p.0).sum();
+            let den: f64 = parts.iter().flatten().map(|p| p.1).sum();
+            (den > 0.0).then(|| num / den)
+        };
+        Some((
+            point(super::MetricId::HitRate)?,
+            point(super::MetricId::FalseAlarmRate)?,
+        ))
+    }
+
     /// The Brier score and reliability bins of score runs whose scores lie in [0, 1].
     pub fn calibration(&self) -> Option<Calibration> {
         if self.output_type != OutputType::Score {

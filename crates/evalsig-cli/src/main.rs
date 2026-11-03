@@ -70,6 +70,8 @@ enum Command {
     Map(commands::map::MapCommand),
     /// Rewrite snapshots in an earlier record format in the current one.
     Migrate(commands::migrate::Args),
+    /// Sample sizes, the minimum detectable difference and a gate's pass probability.
+    Power(commands::power::PowerArgs),
     /// Remove a content body and the free-text fields of the items that name it.
     Purge(commands::purge::Args),
     /// Recreate the SQLite working copy from the canonical snapshots.
@@ -106,6 +108,8 @@ enum Command {
         #[command(flatten)]
         checks: checks::DatasetArgs,
     },
+    /// The cost-optimal decision threshold of a run and its sensitivity to the cost ratio.
+    Threshold(commands::power::ThresholdArgs),
     /// A run's metrics per period of occurred_at, compared with a baseline period.
     Trend(commands::trend::Args),
     /// Recompute a saved result from its snapshots and configuration.
@@ -136,12 +140,14 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
         Command::Map(ref cmd) => commands::map::run(&cli.project, cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
+        Command::Power(ref args) => commands::power::power(args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Rebuild => commands::rebuild::run(&cli.project),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),
         Command::Split(ref args) => commands::split::run(&cli.project, args),
+        Command::Threshold(ref args) => commands::power::threshold(&cli.project, args),
         Command::Trend(ref args) => commands::trend::run(&cli.project, args),
         Command::Splits => commands::split::list(&cli.project),
         Command::Recipes(ref cmd) => commands::recipes::run(cmd),

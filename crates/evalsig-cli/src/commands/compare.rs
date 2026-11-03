@@ -23,7 +23,7 @@ use crate::data::{self, Data};
 use crate::error::CliError;
 use crate::exit::Exit;
 use crate::output::{
-    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
+    Envelope, Next, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
 use crate::project::Project;
 use crate::provenance::{self, Request, item_set_hash};
@@ -225,6 +225,43 @@ pub fn count_uses(results: &mut Value, warnings: &mut Vec<Warning>, entries: &[E
             ),
         });
     }
+}
+
+/// When the comparison could not tell the arms apart, how many items it would take:
+/// a `power` command with the primary difference (or its minimum effect) and the
+/// observed discordance of the decisions.
+fn power_hint(results: &Value, verdict: Option<VerdictCode>) -> Option<Next> {
+    if !matches!(
+        verdict,
+        Some(VerdictCode::Indistinguishable | VerdictCode::InsufficientData)
+    ) {
+        return None;
+    }
+    let primary = results["primary_metric"].as_str()?;
+    let m = results["metrics"]
+        .as_array()?
+        .iter()
+        .find(|m| m["metric"] == primary)?;
+    let delta = m["min_effect"]
+        .as_f64()
+        .filter(|e| *e > 0.0)
+        .or_else(|| m["delta"].as_f64().map(f64::abs))
+        .filter(|d| *d > 0.0)?;
+    let t = &results["transition"];
+    let moved: f64 = [
+        "new_hits",
+        "lost_hits",
+        "new_false_alarms",
+        "cleared_false_alarms",
+    ]
+    .iter()
+    .filter_map(|k| t[*k].as_f64())
+    .sum();
+    let psi = moved / results["n_used"].as_f64().filter(|n| *n > 0.0)?;
+    (psi > delta).then(|| Next {
+        command: format!("evalsig power --delta {delta:.4} --discordance {psi:.4}"),
+        why: "how many paired items would detect this difference".into(),
+    })
 }
 
 /// What a comparison computes from data and configuration alone; `verify` repeats it.
@@ -475,8 +512,10 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         &entries,
         config.compare.validation_warn_after,
     );
+    let next = power_hint(&c.results, c.verdict.as_ref().map(|v| v.code));
     let mut envelope = Envelope::new("evalsig.compare/1", c.results);
     envelope.verdict = c.verdict;
+    envelope.next.extend(next);
     envelope.warnings = c.warnings;
     let request = Request::Compare(args.clone());
     if args.scratch {

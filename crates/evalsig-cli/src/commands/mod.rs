@@ -6,6 +6,7 @@ pub mod ledger;
 pub mod list;
 pub mod map;
 pub mod migrate;
+pub mod power;
 pub mod purge;
 pub mod rebuild;
 pub mod recipes;
