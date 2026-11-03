@@ -600,3 +600,37 @@ after the entry is `Accepted`.
   judge re-cuts the holdout; a stale file is detected only by the judge when
   a gate submission covers sealed items. Splits are per project, not per
   task.
+
+## D-021 `check.toml` as a subset of `gate.toml`
+
+- Status: Accepted
+- Date: 2026-11-03
+- Context: Teams want an interval-based pass/fail in CI before they set up
+  a judge, a sealed holdout and preregistration (SPEC §3.2, §10.1). A second
+  condition language would drift from `gate.toml`; one that accepted gate-only
+  sections would let a check pass for a gate.
+- Decision:
+  - `check.toml` uses the `gate.toml` keys `name`, `estimand`, `min_items`,
+    `replicates`, `positive`, `decision`, `[reference]`, `[grader]` and
+    `[[conditions]]`, with the same meaning. `hypothesis`, `split`,
+    `[compare]`, `[holdout]` and `budget` are refused, as are unknown keys.
+    Settings it leaves out come from `config.toml`.
+  - A check judges one run against absolute criteria. Its rules are the two
+    interval rules on a single run, `lower_bound_at_least` and
+    `upper_bound_at_most`; the difference rules, `not_worse_than` and `pass`
+    need arms or a referee and stay with `gate`. Every condition states
+    `sided` (`one` or `two`); a one-sided bound at level L is the matching end
+    of the two-sided interval at 2L − 1. `missing_rate` counts every
+    system-side missing judgment and uses the exact interval.
+  - All conditions must hold (intersection-union). Exit codes: 0 all hold,
+    1 one fails, 4 a condition has no interval or the run has fewer than
+    `min_items` items, 5 a validity check stops. The output carries
+    `preregistered: false`, and the verdict text says it is not
+    preregistered.
+  - `--format junit` writes one test case per condition; `gate` reuses it.
+- Alternatives: a separate check syntax (not taken: two languages for the
+  same rules drift apart); allowing delta rules against a named baseline
+  (not taken: that is a comparison, which `compare` and `gate` already
+  cover with their own guards).
+- Consequences: moving a check to a gate means adding the gate-only sections
+  and preregistering, not rewriting the conditions.
