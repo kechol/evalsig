@@ -87,7 +87,8 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
 /// withheld whole.
 fn redact_quotes(text: &str) -> String {
     if text.contains(['"', '`']) {
-        "the message quotes values that may come from the input; pass --include-content to see it".into()
+        "the message quotes values that may come from the input; pass --include-content to see it"
+            .into()
     } else {
         text.to_owned()
     }
@@ -311,7 +312,6 @@ mod tests {
         }
         assert_eq!(redact_quotes("don't stop"), "don't stop");
     }
-
 
     /// Every envelope schema written anywhere in the CLI's source is in the table.
     #[test]
