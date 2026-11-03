@@ -1,12 +1,12 @@
-//! Imports through a declarative mapping or a harness adapter: `import --mapping
-//! <file>`, `import --from <name>` (D-011) and Inspect logs.
+//! How import reads files: canonical records, CSV, a declarative mapping (`--mapping`,
+//! `--from`, D-011) or a harness adapter, all into record candidates.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_adapters::limits::{self, Limits};
 use evalsig_adapters::mapping::{self, Compiled, Host, MapError};
-use evalsig_adapters::{inspect, promptfoo};
+use evalsig_adapters::{BodySink, csv, inspect, promptfoo, table};
 use evalsig_core::config::{Adapter, Config, ContentMode};
 use evalsig_core::records::Record;
 use evalsig_store::canonical::to_canonical_bytes;
@@ -23,10 +23,24 @@ use crate::validate::Issue;
 
 /// How the files of an import become records.
 pub enum Reader {
+    /// Canonical `records/1` JSONL.
+    Records,
+    /// A CSV whose columns are record field names.
+    Csv(table::RowKind),
     Mapping(Box<Compiled>),
     Inspect(inspect::Options),
     Promptfoo,
 }
+
+/// A record candidate before validation: a canonical line is checked as written, so
+/// integer literals beyond the exact range are caught; other values as built.
+pub enum Candidate<'a> {
+    Line(&'a str),
+    Value(Value),
+}
+
+/// Record candidates of one file, each with its line or row number.
+pub type Candidates<'a> = Vec<(usize, Candidate<'a>)>;
 
 /// The mapping or adapter an import goes through.
 pub struct Via {
@@ -66,6 +80,10 @@ fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, CliError> {
         })
         .collect();
     out.sort();
+    if out.is_empty() {
+        return Err(CliError::usage(format!("no file matches {pattern}"))
+            .with_hint("check the block's path, relative to the project root"));
+    }
     Ok(out)
 }
 
@@ -113,15 +131,8 @@ pub fn resolve(
             let reader = match block.adapter {
                 Adapter::Inspect => Reader::Inspect(inspect::Options {
                     score: block.score.clone(),
-                    value_map: block
-                        .value_map
-                        .iter()
-                        .map(|(k, v)| (k.clone(), serde_json::to_value(v).expect("serializes")))
-                        .collect(),
-                    value_semantics: block
-                        .value_semantics
-                        .and_then(|v| serde_json::to_value(v).ok())
-                        .and_then(|v| v.as_str().map(str::to_owned)),
+                    value_map: block.value_map_json(),
+                    value_semantics: block.value_semantics.map(|v| v.as_str().to_owned()),
                 }),
                 Adapter::Promptfoo => Reader::Promptfoo,
                 _ => Reader::Mapping(Box::new(mapping::from_import(block).map_err(invalid)?)),
@@ -155,25 +166,22 @@ pub fn resolve(
 
 /// What a mapping reads from the importer: `--arg` values, joined files and the
 /// bodies it names.
-pub struct Bodies<'s> {
+pub struct Bodies {
     args: BTreeMap<String, String>,
-    /// `None` on a dry run: bodies are hashed, not kept.
-    store: Option<&'s ObjectStore>,
     mode: ContentMode,
     redactor: Redactor,
     limits: Limits,
     pub joined: Vec<SourceFile>,
-    pub contents: Vec<Value>,
+    /// A `content` record per distinct body.
+    pub contents: Vec<Record>,
     pub redactions: Vec<Redaction>,
+    /// Bytes to store once the import is accepted.
+    objects: Vec<Vec<u8>>,
+    seen: BTreeSet<String>,
 }
 
-impl<'s> Bodies<'s> {
-    pub fn new(
-        args: &[String],
-        store: Option<&'s ObjectStore>,
-        config: &Config,
-        limits: Limits,
-    ) -> Result<Bodies<'s>, CliError> {
+impl Bodies {
+    pub fn new(args: &[String], config: &Config, limits: Limits) -> Result<Bodies, CliError> {
         let args = args
             .iter()
             .map(|a| {
@@ -189,35 +197,46 @@ impl<'s> Bodies<'s> {
         };
         Ok(Bodies {
             args,
-            store,
             mode: config.store.content,
             redactor,
             limits,
             joined: Vec::new(),
             contents: Vec::new(),
             redactions: Vec::new(),
+            objects: Vec::new(),
+            seen: BTreeSet::new(),
         })
+    }
+
+    /// Store the bodies once the import is accepted.
+    pub fn commit(&mut self, store: &ObjectStore) -> Result<(), CliError> {
+        for bytes in self.objects.drain(..) {
+            store.put(&bytes).map_err(CliError::store)?;
+        }
+        Ok(())
     }
 }
 
-impl Host for Bodies<'_> {
+impl Host for Bodies {
     fn arg(&self, name: &str) -> Option<&str> {
         self.args.get(name).map(String::as_str)
     }
 
     fn read(&mut self, file: &str) -> Result<Vec<u8>, String> {
-        let bytes = limits::read_file(Path::new(file), &self.limits)
-            .and_then(|b| limits::check_json_depth(&b, &self.limits).map(|()| b))
-            .map_err(|e| format!("{file}: {e}"))?;
+        let bytes =
+            limits::read_file(Path::new(file), &self.limits).map_err(|e| format!("{file}: {e}"))?;
         if !self.joined.iter().any(|s| s.path == file) {
-            self.joined.push(SourceFile {
-                path: file.to_owned(),
-                hash: ContentHash::blake3(&bytes),
-            });
+            self.joined.push(SourceFile::of(file, &bytes));
         }
         Ok(bytes)
     }
 
+    fn limits(&self) -> Limits {
+        self.limits
+    }
+}
+
+impl BodySink for Bodies {
     fn body(&mut self, value: &Value) -> Result<String, String> {
         let (bytes, media_type) = match value {
             Value::String(s) => (s.as_bytes().to_vec(), "text/plain"),
@@ -226,103 +245,123 @@ impl Host for Bodies<'_> {
                 "application/json",
             ),
         };
-        let Some(store) = self.store else {
-            return Ok(ContentHash::blake3(&bytes).to_string());
-        };
-        let (record, redaction) =
-            content::store_body(store, self.mode, &self.redactor, &bytes, media_type)
-                .map_err(|e| e.to_string())?;
-        let reference = record.content_ref.clone();
-        self.contents
-            .push(serde_json::to_value(Record::Content(record)).expect("records serialize"));
-        self.redactions.extend(redaction);
+        let reference = ContentHash::blake3(&bytes).to_string();
+        // A body many records name is kept, and listed, once.
+        if !self.seen.insert(reference.clone()) {
+            return Ok(reference);
+        }
+        let prepared = content::prepare_body(self.mode, &self.redactor, &bytes, media_type);
+        self.contents.push(Record::Content(prepared.content));
+        self.redactions.extend(prepared.redaction);
+        self.objects.extend(prepared.object);
         Ok(reference)
     }
 }
 
-/// Map one file; returns record JSON numbered by source row, and the problems.
-pub fn apply(
-    via: &Via,
-    path: &Path,
-    bytes: &[u8],
-    host: &mut Bodies<'_>,
-) -> Result<(mapping::Numbered, Vec<Issue>), CliError> {
-    let compiled = match &via.reader {
-        Reader::Mapping(c) => c,
-        Reader::Inspect(options) => {
-            return Ok((inspect_log(path, bytes, options, host)?, Vec::new()));
-        }
-        Reader::Promptfoo => return Ok((promptfoo_results(path, bytes, host)?, Vec::new())),
-    };
-    let rows = mapping::rows(compiled, bytes).map_err(|e| CliError::invalid_input(path, e))?;
-    let (records, issues) = mapping::apply(compiled, &rows, host).map_err(|e| match e {
-        MapError::Unexpected { .. } => CliError::new(
-            "unexpected_source",
-            format!("{}: {e}", path.display()),
-            Exit::Rejected,
-        ),
-        other => invalid(other),
-    })?;
-    let issues = issues
+fn numbered(values: Vec<Value>) -> Candidates<'static> {
+    values
         .into_iter()
-        .map(|i| Issue {
-            line: i.row,
-            code: "mapping.row".into(),
-            path: i.at,
-            message: i.message,
-        })
-        .collect();
-    Ok((records, issues))
+        .enumerate()
+        .map(|(i, v)| (i + 1, Candidate::Value(v)))
+        .collect()
 }
 
-impl Via {
-    /// Whether the files are JSON to check for depth before reading (archives and
-    /// Inspect logs check their own entries).
-    pub fn reads_json(&self) -> bool {
-        match &self.reader {
-            Reader::Mapping(c) => c.reads_json(),
-            Reader::Inspect(_) | Reader::Promptfoo => false,
+impl Reader {
+    /// The adapter name kept in provenance.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Reader::Records => "records",
+            Reader::Csv(_) => "csv",
+            Reader::Mapping(_) => "mapping",
+            Reader::Inspect(_) => "inspect",
+            Reader::Promptfoo => "promptfoo",
         }
     }
-}
 
-/// The records of an Inspect log: a `.eval` archive, or a `.json` log otherwise.
-pub fn inspect_log(
-    path: &Path,
-    bytes: &[u8],
-    options: &inspect::Options,
-    host: &mut Bodies<'_>,
-) -> Result<mapping::Numbered, CliError> {
-    let zip = path.extension().is_some_and(|x| x == "eval");
-    let failed = |e: inspect::InspectError| CliError::invalid_input(path, e);
-    let (log, samples) = inspect::read_log(bytes, zip, &host.limits).map_err(failed)?;
-    let records = inspect::records(&log, &samples, options, host).map_err(failed)?;
-    Ok(records
-        .into_iter()
-        .enumerate()
-        .map(|(i, r)| (i + 1, r))
-        .collect())
-}
-
-/// The records of promptfoo results: a local database (`.db`, the evaluation named by
-/// `--arg eval=ID` or the most recent), or `-o out.json` output otherwise.
-pub fn promptfoo_results(
-    path: &Path,
-    bytes: &[u8],
-    host: &mut Bodies<'_>,
-) -> Result<mapping::Numbered, CliError> {
-    let failed = |e: promptfoo::PromptfooError| CliError::invalid_input(path, e);
-    let eval = if path.extension().is_some_and(|x| x == "db") {
-        promptfoo::read_database(path, host.arg("eval")).map_err(failed)?
-    } else {
-        limits::check_json_depth(bytes, &host.limits)
-            .map_err(|e| CliError::invalid_input(path, e))?;
-        promptfoo::parse(bytes).map_err(failed)?
-    };
-    let records = promptfoo::records(&eval, host).map_err(failed)?;
-    Ok(records
-        .into_iter()
-        .enumerate()
-        .map(|(i, r)| (i + 1, r))
-        .collect())
+    /// Read one file into numbered record candidates and the problems found.
+    pub fn read<'a>(
+        &self,
+        path: &Path,
+        bytes: &'a [u8],
+        host: &mut Bodies,
+    ) -> Result<(Candidates<'a>, Vec<Issue>), CliError> {
+        let bad = |e: &dyn std::fmt::Display| CliError::invalid_input(path, e);
+        match self {
+            Reader::Records => {
+                limits::check_jsonl_depth(bytes, &host.limits).map_err(|e| {
+                    CliError::new(
+                        "input_limit",
+                        format!("{}: {e}", path.display()),
+                        Exit::Rejected,
+                    )
+                })?;
+                let text = std::str::from_utf8(bytes).map_err(|_| bad(&"not UTF-8"))?;
+                let lines = text
+                    .lines()
+                    .enumerate()
+                    .filter(|(_, l)| !l.trim().is_empty())
+                    .map(|(i, l)| (i + 1, Candidate::Line(l)))
+                    .collect();
+                Ok((lines, Vec::new()))
+            }
+            Reader::Csv(kind) => {
+                let text = std::str::from_utf8(bytes).map_err(|_| bad(&"not UTF-8"))?;
+                let table = csv::parse(text).map_err(|e| bad(&e))?;
+                let rows = table::to_records(&table, *kind).map_err(|e| bad(&e))?;
+                Ok((
+                    rows.into_iter()
+                        .map(|(n, v)| (n, Candidate::Value(v)))
+                        .collect(),
+                    Vec::new(),
+                ))
+            }
+            Reader::Mapping(compiled) => {
+                let rows = mapping::rows(compiled, bytes, &host.limits).map_err(|e| bad(&e))?;
+                let (records, issues) =
+                    mapping::apply(compiled, &rows, host).map_err(|e| match e {
+                        MapError::Unexpected { .. } => CliError::new(
+                            "unexpected_source",
+                            format!("{}: {e}", path.display()),
+                            Exit::Rejected,
+                        ),
+                        other => invalid(other),
+                    })?;
+                let issues = issues
+                    .into_iter()
+                    .map(|i| Issue {
+                        line: i.row,
+                        code: "mapping.row".into(),
+                        path: i.at,
+                        message: i.message,
+                    })
+                    .collect();
+                Ok((
+                    records
+                        .into_iter()
+                        .map(|(n, v)| (n, Candidate::Value(v)))
+                        .collect(),
+                    issues,
+                ))
+            }
+            Reader::Inspect(options) => {
+                let zip = path.extension().is_some_and(|x| x == "eval");
+                let (log, samples) =
+                    inspect::read_log(bytes, zip, &host.limits).map_err(|e| bad(&e))?;
+                let records =
+                    inspect::records(&log, &samples, options, host).map_err(|e| bad(&e))?;
+                Ok((numbered(records), Vec::new()))
+            }
+            Reader::Promptfoo => {
+                // A local database (`.db`): the evaluation named by `--arg eval=ID`, or
+                // the most recent; `-o out.json` output otherwise.
+                let eval = if path.extension().is_some_and(|x| x == "db") {
+                    promptfoo::read_database(path, host.arg("eval")).map_err(|e| bad(&e))?
+                } else {
+                    promptfoo::parse(bytes, &host.limits).map_err(|e| bad(&e))?
+                };
+                let records = promptfoo::records(&eval, host).map_err(|e| bad(&e))?;
+                Ok((numbered(records), Vec::new()))
+            }
+        }
+    }
 }

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
 use evalsig_adapters::limits::{self, LimitError, Limits};
-use evalsig_adapters::{csv, table};
+use evalsig_adapters::table;
 use evalsig_core::config::ContentMode;
 use evalsig_core::records::{GraderRef, Record};
 use evalsig_store::hash::ContentHash;
@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::error::CliError;
 use crate::exit::Exit;
-use crate::mapped;
+use crate::mapped::{self, Candidate, Reader};
 use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 use crate::project::{Project, actor, io_error, now};
 use crate::validate::{Issue, RecordValidator};
@@ -32,15 +32,6 @@ pub enum AdapterArg {
     Inspect,
     /// promptfoo results: `-o out.json` output or the local `.db`.
     Promptfoo,
-}
-
-impl AdapterArg {
-    fn name(self) -> String {
-        self.to_possible_value()
-            .expect("no skipped variants")
-            .get_name()
-            .to_owned()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -109,22 +100,37 @@ pub(crate) fn parse_size(s: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("{s} is too large"))
 }
 
-/// A file read within the limits, JSON checked for depth before parsing.
-fn read_within(path: &Path, limits: &Limits, json: bool) -> Result<Vec<u8>, CliError> {
-    let refused = |e: LimitError| match e {
+/// A file read within the size limit; a refusal names the limit that applies.
+fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliError> {
+    limits::read_file(path, limits).map_err(|e| match e {
         LimitError::Io(io) => io_error(path, &io),
-        other => CliError::new(
-            "input_limit",
-            format!("{}: {other}", path.display()),
-            Exit::Rejected,
-        )
-        .with_hint("raise --max-bytes if the file is trusted"),
-    };
-    let bytes = limits::read_file(path, limits).map_err(refused)?;
-    if json {
-        limits::check_json_depth(&bytes, limits).map_err(refused)?;
-    }
-    Ok(bytes)
+        other => {
+            let hint = matches!(other, LimitError::TooLarge { .. });
+            let err = CliError::new(
+                "input_limit",
+                format!("{}: {other}", path.display()),
+                Exit::Rejected,
+            );
+            if hint {
+                err.with_hint("raise --max-bytes if the file is trusted")
+            } else {
+                err
+            }
+        }
+    })
+}
+
+/// The reader for a file when no mapping is given: by `--adapter`, else extension.
+fn reader_for(path: &Path, args: &Args) -> Result<Reader, CliError> {
+    Ok(match adapter_for(path, args.adapter)? {
+        AdapterArg::Records => Reader::Records,
+        AdapterArg::Csv => Reader::Csv(match args.row {
+            AsArg::Judgment => table::RowKind::Judgment,
+            AsArg::Label => table::RowKind::Label,
+        }),
+        AdapterArg::Inspect => Reader::Inspect(Default::default()),
+        AdapterArg::Promptfoo => Reader::Promptfoo,
+    })
 }
 
 const MAX_ISSUES: usize = 50;
@@ -145,45 +151,6 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
     }
 }
 
-/// Where each candidate record came from, before validation.
-enum Candidate<'a> {
-    Line(&'a str),
-    Row(Value),
-}
-
-/// Split a file into numbered candidate records for its adapter.
-fn candidates<'a>(
-    adapter: AdapterArg,
-    text: &'a str,
-    path: &Path,
-    row: AsArg,
-) -> Result<Vec<(usize, Candidate<'a>)>, CliError> {
-    match adapter {
-        AdapterArg::Records => Ok(text
-            .lines()
-            .enumerate()
-            .filter(|(_, l)| !l.trim().is_empty())
-            .map(|(i, l)| (i + 1, Candidate::Line(l)))
-            .collect()),
-        AdapterArg::Csv => {
-            let parsed = csv::parse(text).map_err(|e| CliError::invalid_input(path, e))?;
-            let kind = match row {
-                AsArg::Judgment => table::RowKind::Judgment,
-                AsArg::Label => table::RowKind::Label,
-            };
-            let rows =
-                table::to_records(&parsed, kind).map_err(|e| CliError::invalid_input(path, e))?;
-            Ok(rows
-                .into_iter()
-                .map(|(line, v)| (line, Candidate::Row(v)))
-                .collect())
-        }
-        AdapterArg::Inspect | AdapterArg::Promptfoo => {
-            unreachable!("harness logs are read with their bodies")
-        }
-    }
-}
-
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let grader = parse_grader(args.grader.as_deref())?;
     if args.system_version.as_deref() == Some("") {
@@ -201,12 +168,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         max_bytes: args.max_bytes,
         ..Limits::default()
     };
-    let mut bodies = mapped::Bodies::new(
-        &args.args,
-        (!args.dry_run).then_some(&store),
-        &config,
-        limits,
-    )?;
+    let mut bodies = mapped::Bodies::new(&args.args, &config, limits)?;
     let files = match &via {
         Some(v) if args.files.is_empty() => v.files.clone(),
         _ => args.files.clone(),
@@ -217,73 +179,33 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut sources = Vec::new();
     let mut adapters = std::collections::BTreeSet::new();
     for path in &files {
-        let adapter = match via {
-            Some(_) => None,
-            None => Some(adapter_for(path, args.adapter)?),
-        };
-        let json = match (&via, adapter) {
-            (Some(v), _) => v.reads_json(),
-            (None, a) => a == Some(AdapterArg::Records),
-        };
-        let bytes = read_within(path, &limits, json)?;
-        sources.push(SourceFile {
-            path: path.display().to_string(),
-            hash: ContentHash::blake3(&bytes),
-        });
-        if let Some(v) = &via {
-            let (mapped, found) = mapped::apply(v, path, &bytes, &mut bodies)?;
-            let file = path.display().to_string();
-            issues.extend(found.into_iter().map(|i| (file.clone(), i)));
-            for (row, value) in mapped {
-                match validator.check_value(row, value) {
-                    Ok(r) => records.push(r),
-                    Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
-                }
+        let own;
+        let reader = match &via {
+            Some(v) => &v.reader,
+            None => {
+                own = reader_for(path, args)?;
+                adapters.insert(own.name());
+                &own
             }
-            continue;
-        }
-        let adapter = adapter.expect("chosen above when there is no mapping");
-        adapters.insert(adapter);
-        if matches!(adapter, AdapterArg::Inspect | AdapterArg::Promptfoo) {
-            let file = path.display().to_string();
-            let read = match adapter {
-                AdapterArg::Inspect => mapped::inspect_log(
-                    path,
-                    &bytes,
-                    &evalsig_adapters::inspect::Options::default(),
-                    &mut bodies,
-                )?,
-                _ => mapped::promptfoo_results(path, &bytes, &mut bodies)?,
-            };
-            for (row, value) in read {
-                match validator.check_value(row, value) {
-                    Ok(r) => records.push(r),
-                    Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
-                }
-            }
-            continue;
-        }
-        let text =
-            String::from_utf8(bytes).map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
-        for (line, candidate) in candidates(adapter, &text, path, args.row)? {
+        };
+        let bytes = read_within(path, &limits)?;
+        sources.push(SourceFile::of(path.display(), &bytes));
+        let (candidates, found) = reader.read(path, &bytes, &mut bodies)?;
+        let file = path.display().to_string();
+        issues.extend(found.into_iter().map(|i| (file.clone(), i)));
+        for (line, candidate) in candidates {
             let checked = match candidate {
                 Candidate::Line(l) => validator.check_line(line, l),
-                Candidate::Row(v) => validator.check_value(line, v),
+                Candidate::Value(v) => validator.check_value(line, v),
             };
             match checked {
                 Ok(r) => records.push(r),
-                Err(found) => {
-                    issues.extend(found.into_iter().map(|f| (path.display().to_string(), f)))
-                }
+                Err(found) => issues.extend(found.into_iter().map(|i| (file.clone(), i))),
             }
         }
     }
-    for value in std::mem::take(&mut bodies.contents) {
-        match validator.check_value(0, value) {
-            Ok(r) => records.push(r),
-            Err(found) => issues.extend(found.into_iter().map(|i| ("<content>".into(), i))),
-        }
-    }
+    // The importer built these records itself; they need no validation.
+    records.append(&mut bodies.contents);
     sources.append(&mut bodies.joined);
     let mut warnings = Vec::new();
     apply_overrides(
@@ -332,11 +254,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let who = actor();
     let adapter = match &via {
         Some(v) => v.adapter.clone(),
-        None => adapters
-            .iter()
-            .map(|a| a.name())
-            .collect::<Vec<_>>()
-            .join("+"),
+        None => adapters.into_iter().collect::<Vec<_>>().join("+"),
     };
     let mapping = via.as_ref().map(|v| v.hash).or(converter);
     let written = snapshot::write(&store, &mut records, |snapshot| Provenance {
@@ -369,6 +287,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             Exit::Rejected,
         ));
     }
+    // Bodies are written only now, after every check has passed.
+    bodies.commit(&store)?;
     let mut summary = serde_json::Map::new();
     summary.insert("adapter".into(), json!(adapter));
     if let Some(n) = redacted {

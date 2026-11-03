@@ -269,15 +269,15 @@ fn test(
         ..Limits::default()
     };
     let config = Config::default();
-    let mut host = Bodies::new(args, None, &config, limits)?;
+    let mut host = Bodies::new(args, &config, limits)?;
     let (mut rows, mut records, mut issues) = (Vec::new(), Vec::new(), Vec::new());
     for file in files {
         let bytes = evalsig_adapters::limits::read_file(file, &limits)
             .map_err(|e| CliError::invalid_input(file, e))?;
         // Rows are numbered across the files.
         let base = rows.len();
-        let these =
-            mapping::rows(&compiled, &bytes).map_err(|e| CliError::invalid_input(file, e))?;
+        let these = mapping::rows(&compiled, &bytes, &limits)
+            .map_err(|e| CliError::invalid_input(file, e))?;
         let (r, i) = mapping::apply(&compiled, &these, &mut host)
             .map_err(|e| CliError::invalid_input(file, e))?;
         records.extend(r.into_iter().map(|(n, v)| (base + n, v)));

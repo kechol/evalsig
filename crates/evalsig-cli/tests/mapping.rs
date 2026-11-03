@@ -257,3 +257,104 @@ fn the_example_mapping_conforms_to_the_published_schema() {
         .collect();
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[test]
+fn joined_labels_survive_ids_with_path_characters() {
+    let dir = project();
+    let log = dir.path().join("run.jsonl");
+    let base = std::fs::read_to_string(example("custom-harness/run-log.sample.jsonl")).unwrap();
+    std::fs::write(&log, base.replace("t-000", "t.000")).unwrap();
+    let labels = dir.path().join("labels.json");
+    let text = std::fs::read_to_string(example("custom-harness/labels.sample.json")).unwrap();
+    std::fs::write(&labels, text.replace("t-000", "t.000")).unwrap();
+    let v = json(
+        evalsig(dir.path())
+            .arg("import")
+            .arg("--mapping")
+            .arg(example("mapping.toml"))
+            .args(["--arg", "run-id=triage-v1", "--arg"])
+            .arg(format!("labels={}", labels.display()))
+            .arg(&log),
+        0,
+    );
+    assert_eq!(v["results"]["records"]["labels"], 3);
+}
+
+#[test]
+fn csv_blocks_convert_cells_like_a_plain_csv_import() {
+    let dir = project();
+    let root = dir.path();
+    std::fs::write(
+        root.join(".evalsig/config.toml"),
+        r#"[[import]]
+name = "lab"
+adapter = "csv"
+as = "label"
+path = "labels.csv"
+map.item_id = "item.id"
+map.rater_id = "rater"
+map.source = "human"
+map.value = "value"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("labels.csv"),
+        "item.id,rater,value\na,r,1\nb,r,TRUE\nc,r,0.5\n",
+    )
+    .unwrap();
+    let v = json(evalsig(root).args(["import", "--from", "lab"]), 0);
+    assert_eq!(v["results"]["records"]["labels"], 3);
+    std::fs::write(
+        root.join(".evalsig/config.toml"),
+        "[[import]]\nname = \"none\"\nadapter = \"csv\"\npath = \"nothing/*.csv\"\nmap.item_id = \"id\"\nmap.value = \"v\"\nmap.run_id = \"r\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("nothing")).unwrap();
+    json(evalsig(root).args(["import", "--from", "none"]), 64);
+}
+
+#[test]
+fn bodies_are_written_only_for_accepted_imports() {
+    let dir = project();
+    let root = dir.path();
+    let objects = || walk(&root.join(".evalsig/objects"));
+    let log = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/harness/inspect/probe.json");
+    let mut broken: Value = serde_json::from_str(&std::fs::read_to_string(&log).unwrap()).unwrap();
+    broken["eval"]["eval_id"] = Value::String(String::new());
+    let bad = root.join("bad.json");
+    std::fs::write(&bad, broken.to_string()).unwrap();
+    evalsig(root)
+        .args(["import", "--adapter", "inspect"])
+        .arg(&bad)
+        .assert()
+        .code(5);
+    assert_eq!(objects(), 0);
+    let dry = json(
+        evalsig(root)
+            .args(["import", "--dry-run", "--adapter", "inspect"])
+            .arg(&log),
+        0,
+    );
+    assert_eq!(objects(), 0);
+    let real = json(
+        evalsig(root)
+            .args(["import", "--adapter", "inspect"])
+            .arg(&log),
+        0,
+    );
+    assert_eq!(dry["results"]["snapshot"], real["results"]["snapshot"]);
+    assert!(objects() > 0);
+}
+
+fn walk(dir: &Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .map(|e| e.unwrap().path())
+                .map(|p| if p.is_dir() { walk(&p) } else { 1 })
+                .sum()
+        })
+        .unwrap_or(0)
+}

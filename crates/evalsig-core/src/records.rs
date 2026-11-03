@@ -242,6 +242,15 @@ pub enum ValueSemantics {
     Score,
 }
 
+impl ValueSemantics {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ValueSemantics::Decision => "decision",
+            ValueSemantics::Score => "score",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputType {

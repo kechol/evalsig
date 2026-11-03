@@ -19,8 +19,6 @@ thiserror.workspace = true
 toml.workspace = true
 zip.workspace = true
 
-[dev-dependencies]
-zip = { workspace = true, features = ["deflate"] }
 
 [lints]
 workspace = true

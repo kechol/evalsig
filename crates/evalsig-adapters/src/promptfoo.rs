@@ -16,7 +16,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value as Json, json};
 
-use crate::mapping::Host;
+use crate::BodySink;
+use crate::limits::{self, Limits};
+use crate::source::scalar_fields;
 
 /// The `results.version` values this adapter reads.
 pub const SUPPORTED_VERSIONS: [u64; 2] = [2, 3];
@@ -34,7 +36,8 @@ pub enum PromptfooError {
 }
 
 /// The evaluation in `out.json` form, from the JSON output.
-pub fn parse(bytes: &[u8]) -> Result<Json, PromptfooError> {
+pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Json, PromptfooError> {
+    limits::check_json_depth(bytes, limits).map_err(|e| PromptfooError::Json(e.to_string()))?;
     serde_json::from_slice(bytes).map_err(|e| PromptfooError::Json(e.to_string()))
 }
 
@@ -47,9 +50,20 @@ pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooE
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(db)?;
-    let parse_col = |s: Option<String>| -> Json {
-        s.and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(Json::Null)
+    // NULL is null; text that is not JSON is an error, not null, so corrupt rows do not
+    // collapse into one item.
+    let parse_col = |i: usize, s: Option<String>| -> rusqlite::Result<Json> {
+        s.map(|s| {
+            serde_json::from_str(&s).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    i,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
     };
     let (id, config, prompts): (String, Option<String>, Option<String>) = match eval {
         Some(id) => conn.query_row(
@@ -73,17 +87,16 @@ pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooE
         .map_err(db)?;
     let rows = stmt
         .query_map([&id], |r| {
-            let test_case = parse_col(r.get(2)?);
+            let test_case = parse_col(2, r.get(2)?)?;
             Ok(json!({
                 "testIdx": r.get::<_, i64>(0)?,
                 "promptIdx": r.get::<_, i64>(1)?,
-                "vars": test_case["vars"].clone(),
                 "testCase": test_case,
-                "prompt": parse_col(r.get(3)?),
-                "provider": parse_col(r.get(4)?),
-                "response": parse_col(r.get(5)?),
-                "gradingResult": parse_col(r.get(6)?),
-                "namedScores": parse_col(r.get(7)?),
+                "prompt": parse_col(3, r.get(3)?)?,
+                "provider": parse_col(4, r.get(4)?)?,
+                "response": parse_col(5, r.get(5)?)?,
+                "gradingResult": parse_col(6, r.get(6)?)?,
+                "namedScores": parse_col(7, r.get(7)?)?,
                 "error": r.get::<_, Option<String>>(8)?,
                 "failureReason": r.get::<_, Option<i64>>(9)?,
                 "success": r.get::<_, Option<bool>>(10)?,
@@ -95,8 +108,8 @@ pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooE
         .map_err(db)?;
     Ok(json!({
         "evalId": id,
-        "config": parse_col(config),
-        "results": {"version": 3, "prompts": parse_col(prompts), "results": rows},
+        "config": parse_col(1, config).map_err(db)?,
+        "results": {"version": 3, "prompts": parse_col(2, prompts).map_err(db)?, "results": rows},
     }))
 }
 
@@ -163,7 +176,7 @@ fn missing(result: &Json) -> Option<Json> {
 
 /// The canonical records of one evaluation, as record JSON for the importer to
 /// validate.
-pub fn records(eval: &Json, host: &mut dyn Host) -> Result<Vec<Json>, PromptfooError> {
+pub fn records(eval: &Json, host: &mut dyn BodySink) -> Result<Vec<Json>, PromptfooError> {
     let results = &eval["results"];
     if !SUPPORTED_VERSIONS
         .iter()
@@ -177,7 +190,7 @@ pub fn records(eval: &Json, host: &mut dyn Host) -> Result<Vec<Json>, PromptfooE
         .into_iter()
         .flatten()
         .collect();
-    let prompts = results["prompts"].as_array().cloned().unwrap_or_default();
+    let prompts: &[Json] = results["prompts"].as_array().map_or(&[], Vec::as_slice);
     // Group by run, then item; within each, testIdx order gives the replicates.
     let mut runs: BTreeMap<i64, Vec<(i64, usize, &Json)>> = BTreeMap::new();
     for (i, r) in rows.iter().enumerate() {
@@ -185,7 +198,7 @@ pub fn records(eval: &Json, host: &mut dyn Host) -> Result<Vec<Json>, PromptfooE
         let test = r["testIdx"].as_i64().unwrap_or(i as i64);
         runs.entry(prompt).or_default().push((test, i, r));
     }
-    let body = |host: &mut dyn Host, v: &Json, index: usize| {
+    let body = |host: &mut dyn BodySink, v: &Json, index: usize| {
         host.body(v)
             .map_err(|message| PromptfooError::Result { index, message })
     };
@@ -193,10 +206,7 @@ pub fn records(eval: &Json, host: &mut dyn Host) -> Result<Vec<Json>, PromptfooE
     for (prompt_idx, mut members) in runs {
         members.sort_by_key(|(test, i, _)| (*test, *i));
         let first = members[0].2;
-        let prompt = prompts
-            .get(prompt_idx as usize)
-            .cloned()
-            .unwrap_or(Json::Null);
+        let prompt = prompts.get(prompt_idx as usize).unwrap_or(&Json::Null);
         let provider = prompt["provider"]
             .as_str()
             .or_else(|| {
@@ -232,16 +242,7 @@ pub fn records(eval: &Json, host: &mut dyn Host) -> Result<Vec<Json>, PromptfooE
             let mut item = Map::new();
             item.insert("record".into(), json!("item"));
             item.insert("item_id".into(), json!(id));
-            let strata: Map<String, Json> = r["testCase"]["metadata"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter(|(k, v)| {
-                    *k != "testCaseId"
-                        && matches!(v, Json::String(_) | Json::Number(_) | Json::Bool(_))
-                })
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            let strata = scalar_fields(&r["testCase"]["metadata"], &["testCaseId"]);
             if !strata.is_empty() {
                 item.insert("strata".into(), Json::Object(strata));
             }
@@ -284,20 +285,7 @@ mod tests {
 
     const OUT: &[u8] = include_bytes!("../../../tests/fixtures/harness/promptfoo/out.json");
 
-    struct Bodies(Vec<Json>);
-
-    impl Host for Bodies {
-        fn arg(&self, _: &str) -> Option<&str> {
-            None
-        }
-        fn read(&mut self, _: &str) -> Result<Vec<u8>, String> {
-            Err("no files".into())
-        }
-        fn body(&mut self, v: &Json) -> Result<String, String> {
-            self.0.push(v.clone());
-            Ok(format!("blake3:{:064x}", self.0.len()))
-        }
-    }
+    use crate::testing::Recorder;
 
     fn judgments(rs: &[Json]) -> Vec<(String, u64, Json)> {
         let mut v: Vec<_> = rs
@@ -317,8 +305,8 @@ mod tests {
 
     #[test]
     fn the_fixture_imports_with_restored_replicates() {
-        let eval = parse(OUT).unwrap();
-        let mut b = Bodies(Vec::new());
+        let eval = parse(OUT, &Limits::default()).unwrap();
+        let mut b = Recorder::default();
         let rs = records(&eval, &mut b).unwrap();
         let runs: Vec<&Json> = rs.iter().filter(|r| r["record"] == "run").collect();
         assert_eq!(runs.len(), 1);
@@ -335,22 +323,22 @@ mod tests {
             values,
             BTreeSet::from(["true".to_owned(), "false".to_owned()])
         );
-        assert!(b.0.contains(&json!({"q": "yes"})));
+        assert!(b.bodies.contains(&json!({"q": "yes"})));
         assert!(rs.iter().all(|r| r["record"] != "label"));
     }
 
     #[test]
     fn version_2_results_read_the_same_rows() {
-        let mut eval = parse(OUT).unwrap();
+        let mut eval = parse(OUT, &Limits::default()).unwrap();
         eval["results"]["version"] = json!(2);
         for r in eval["results"]["results"].as_array_mut().unwrap() {
             r.as_object_mut().unwrap().remove("testCase");
         }
-        let rs = records(&eval, &mut Bodies(Vec::new())).unwrap();
+        let rs = records(&eval, &mut Recorder::default()).unwrap();
         assert_eq!(judgments(&rs).len(), 4);
         eval["results"]["version"] = json!(4);
         assert!(matches!(
-            records(&eval, &mut Bodies(Vec::new())),
+            records(&eval, &mut Recorder::default()),
             Err(PromptfooError::Version(_))
         ));
     }
@@ -367,7 +355,7 @@ mod tests {
 
     #[test]
     fn the_database_is_read_like_the_json_output() {
-        let eval = parse(OUT).unwrap();
+        let eval = parse(OUT, &Limits::default()).unwrap();
         let dir = std::env::temp_dir().join(format!("evalsig-pf-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&dir);
         let conn = rusqlite::Connection::open(&dir).unwrap();
@@ -410,8 +398,8 @@ mod tests {
         drop(conn);
         let from_db = read_database(&dir, None).unwrap();
         std::fs::remove_file(&dir).unwrap();
-        let a = judgments(&records(&from_db, &mut Bodies(Vec::new())).unwrap());
-        let b = judgments(&records(&eval, &mut Bodies(Vec::new())).unwrap());
+        let a = judgments(&records(&from_db, &mut Recorder::default()).unwrap());
+        let b = judgments(&records(&eval, &mut Recorder::default()).unwrap());
         assert_eq!(a, b);
     }
 }

@@ -168,7 +168,8 @@ fn row_to_record(
 
 /// Map a cell to a value of the output type (labels have none: infer bool, then
 /// integer, then number).
-fn map_value(
+/// A cell as a value of the output type (any value type when `None`).
+pub(crate) fn map_value(
     cell: &str,
     output_type: Option<OutputType>,
     levels: Option<u64>,

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use evalsig_adapters::limits::{self, Limits};
 use evalsig_adapters::mapping::{self, Compiled, Host};
-use evalsig_adapters::{inspect, promptfoo};
+use evalsig_adapters::{BodySink, inspect, promptfoo};
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value;
 
@@ -30,6 +30,9 @@ impl Host for Nothing {
     fn read(&mut self, _: &str) -> Result<Vec<u8>, String> {
         Ok(b"{}".to_vec())
     }
+}
+
+impl BodySink for Nothing {
     fn body(&mut self, _: &Value) -> Result<String, String> {
         Ok(format!("blake3:{}", "0".repeat(64)))
     }
@@ -42,10 +45,10 @@ fuzz_target!(|data: &[u8]| {
     if let Ok((log, samples)) = inspect::read_log(data, false, &LIMITS) {
         let _ = inspect::records(&log, &samples, &inspect::Options::default(), &mut Nothing);
     }
-    if let Ok(eval) = promptfoo::parse(data) {
+    if let Ok(eval) = promptfoo::parse(data, &LIMITS) {
         let _ = promptfoo::records(&eval, &mut Nothing);
     }
-    if let Ok(rows) = mapping::rows(&MAPPING, data) {
+    if let Ok(rows) = mapping::rows(&MAPPING, data, &LIMITS) {
         let _ = mapping::apply(&MAPPING, &rows, &mut Nothing);
     }
 });

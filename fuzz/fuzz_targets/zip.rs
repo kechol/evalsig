@@ -13,6 +13,6 @@ const LIMITS: Limits = Limits {
 };
 
 fuzz_target!(|data: &[u8]| {
-    let _ = limits::zip_entries(data, &LIMITS);
+    let _ = limits::zip_entries(data, &LIMITS, |_| true);
     let _ = inspect::read_log(data, true, &LIMITS);
 });

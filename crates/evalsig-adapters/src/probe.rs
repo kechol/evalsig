@@ -10,6 +10,8 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::limits::{self, Limits};
+use crate::mapping::Format;
+use crate::source;
 
 /// Paths with at most this many distinct short values have them listed.
 pub const MAX_LISTED: usize = 20;
@@ -138,48 +140,32 @@ fn walk(v: &Json, path: String, stats: &mut BTreeMap<String, Acc>, arrays: &mut 
 
 /// The rows of a file in the shape it has.
 pub fn rows(shape: Shape, bytes: &[u8], limits: &Limits) -> Result<Vec<Json>, String> {
-    let text = || std::str::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned());
-    match shape {
+    let format = match shape {
         Shape::Zip => {
-            let entries = limits::zip_entries(bytes, limits).map_err(|e| e.to_string())?;
-            Ok(entries
+            let entries = limits::zip_entries(bytes, limits, |n| n.ends_with(".json"))
+                .map_err(|e| e.to_string())?;
+            return Ok(entries
                 .iter()
-                .filter(|(n, _)| n.ends_with(".json"))
                 .filter_map(|(_, d)| serde_json::from_slice(d).ok())
-                .collect())
+                .collect());
         }
-        Shape::Json => {
-            limits::check_json_depth(bytes, limits).map_err(|e| e.to_string())?;
-            match serde_json::from_str(text()?).map_err(|e| e.to_string())? {
-                Json::Array(xs) => Ok(xs),
-                other => Ok(vec![other]),
-            }
-        }
-        Shape::Jsonl => {
-            limits::check_json_depth(bytes, limits).map_err(|e| e.to_string())?;
-            text()?
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .enumerate()
-                .map(|(i, l)| serde_json::from_str(l).map_err(|e| format!("line {}: {e}", i + 1)))
-                .collect()
-        }
-        Shape::Csv => {
-            let t = crate::csv::parse(text()?).map_err(|e| e.to_string())?;
-            Ok(t.rows
-                .iter()
-                .map(|(_, cells)| {
-                    Json::Object(
-                        t.header
-                            .iter()
-                            .cloned()
-                            .zip(cells.iter().map(|c| Json::String(c.clone())))
-                            .collect(),
-                    )
-                })
-                .collect())
-        }
+        Shape::Json => Format::Json,
+        Shape::Jsonl => Format::Jsonl,
+        Shape::Csv => Format::Csv,
+    };
+    let rows = source::parse(format, bytes, limits)?;
+    Ok(match format {
+        Format::Json => source::elements(
+            rows.into_iter()
+                .next()
+                .map(|(_, v)| v)
+                .unwrap_or(Json::Null),
+        ),
+        _ => rows,
     }
+    .into_iter()
+    .map(|(_, v)| v)
+    .collect())
 }
 
 /// Recognise a format by the keys its records always have.

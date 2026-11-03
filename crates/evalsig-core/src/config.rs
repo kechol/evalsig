@@ -279,6 +279,21 @@ pub struct Import {
     pub value_map: BTreeMap<String, Value>,
 }
 
+impl Import {
+    /// `value_map` with JSON values, as mappings and adapters read it.
+    pub fn value_map_json(&self) -> BTreeMap<String, serde_json::Value> {
+        self.value_map
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    serde_json::to_value(v).expect("values serialize"),
+                )
+            })
+            .collect()
+    }
+}
+
 /// Where each record field comes from: a path into the source row (`$.a.b` for
 /// JSON, a column name for CSV) or, for some fields, a constant.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

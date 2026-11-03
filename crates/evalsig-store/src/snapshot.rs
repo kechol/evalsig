@@ -24,6 +24,16 @@ pub struct SourceFile {
     pub hash: ContentHash,
 }
 
+impl SourceFile {
+    /// A file read for an import, named by its path and the hash of its bytes.
+    pub fn of(path: impl std::fmt::Display, bytes: &[u8]) -> SourceFile {
+        SourceFile {
+            path: path.to_string(),
+            hash: ContentHash::blake3(bytes),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provenance {
     pub schema: String,

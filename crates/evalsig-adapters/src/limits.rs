@@ -75,10 +75,30 @@ pub fn read_file(path: &Path, limits: &Limits) -> Result<Vec<u8>, LimitError> {
     bounded(file, limits.max_bytes, &what)
 }
 
-/// Check that no line of JSON or JSONL nests deeper than the limit, before parsing.
+/// Check that a JSON document nests no deeper than the limit, before parsing.
 pub fn check_json_depth(bytes: &[u8], limits: &Limits) -> Result<(), LimitError> {
+    depth_scan(bytes, limits, false)
+}
+
+/// Check that no line of JSON Lines nests deeper than the limit, before parsing. Each
+/// line is counted on its own, so one malformed line does not affect the next.
+pub fn check_jsonl_depth(bytes: &[u8], limits: &Limits) -> Result<(), LimitError> {
+    depth_scan(bytes, limits, true)
+}
+
+fn depth_scan(bytes: &[u8], limits: &Limits, per_line: bool) -> Result<(), LimitError> {
     let (mut depth, mut line, mut in_string, mut escaped) = (0usize, 1usize, false, false);
     for &b in bytes {
+        // JSON strings cannot hold a raw newline, so one always ends string state.
+        if b == b'\n' {
+            line += 1;
+            in_string = false;
+            escaped = false;
+            if per_line {
+                depth = 0;
+            }
+            continue;
+        }
         if in_string {
             match b {
                 _ if escaped => escaped = false,
@@ -100,7 +120,6 @@ pub fn check_json_depth(bytes: &[u8], limits: &Limits) -> Result<(), LimitError>
                 }
             }
             b']' | b'}' => depth = depth.saturating_sub(1),
-            b'\n' => line += 1,
             _ => {}
         }
     }
@@ -123,9 +142,14 @@ pub fn zstd(bytes: &[u8], limit: u64, what: &str) -> Result<Vec<u8>, LimitError>
     })
 }
 
-/// Every entry of a zip archive, decompressed, in archive order. Stored, Deflate and
-/// Zstandard entries are read; the entries together may not exceed `max_bytes`.
-pub fn zip_entries(bytes: &[u8], limits: &Limits) -> Result<Vec<(String, Vec<u8>)>, LimitError> {
+/// The entries of a zip archive whose names `want` accepts, decompressed, in archive
+/// order; the others are not decompressed. Stored, Deflate and Zstandard entries are
+/// read; the entries read together may not exceed `max_bytes`.
+pub fn zip_entries(
+    bytes: &[u8],
+    limits: &Limits,
+    want: impl Fn(&str) -> bool,
+) -> Result<Vec<(String, Vec<u8>)>, LimitError> {
     let zip_err = |e: zip::result::ZipError| LimitError::Zip(e.to_string());
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(zip_err)?;
     if archive.len() > limits.max_entries {
@@ -138,6 +162,9 @@ pub fn zip_entries(bytes: &[u8], limits: &Limits) -> Result<Vec<(String, Vec<u8>
     for i in 0..archive.len() {
         let raw = archive.by_index_raw(i).map_err(zip_err)?;
         let name = raw.name().map_err(zip_err)?.into_owned();
+        if !want(&name) {
+            continue;
+        }
         let method = raw.compression();
         let too_large = || LimitError::TooLarge {
             what: "the archive's entries".into(),
@@ -203,11 +230,11 @@ mod tests {
         let bomb = zip_of(&[("big.json", &zeros)]);
         assert!(bomb.len() < 100_000, "{}", bomb.len());
         assert!(matches!(
-            zip_entries(&bomb, &small()),
+            zip_entries(&bomb, &small(), |_| true),
             Err(LimitError::TooLarge { .. })
         ));
         let fine = zip_of(&[("a.json", b"{}"), ("b.json", b"[]")]);
-        let entries = zip_entries(&fine, &small()).unwrap();
+        let entries = zip_entries(&fine, &small(), |_| true).unwrap();
         assert_eq!(entries[1], ("b.json".to_owned(), b"[]".to_vec()));
     }
 
@@ -216,7 +243,7 @@ mod tests {
         let names: Vec<String> = (0..5).map(|i| format!("{i}.json")).collect();
         let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"{}"[..])).collect();
         assert!(matches!(
-            zip_entries(&zip_of(&entries), &small()),
+            zip_entries(&zip_of(&entries), &small(), |_| true),
             Err(LimitError::TooManyEntries { limit: 4 })
         ));
     }
@@ -243,9 +270,12 @@ mod tests {
             "]".repeat(100_000)
         );
         assert!(matches!(
-            check_json_depth(deep.as_bytes(), &small()),
+            check_jsonl_depth(deep.as_bytes(), &small()),
             Err(LimitError::TooDeep { line: 2, limit: 8 })
         ));
+        // An unclosed string or bracket on one line does not carry to the next.
+        let broken = "{\"a\": \"open\n[[[[[[[[\n{\"b\": 1}\n";
+        check_jsonl_depth(broken.as_bytes(), &small()).unwrap();
         let quoted = r#"{"s": "[[[[[[[[[[[[[[[[[[[["}"#;
         check_json_depth(quoted.as_bytes(), &small()).unwrap();
     }

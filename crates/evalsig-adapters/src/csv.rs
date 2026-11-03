@@ -30,6 +30,24 @@ impl Table {
     pub fn column(&self, name: &str) -> Option<usize> {
         self.header.iter().position(|h| h == name)
     }
+
+    /// Each row as an object of strings keyed by the header, with its line number.
+    /// Empty cells are left out, as in a plain CSV import.
+    pub fn objects(&self) -> Vec<(usize, serde_json::Value)> {
+        self.rows
+            .iter()
+            .map(|(line, cells)| {
+                let row = self
+                    .header
+                    .iter()
+                    .zip(cells)
+                    .filter(|(_, c)| !c.is_empty())
+                    .map(|(h, c)| (h.clone(), serde_json::Value::String(c.clone())))
+                    .collect();
+                (*line, serde_json::Value::Object(row))
+            })
+            .collect()
+    }
 }
 
 pub fn parse(text: &str) -> Result<Table, CsvError> {

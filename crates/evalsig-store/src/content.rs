@@ -86,6 +86,49 @@ pub struct Redaction {
     pub stored: ContentHash,
 }
 
+/// A body prepared under the project's mode: its `content` record, the redaction to
+/// keep in the provenance (under `redact`), and the bytes to store, if any.
+#[derive(Debug, Clone)]
+pub struct Prepared {
+    pub content: Content,
+    pub redaction: Option<Redaction>,
+    pub object: Option<Vec<u8>>,
+}
+
+/// Prepare a body without writing anything, so an import can decide first.
+pub fn prepare_body(
+    mode: ContentMode,
+    redactor: &Redactor,
+    body: &[u8],
+    media_type: &str,
+) -> Prepared {
+    let original = ContentHash::blake3(body);
+    let (stored, redaction, object) = match (mode, std::str::from_utf8(body)) {
+        (ContentMode::Full, _) => (Stored::Full, None, Some(body.to_vec())),
+        (ContentMode::Redact, Ok(text)) => {
+            let redacted = redactor.redact(text).into_owned().into_bytes();
+            let name = ContentHash::blake3(&redacted);
+            let redaction = (name != original).then_some(Redaction {
+                original,
+                stored: name,
+            });
+            (Stored::Redact, redaction, Some(redacted))
+        }
+        // Patterns cannot be searched for in bytes that are not text.
+        (ContentMode::Hash, _) | (ContentMode::Redact, Err(_)) => (Stored::Hash, None, None),
+    };
+    Prepared {
+        content: Content {
+            content_ref: original.to_string(),
+            media_type: media_type.to_owned(),
+            bytes: Some(body.len() as u64),
+            stored: Some(stored),
+        },
+        redaction,
+        object,
+    }
+}
+
 /// Store a body under the project's mode. Returns its `content` record and, under
 /// `redact`, the redaction to keep in the provenance.
 pub fn store_body(
@@ -95,30 +138,11 @@ pub fn store_body(
     body: &[u8],
     media_type: &str,
 ) -> Result<(Content, Option<Redaction>), ObjectError> {
-    let original = ContentHash::blake3(body);
-    let (stored, redaction) = match (mode, std::str::from_utf8(body)) {
-        (ContentMode::Full, _) => {
-            store.put(body)?;
-            (Stored::Full, None)
-        }
-        (ContentMode::Redact, Ok(text)) => {
-            let (name, _) = store.put(redactor.redact(text).as_bytes())?;
-            let redaction = (name != original).then_some(Redaction {
-                original,
-                stored: name,
-            });
-            (Stored::Redact, redaction)
-        }
-        // Patterns cannot be searched for in bytes that are not text.
-        (ContentMode::Hash, _) | (ContentMode::Redact, Err(_)) => (Stored::Hash, None),
-    };
-    let content = Content {
-        content_ref: original.to_string(),
-        media_type: media_type.to_owned(),
-        bytes: Some(body.len() as u64),
-        stored: Some(stored),
-    };
-    Ok((content, redaction))
+    let p = prepare_body(mode, redactor, body, media_type);
+    if let Some(bytes) = &p.object {
+        store.put(bytes)?;
+    }
+    Ok((p.content, p.redaction))
 }
 
 /// The free-text fields of a record: `item.attrs`, strata values, `label.reason`

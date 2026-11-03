@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as Json, json};
 
+use crate::BodySink;
 use crate::limits::{self, LimitError, Limits};
-use crate::mapping::Host;
+use crate::mapping::path::text;
+use crate::source::scalar_fields;
 
 /// The `EvalLog.version` values this adapter reads.
 pub const SUPPORTED_VERSIONS: [u64; 1] = [2];
@@ -32,6 +34,10 @@ pub enum InspectError {
     Unfinished,
     #[error("samples have several scores ({0}); choose one with `score` in the [[import]] block")]
     WhichScore(String),
+    #[error("no sample has a score: the evaluation was not scored")]
+    NoScores,
+    #[error("the log's status is {0}; import a log whose evaluation finished (status success)")]
+    Status(String),
     #[error("sample {sample}: {message}")]
     Sample { sample: String, message: String },
 }
@@ -51,6 +57,10 @@ pub struct Options {
 /// JSON with Python's non-standard `NaN`, `Infinity` and `-Infinity` read as `null`,
 /// which is how the adapter sees an unscored value.
 fn parse_lenient(entry: &str, bytes: &[u8]) -> Result<Json, InspectError> {
+    // Most logs have no such constants; only a failed strict parse pays for the rewrite.
+    if let Ok(v) = serde_json::from_slice(bytes) {
+        return Ok(v);
+    }
     let mut out = Vec::with_capacity(bytes.len());
     let (mut in_string, mut escaped, mut i) = (false, false, 0);
     while i < bytes.len() {
@@ -109,7 +119,9 @@ pub fn read_log(
     }
     let mut header = None;
     let mut samples = Vec::new();
-    for (name, data) in limits::zip_entries(bytes, limits)? {
+    let wanted =
+        |n: &str| n == "header.json" || (n.starts_with("samples/") && n.ends_with(".json"));
+    for (name, data) in limits::zip_entries(bytes, limits, wanted)? {
         limits::check_json_depth(&data, limits)?;
         if name == "header.json" {
             header = Some(parse_lenient(&name, &data)?);
@@ -118,14 +130,6 @@ pub fn read_log(
         }
     }
     Ok((header.ok_or(InspectError::Unfinished)?, samples))
-}
-
-fn text(v: &Json) -> Option<String> {
-    match v {
-        Json::String(s) => Some(s.clone()),
-        Json::Number(n) => Some(n.to_string()),
-        _ => None,
-    }
 }
 
 /// The system-independent input: the text of user messages, not the system prompt.
@@ -202,7 +206,7 @@ pub fn records(
     log: &Json,
     samples: &[Json],
     options: &Options,
-    host: &mut dyn Host,
+    host: &mut dyn BodySink,
 ) -> Result<Vec<Json>, InspectError> {
     if !SUPPORTED_VERSIONS
         .iter()
@@ -210,6 +214,12 @@ pub fn records(
     {
         return Err(InspectError::Version(log["version"].clone()));
     }
+    // Cancelled or failed runs hold only some samples; the rest would vanish unseen.
+    match log["status"].as_str() {
+        Some("success") | None => {}
+        Some(other) => return Err(InspectError::Status(other.to_owned())),
+    }
+    let invalidated = log["invalidated"] == true;
     let spec = &log["eval"];
     let names: Vec<String> = samples
         .iter()
@@ -226,6 +236,7 @@ pub fn records(
     let score = match (&options.score, names.as_slice()) {
         (Some(s), _) => s.clone(),
         (None, [one]) => one.clone(),
+        (None, []) => return Err(InspectError::NoScores),
         (None, _) => return Err(InspectError::WhichScore(names.join(", "))),
     };
     let scorer = log["results"]["scores"]
@@ -245,7 +256,7 @@ pub fn records(
         "value_semantics": options.value_semantics.as_deref().unwrap_or("score"),
         "output_type": "score",
     })];
-    let body = |host: &mut dyn Host, v: &Json, id: &str| {
+    let body = |host: &mut dyn BodySink, v: &Json, id: &str| {
         host.body(v).map_err(|message| InspectError::Sample {
             sample: id.to_owned(),
             message,
@@ -268,13 +279,7 @@ pub fn records(
         let mut item = Map::new();
         item.insert("record".into(), json!("item"));
         item.insert("item_id".into(), json!(id));
-        let strata: Map<String, Json> = s["metadata"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .filter(|(_, v)| matches!(v, Json::String(_) | Json::Number(_) | Json::Bool(_)))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let strata = scalar_fields(&s["metadata"], &[]);
         if !strata.is_empty() {
             item.insert("strata".into(), Json::Object(strata));
         }
@@ -298,7 +303,7 @@ pub fn records(
             Some(json!({"reason": "error", "detail": text(&e["message"]).unwrap_or_default()}))
         } else if let Some(l) = s.get("limit").filter(|l| !l.is_null()) {
             Some(json!({"reason": "limit", "detail": text(&l["type"]).unwrap_or_default()}))
-        } else if s.get("invalidation").is_some_and(|v| !v.is_null()) {
+        } else if invalidated || s.get("invalidation").is_some_and(|v| !v.is_null()) {
             Some(json!({"reason": "invalidated"}))
         } else {
             match s["scores"].get(&score) {
@@ -330,20 +335,7 @@ mod tests {
     const EVAL: &[u8] = include_bytes!("../../../tests/fixtures/harness/inspect/probe.eval");
     const JSON: &[u8] = include_bytes!("../../../tests/fixtures/harness/inspect/probe.json");
 
-    struct Bodies(Vec<Json>);
-
-    impl Host for Bodies {
-        fn arg(&self, _: &str) -> Option<&str> {
-            None
-        }
-        fn read(&mut self, _: &str) -> Result<Vec<u8>, String> {
-            Err("no files".into())
-        }
-        fn body(&mut self, v: &Json) -> Result<String, String> {
-            self.0.push(v.clone());
-            Ok(format!("blake3:{:064x}", self.0.len()))
-        }
-    }
+    use crate::testing::Recorder;
 
     fn kinds(records: &[Json]) -> BTreeMap<String, usize> {
         let mut m = BTreeMap::new();
@@ -359,7 +351,7 @@ mod tests {
         for (bytes, zip) in [(EVAL, true), (JSON, false)] {
             let (log, samples) = read_log(bytes, zip, &Limits::default()).unwrap();
             assert_eq!(samples.len(), 4);
-            let mut bodies = Bodies(Vec::new());
+            let mut bodies = Recorder::default();
             let rs = records(&log, &samples, &Options::default(), &mut bodies).unwrap();
             assert_eq!(
                 kinds(&rs),
@@ -388,10 +380,40 @@ mod tests {
                 .collect();
             assert_eq!(values[&("s1".to_owned(), 0)], json!(0));
             assert_eq!(values[&("s2".to_owned(), 1)], json!(1));
-            assert!(bodies.0.contains(&json!("Say yes")));
-            assert!(bodies.0.contains(&json!("Default")));
+            assert!(bodies.bodies.contains(&json!("Say yes")));
+            assert!(bodies.bodies.contains(&json!("Default")));
             assert!(rs.iter().all(|r| r["record"] != "label"));
         }
+    }
+
+    #[test]
+    fn unfinished_and_unscored_logs_are_refused() {
+        let (mut log, samples) = read_log(JSON, false, &Limits::default()).unwrap();
+        let mut b = Recorder::default();
+        let unscored: Vec<Json> = samples
+            .iter()
+            .map(|s| {
+                let mut s = s.clone();
+                s.as_object_mut().unwrap().remove("scores");
+                s
+            })
+            .collect();
+        assert!(matches!(
+            records(&log, &unscored, &Options::default(), &mut b),
+            Err(InspectError::NoScores)
+        ));
+        log["invalidated"] = json!(true);
+        let rs = records(&log, &samples, &Options::default(), &mut b).unwrap();
+        assert!(
+            rs.iter()
+                .filter(|r| r["record"] == "judgment")
+                .all(|r| r["missing"]["reason"] == "invalidated")
+        );
+        log["status"] = json!("cancelled");
+        assert!(matches!(
+            records(&log, &samples, &Options::default(), &mut b),
+            Err(InspectError::Status(_))
+        ));
     }
 
     #[test]
@@ -413,7 +435,7 @@ mod tests {
     #[test]
     fn unknown_versions_and_ambiguous_scores_are_refused() {
         let (mut log, samples) = read_log(JSON, false, &Limits::default()).unwrap();
-        let mut b = Bodies(Vec::new());
+        let mut b = Recorder::default();
         let two: Vec<Json> = samples
             .iter()
             .map(|s| {

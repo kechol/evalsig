@@ -421,8 +421,8 @@ after the entry is `Accepted`.
     `crates/evalsig-cli/schema/mapping.schema.json` (`evalsig schema mapping`,
     `$id` `urn:evalsig:schema:mapping:1`). Unknown fields are rejected.
   - Paths are a JSONPath subset: `$` is the source row (in `join.path`, the
-    joined file), `@` the current element; `.name`, `[n]`, `[*]` and
-    `[?(@.x)]` / `[?(@.x == literal)]` segments; `{name}` inserts an
+    joined file), `@` the current element; `.name`, `["any key"]`, `[n]`,
+    `[*]` and `[?(@.x)]` / `[?(@.x == literal)]` segments; `{name}` inserts an
     `explode` variable and `{$.x}` / `{@.x}` the text of a value, also inside
     names and templates.
   - An expression is a path, `DECIDE`, or a table with one source (`path`,

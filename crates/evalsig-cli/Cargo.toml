@@ -29,7 +29,6 @@ evalsig-core.workspace = true
 evalsig-store.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
-jsonschema.workspace = true
 tempfile.workspace = true
 
 [lints]

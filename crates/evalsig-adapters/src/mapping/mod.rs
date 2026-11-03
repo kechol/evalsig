@@ -10,10 +10,16 @@ pub mod path;
 use std::collections::{BTreeMap, BTreeSet};
 
 use evalsig_core::config::{Import, ImportAs};
+use evalsig_core::records::OutputType;
 use serde::Deserialize;
 use serde_json::{Map, Value as Json, json};
 
 use path::{Path, PathError, Scope, Template, text};
+
+use crate::BodySink;
+use crate::limits::Limits;
+use crate::source;
+pub use crate::source::Numbered;
 
 pub const SCHEMA: &str = "evalsig.mapping/1";
 const DECIDE: &str = "DECIDE";
@@ -298,7 +304,7 @@ struct Judgment {
 
 #[derive(Debug, Clone)]
 struct Label {
-    join: Option<(Expr, Format, Template)>,
+    join: Option<(Expr, Format, Path)>,
     fields: Vec<(&'static str, Expr)>,
     value: Expr,
 }
@@ -427,6 +433,11 @@ impl Compiler {
 
 /// Check a mapping and parse its paths.
 pub fn compile(m: &Mapping) -> Result<Compiled, MapError> {
+    compile_parts(m, true)
+}
+
+/// Compile a mapping; without `judgments`, only its labels are mapped.
+fn compile_parts(m: &Mapping, judgments: bool) -> Result<Compiled, MapError> {
     let mut c = Compiler {
         undecided: Vec::new(),
     };
@@ -486,7 +497,7 @@ pub fn compile(m: &Mapping) -> Result<Compiled, MapError> {
                 ("reference_ref", &i.reference_ref),
             ],
         )?,
-        emit: true,
+        emit: judgments,
     };
     let judgment = m
         .judgment
@@ -582,13 +593,18 @@ pub fn compile(m: &Mapping) -> Result<Compiled, MapError> {
                 .join
                 .as_ref()
                 .map(|j| -> Result<_, MapError> {
+                    let file = c.expr("label.join.file", &j.file)?;
+                    // Source rows must not choose which local file is read.
+                    if !matches!(file.src, Src::Arg(_) | Src::Const(_)) {
+                        return Err(MapError::Invalid {
+                            at: "label.join.file".into(),
+                            message: "must be an arg or a const".into(),
+                        });
+                    }
                     Ok((
-                        c.expr("label.join.file", &j.file)?,
+                        file,
                         j.format.unwrap_or(Format::Json),
-                        Template::parse(&j.path).map_err(|source| MapError::Path {
-                            at: "label.join.path".into(),
-                            source,
-                        })?,
+                        c.path("label.join.path", &j.path)?,
                     ))
                 })
                 .transpose()?;
@@ -613,12 +629,20 @@ pub fn compile(m: &Mapping) -> Result<Compiled, MapError> {
         format: m.source.format,
         records_path,
         expect,
-        run: Some(run),
+        run: judgments.then_some(run),
         item,
         judgment,
         label,
         undecided: c.undecided,
     })
+}
+
+/// The serde name of a unit enum variant.
+fn unit_name(v: &impl serde::Serialize) -> String {
+    serde_json::to_value(v)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 /// The mapping an `[[import]]` block of the configuration stands for: paths for
@@ -639,7 +663,8 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
     let m = &import.map;
     let at = |field: &str| format!("import {:?}: map.{field}", import.name);
     let path = |p: &str| match format {
-        Format::Csv => format!("$.{p}"),
+        // A column name is a key of the row, whatever characters it has.
+        Format::Csv => format!("$[{}]", json!(p)),
         _ => p.to_owned(),
     };
     let def = |p: &Option<String>| p.as_deref().map(|p| ExprDef::Text(path(p)));
@@ -649,18 +674,7 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
             message: "is required".into(),
         })
     };
-    let value_map: Option<BTreeMap<String, Json>> = (!import.value_map.is_empty()).then(|| {
-        import
-            .value_map
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::to_value(v).expect("values serialize"),
-                )
-            })
-            .collect()
-    });
+    let value_map = (!import.value_map.is_empty()).then(|| import.value_map_json());
     let value = ExprDef::Table(ExprTable {
         path: Some(path(m.value.as_deref().ok_or_else(|| {
             MapError::Invalid {
@@ -691,10 +705,10 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
         reference_ref: None,
         weight: None,
     };
-    let semantics = serde_json::to_value(import.value_semantics.unwrap_or_default())
-        .expect("serializes")
+    let semantics = import
+        .value_semantics
+        .unwrap_or_default()
         .as_str()
-        .expect("a unit variant")
         .to_owned();
     let run = RunMap {
         run_id: need("run_id", &m.run_id).or_else(|e| match import.import_as {
@@ -707,13 +721,7 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
         },
         grader: None,
         value_semantics: semantics,
-        output_type: m.output_type.map(|o| {
-            serde_json::to_value(o)
-                .expect("serializes")
-                .as_str()
-                .expect("unit")
-                .to_owned()
-        }),
+        output_type: m.output_type.map(|o| unit_name(&o)),
         levels: m.levels,
     };
     let (judgment, label) = match import.import_as {
@@ -737,13 +745,12 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
             Some(LabelMap {
                 join: None,
                 rater_id: need("rater_id", &m.rater_id)?,
-                source: constant(
-                    serde_json::to_value(m.source.ok_or_else(|| MapError::Invalid {
+                source: constant(json!(unit_name(&m.source.ok_or_else(|| {
+                    MapError::Invalid {
                         at: at("source"),
                         message: "is required".into(),
-                    })?)
-                    .expect("serializes"),
-                ),
+                    }
+                })?))),
                 value,
                 version: Some(constant(json!(m.version.unwrap_or(1)))),
                 kind: None,
@@ -766,37 +773,29 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
         label,
         decisions: Vec::new(),
     };
-    let mut compiled = compile(&mapping)?;
-    if import.import_as == ImportAs::Label {
-        // Bare item records would replace richer ones imported before.
-        compiled.item.emit = false;
-        compiled.run = None;
-    }
-    Ok(compiled)
+    // A label block maps labels only: bare item records would replace richer ones
+    // imported before, and there is no run.
+    compile_parts(&mapping, import.import_as == ImportAs::Judgment)
 }
 
 // ---- Applying ------------------------------------------------------------------
 
 impl Compiled {
-    /// Whether the source is JSON (rather than CSV).
-    pub fn reads_json(&self) -> bool {
-        self.format != Format::Csv
-    }
-
     /// Whether the mapping maps reference labels.
     pub fn maps_labels(&self) -> bool {
         self.label.is_some()
     }
 }
 
-/// What a mapping needs from the importer.
-pub trait Host {
+/// What a mapping needs from the importer besides keeping bodies.
+pub trait Host: BodySink {
     fn arg(&self, name: &str) -> Option<&str>;
     /// The bytes of a joined file.
     fn read(&mut self, file: &str) -> Result<Vec<u8>, String>;
-    /// Keep a body (an input, output, reference or rationale) and return its
-    /// reference.
-    fn body(&mut self, value: &Json) -> Result<String, String>;
+    /// The limits joined files are parsed within.
+    fn limits(&self) -> Limits {
+        Limits::default()
+    }
 }
 
 /// A problem with one source row; the import stops on any.
@@ -807,59 +806,42 @@ pub struct Issue {
     pub message: String,
 }
 
-/// Values with the source row they come from, numbered from 1 (lines for JSONL and
-/// CSV, elements for JSON).
-pub type Numbered = Vec<(usize, Json)>;
+/// A problem found while mapping a row: where in the mapping, and what.
+struct RowError {
+    at: String,
+    message: String,
+}
+
+fn row_error(at: &str, message: impl Into<String>) -> RowError {
+    RowError {
+        at: at.to_owned(),
+        message: message.into(),
+    }
+}
 
 /// The source rows of a file.
-pub fn rows(c: &Compiled, bytes: &[u8]) -> Result<Numbered, MapError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| MapError::Read("not UTF-8".into()))?;
-    let bad = |line: usize, e: serde_json::Error| MapError::Read(format!("line {line}: {e}"));
-    match c.format {
-        Format::Jsonl => text
-            .lines()
-            .enumerate()
-            .filter(|(_, l)| !l.trim().is_empty())
-            .map(|(i, l)| Ok((i + 1, serde_json::from_str(l).map_err(|e| bad(i + 1, e))?)))
-            .collect(),
-        Format::Json => {
-            let root: Json = serde_json::from_str(text).map_err(|e| bad(e.line(), e))?;
+pub fn rows(c: &Compiled, bytes: &[u8], limits: &Limits) -> Result<Numbered, MapError> {
+    let rows = source::parse(c.format, bytes, limits).map_err(MapError::Read)?;
+    if c.format != Format::Json {
+        return Ok(rows);
+    }
+    let root = rows
+        .into_iter()
+        .next()
+        .map(|(_, v)| v)
+        .unwrap_or(Json::Null);
+    Ok(match &c.records_path {
+        Some(p) => {
             let vars = BTreeMap::new();
-            let scope = Scope {
+            let found = p.eval(Scope {
                 row: &root,
                 current: None,
                 vars: &vars,
-            };
-            let found = match &c.records_path {
-                Some(p) => p.eval(scope),
-                None => match root {
-                    Json::Array(ref xs) => xs.clone(),
-                    ref other => vec![other.clone()],
-                },
-            };
-            Ok(found
-                .into_iter()
-                .enumerate()
-                .map(|(i, v)| (i + 1, v))
-                .collect())
+            });
+            source::elements(Json::Array(found.into_iter().cloned().collect()))
         }
-        Format::Csv => {
-            let table = crate::csv::parse(text).map_err(|e| MapError::Read(e.to_string()))?;
-            Ok(table
-                .rows
-                .iter()
-                .map(|(line, cells)| {
-                    let row: Map<String, Json> = table
-                        .header
-                        .iter()
-                        .cloned()
-                        .zip(cells.iter().map(|c| Json::String(c.clone())))
-                        .collect();
-                    (*line, Json::Object(row))
-                })
-                .collect())
-        }
-    }
+        None => source::elements(root),
+    })
 }
 
 /// Why an expression gave no value.
@@ -869,6 +851,10 @@ enum Miss {
     Absent,
     /// The value cannot be mapped (not in `value_map`, wrong type).
     Unmapped(String),
+}
+
+fn shown(v: &Json) -> String {
+    text(v).unwrap_or_else(|| v.to_string())
 }
 
 fn number(v: &Json) -> Option<f64> {
@@ -885,21 +871,28 @@ fn int(x: f64) -> Option<Json> {
 
 impl Expr {
     fn eval(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Json, Miss> {
-        let raw = match &self.src {
+        let owned;
+        let raw: Option<&Json> = match &self.src {
             Src::Path(p) => p.first(scope),
-            Src::Template(t) => t.render(scope).map(Json::String),
-            Src::Arg(a) => host.arg(a).map(|v| Json::String(v.to_owned())),
-            Src::Const(c) => Some(c.clone()),
-            Src::Current => scope.current.cloned(),
+            Src::Template(t) => {
+                owned = t.render(scope).map(Json::String);
+                owned.as_ref()
+            }
+            Src::Arg(a) => {
+                owned = host.arg(a).map(|v| Json::String(v.to_owned()));
+                owned.as_ref()
+            }
+            Src::Const(c) => Some(c),
+            Src::Current => scope.current,
         };
         let Some(raw) = raw.filter(|v| !v.is_null()) else {
             return self.default.clone().ok_or(Miss::Absent);
         };
-        let shown = || text(&raw).unwrap_or_else(|| raw.to_string());
+        let unmapped = || Miss::Unmapped(shown(raw));
         let mut v = match &self.value_map {
-            Some(m) => match text(&raw).and_then(|k| m.get(&k)) {
+            Some(m) => match text(raw).and_then(|k| m.get(&k)) {
                 Some(mapped) => mapped.clone(),
-                None => return self.default.clone().ok_or_else(|| Miss::Unmapped(shown())),
+                None => return self.default.clone().ok_or_else(unmapped),
             },
             None => raw.clone(),
         };
@@ -907,48 +900,76 @@ impl Expr {
             v = number(&v)
                 .map(|x| x - o)
                 .and_then(|x| int(x).or_else(|| serde_json::Number::from_f64(x).map(Json::Number)))
-                .ok_or_else(|| Miss::Unmapped(shown()))?;
+                .ok_or_else(unmapped)?;
         }
         match self.ty {
             None => Ok(v),
             Some(Ty::Boolean) => match &v {
                 Json::Bool(_) => Ok(v),
                 Json::String(s) if s == "true" || s == "false" => Ok(json!(s == "true")),
-                _ => Err(Miss::Unmapped(shown())),
+                _ => Err(unmapped()),
             },
-            Some(Ty::Integer) => number(&v)
-                .and_then(int)
-                .ok_or_else(|| Miss::Unmapped(shown())),
+            Some(Ty::Integer) => number(&v).and_then(int).ok_or_else(unmapped),
             Some(Ty::Number) => number(&v)
                 .and_then(serde_json::Number::from_f64)
                 .map(Json::Number)
-                .ok_or_else(|| Miss::Unmapped(shown())),
-            Some(Ty::String) => text(&v)
-                .map(Json::String)
-                .ok_or_else(|| Miss::Unmapped(shown())),
+                .ok_or_else(unmapped),
+            Some(Ty::String) => text(&v).map(Json::String).ok_or_else(unmapped),
         }
     }
 
     /// A value the record cannot do without.
-    fn need(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Json, String> {
+    fn need(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Json, RowError> {
         self.eval(scope, host).map_err(|m| match m {
-            Miss::Absent => format!("{}: no value", self.at),
-            Miss::Unmapped(v) => format!("{}: cannot map {v:?}", self.at),
+            Miss::Absent => row_error(&self.at, "no value"),
+            Miss::Unmapped(v) => row_error(&self.at, format!("cannot map {v:?}")),
         })
     }
 
     /// An optional value: absent is `None`, unmappable is an error.
-    fn maybe(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Option<Json>, String> {
+    fn maybe(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Option<Json>, RowError> {
         match self.eval(scope, host) {
             Ok(v) => Ok(Some(v)),
             Err(Miss::Absent) => Ok(None),
-            Err(Miss::Unmapped(v)) => Err(format!("{}: cannot map {v:?}", self.at)),
+            Err(Miss::Unmapped(v)) => Err(row_error(&self.at, format!("cannot map {v:?}"))),
         }
     }
 
-    fn id(&self, scope: Scope<'_>, host: &dyn Host) -> Result<String, String> {
+    fn id(&self, scope: Scope<'_>, host: &dyn Host) -> Result<String, RowError> {
         let v = self.need(scope, host)?;
-        text(&v).ok_or_else(|| format!("{}: {v} is not text", self.at))
+        text(&v).ok_or_else(|| row_error(&self.at, format!("{v} is not text")))
+    }
+
+    /// An integer that a numeric string may also give (CSV cells).
+    fn int(&self, scope: Scope<'_>, host: &dyn Host) -> Result<Option<Json>, RowError> {
+        self.maybe(scope, host)?
+            .map(|v| {
+                number(&v)
+                    .and_then(int)
+                    .ok_or_else(|| row_error(&self.at, format!("{v} is not an integer")))
+            })
+            .transpose()
+    }
+}
+
+/// The values of these named expressions that are present.
+fn collect<K: Clone + Into<String>>(
+    fields: &[(K, Expr)],
+    scope: Scope<'_>,
+    host: &dyn Host,
+) -> Result<Map<String, Json>, RowError> {
+    let mut out = Map::new();
+    for (k, e) in fields {
+        if let Some(v) = e.maybe(scope, host)? {
+            out.insert(k.clone().into(), v);
+        }
+    }
+    Ok(out)
+}
+
+fn insert_nonempty(out: &mut Map<String, Json>, key: &str, m: Map<String, Json>) {
+    if !m.is_empty() {
+        out.insert(key.into(), Json::Object(m));
     }
 }
 
@@ -956,163 +977,155 @@ impl Cond {
     fn holds(&self, scope: Scope<'_>) -> bool {
         let got = self.path.first(scope).filter(|v| !v.is_null());
         if let Some(e) = &self.equals {
-            return got.as_ref() == Some(e);
+            return got.is_some_and(|g| same(g, e));
         }
         if let Some(xs) = &self.one_of {
-            return got.is_some_and(|g| xs.contains(&g));
+            return got.is_some_and(|g| xs.iter().any(|x| same(g, x)));
         }
         got.is_some() == self.exists.unwrap_or(true)
     }
 }
 
-/// An integer that a numeric string may also give (CSV cells).
-fn as_int(v: Json, at: &str) -> Result<Json, String> {
-    number(&v)
-        .and_then(int)
-        .ok_or_else(|| format!("{at}: {v} is not an integer"))
+/// Equal as JSON, as numbers (`1` and `1.0`, or a CSV cell `"2"` and `2`), or as text.
+fn same(a: &Json, b: &Json) -> bool {
+    a == b
+        || matches!((number(a), number(b)), (Some(x), Some(y)) if x == y)
+        || matches!((text(a), text(b)), (Some(x), Some(y)) if x == y)
 }
 
-/// A judgment value in the run's output type: CSV cells arrive as text.
-fn typed_value(v: Json, output_type: Option<&str>) -> Option<Json> {
-    match (output_type, &v) {
-        (_, Json::Bool(_)) | (_, Json::Number(_)) => Some(v),
-        (Some("binary"), Json::String(s)) => match s.as_str() {
-            "true" => Some(json!(true)),
-            "false" => Some(json!(false)),
-            _ => None,
-        },
-        (Some("ordinal"), _) => number(&v).and_then(int),
-        (Some("score") | None, _) => number(&v)
-            .and_then(serde_json::Number::from_f64)
-            .map(Json::Number),
+/// A judgment value in the run's output type, or `None` if it is not one: text cells
+/// (CSV) convert as in a plain CSV import, and a value of the wrong type is unmapped.
+fn typed_value(v: &Json, output_type: Option<OutputType>, levels: Option<u32>) -> Option<Json> {
+    let levels = levels.map(u64::from);
+    match v {
+        Json::String(s) => crate::table::map_value(s, output_type, levels).ok(),
+        Json::Bool(_) | Json::Number(_) => {
+            crate::table::map_value(&v.to_string(), output_type, levels).ok()
+        }
         _ => None,
     }
+}
+
+fn invalid_output(e: &Expr, m: Miss) -> Json {
+    let detail = match m {
+        Miss::Absent => format!("{}: no value", e.at),
+        Miss::Unmapped(v) => format!("{}: {v:?} is not mapped", e.at),
+    };
+    json!({"reason": "invalid_output", "detail": detail})
 }
 
 struct Applier<'h> {
     host: &'h mut dyn Host,
     joined: BTreeMap<String, Json>,
     labelled: BTreeSet<String>,
+    /// Run and item records already emitted; rows repeat them. Differing ones are
+    /// emitted so the importer reports the conflict.
+    emitted: BTreeSet<String>,
     records: Vec<(usize, Json)>,
 }
 
 impl Applier<'_> {
+    fn push_once(&mut self, n: usize, record: Json) {
+        if self.emitted.insert(record.to_string()) {
+            self.records.push((n, record));
+        }
+    }
+
     fn bodies(
         &mut self,
         fields: &[(&'static str, Expr)],
         scope: Scope<'_>,
         out: &mut Map<String, Json>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RowError> {
         for (name, e) in fields {
             if let Some(v) = e.maybe(scope, &*self.host)? {
-                let r = self.host.body(&v).map_err(|m| format!("{}: {m}", e.at))?;
+                let r = self.host.body(&v).map_err(|m| row_error(&e.at, m))?;
                 out.insert((*name).into(), json!(r));
             }
         }
         Ok(())
     }
 
-    fn joined(&mut self, file: &str, format: Format) -> Result<&Json, String> {
-        if !self.joined.contains_key(file) {
-            let bytes = self.host.read(file)?;
-            let text = std::str::from_utf8(&bytes).map_err(|_| format!("{file}: not UTF-8"))?;
-            let root = match format {
-                Format::Json => serde_json::from_str(text).map_err(|e| format!("{file}: {e}"))?,
-                Format::Jsonl => Json::Array(
-                    text.lines()
-                        .filter(|l| !l.trim().is_empty())
-                        .map(|l| serde_json::from_str(l).map_err(|e| format!("{file}: {e}")))
-                        .collect::<Result<_, _>>()?,
-                ),
-                Format::Csv => {
-                    let t = crate::csv::parse(text).map_err(|e| format!("{file}: {e}"))?;
-                    Json::Array(
-                        t.rows
-                            .iter()
-                            .map(|(_, cells)| {
-                                Json::Object(
-                                    t.header
-                                        .iter()
-                                        .cloned()
-                                        .zip(cells.iter().map(|c| json!(c)))
-                                        .collect(),
-                                )
-                            })
-                            .collect(),
-                    )
-                }
-            };
-            self.joined.insert(file.to_owned(), root);
+    /// Read and parse a joined file once.
+    fn load(&mut self, file: &str, format: Format) -> Result<(), RowError> {
+        if self.joined.contains_key(file) {
+            return Ok(());
         }
-        Ok(&self.joined[file])
+        let failed = |m: String| row_error("label.join.file", format!("{file}: {m}"));
+        let bytes = self.host.read(file).map_err(failed)?;
+        let rows = source::parse(format, &bytes, &self.host.limits()).map_err(failed)?;
+        let root = match format {
+            Format::Json => rows
+                .into_iter()
+                .next()
+                .map(|(_, v)| v)
+                .unwrap_or(Json::Null),
+            Format::Jsonl | Format::Csv => Json::Array(rows.into_iter().map(|(_, v)| v).collect()),
+        };
+        self.joined.insert(file.to_owned(), root);
+        Ok(())
     }
 
-    fn row(&mut self, c: &Compiled, n: usize, row: &Json) -> Result<(), String> {
+    fn run(&mut self, r: &Run, n: usize, scope: Scope<'_>) -> Result<String, RowError> {
+        let host = &*self.host;
+        let id = r.run_id.id(scope, host)?;
+        let mut run = Map::new();
+        run.insert("record".into(), json!("run"));
+        run.insert("run_id".into(), json!(id));
+        run.insert(
+            "system".into(),
+            json!({"id": r.system.0.id(scope, host)?, "version": r.system.1.id(scope, host)?}),
+        );
+        insert_nonempty(&mut run, "grader", collect(&r.grader, scope, host)?);
+        run.insert("value_semantics".into(), json!(r.value_semantics));
+        if let Some(o) = &r.output_type {
+            run.insert("output_type".into(), json!(o));
+        }
+        if let Some(l) = r.levels {
+            run.insert("levels".into(), json!(l));
+        }
+        self.push_once(n, Json::Object(run));
+        Ok(id)
+    }
+
+    fn item(&mut self, i: &Item, n: usize, scope: Scope<'_>, id: &str) -> Result<(), RowError> {
+        let host = &*self.host;
+        let mut item = collect(&i.fields, scope, host)?;
+        item.insert("record".into(), json!("item"));
+        item.insert("item_id".into(), json!(id));
+        insert_nonempty(&mut item, "strata", collect(&i.strata, scope, host)?);
+        self.bodies(&i.bodies, scope, &mut item)?;
+        self.push_once(n, Json::Object(item));
+        Ok(())
+    }
+
+    fn row(&mut self, c: &Compiled, n: usize, row: &Json) -> Result<(), RowError> {
         let vars = BTreeMap::new();
         let scope = Scope {
             row,
             current: None,
             vars: &vars,
         };
-        let host = &*self.host;
-        let mut run_meta = (None, None);
-        let mut run_id = Json::Null;
-        if let Some(r) = &c.run {
-            let id = r.run_id.id(scope, host)?;
-            let mut run = Map::new();
-            run.insert("record".into(), json!("run"));
-            run.insert("run_id".into(), json!(id));
-            run.insert(
-                "system".into(),
-                json!({"id": r.system.0.id(scope, host)?, "version": r.system.1.id(scope, host)?}),
-            );
-            let mut grader = Map::new();
-            for (k, e) in &r.grader {
-                if let Some(v) = e.maybe(scope, host)? {
-                    grader.insert((*k).into(), v);
-                }
-            }
-            if !grader.is_empty() {
-                run.insert("grader".into(), Json::Object(grader));
-            }
-            run.insert("value_semantics".into(), json!(r.value_semantics));
-            if let Some(o) = &r.output_type {
-                run.insert("output_type".into(), json!(o));
-            }
-            if let Some(l) = r.levels {
-                run.insert("levels".into(), json!(l));
-            }
-            run_meta = (r.output_type.clone(), r.levels);
-            run_id = json!(id);
-            self.records.push((n, Json::Object(run)));
-        }
-        let item_id = c.item.id.id(scope, host)?;
+        let run_id = match &c.run {
+            Some(r) => Some(self.run(r, n, scope)?),
+            None => None,
+        };
+        let item_id = c.item.id.id(scope, &*self.host)?;
         if c.item.emit {
-            let mut item = Map::new();
-            item.insert("record".into(), json!("item"));
-            item.insert("item_id".into(), json!(item_id));
-            for (k, e) in &c.item.fields {
-                if let Some(v) = e.maybe(scope, host)? {
-                    item.insert((*k).into(), v);
-                }
-            }
-            let mut strata = Map::new();
-            for (k, e) in &c.item.strata {
-                if let Some(v) = e.maybe(scope, host)? {
-                    strata.insert(k.clone(), v);
-                }
-            }
-            if !strata.is_empty() {
-                item.insert("strata".into(), Json::Object(strata));
-            }
-            self.bodies(&c.item.bodies, scope, &mut item)?;
-            self.records.push((n, Json::Object(item)));
+            self.item(&c.item, n, scope, &item_id)?;
         }
         if let Some(l) = &c.label {
             self.label(l, n, scope, &item_id)?;
         }
-        if let Some(j) = &c.judgment {
-            self.judgments(j, n, scope, &item_id, &run_id, &run_meta)?;
+        if let (Some(j), Some(r)) = (&c.judgment, &c.run) {
+            self.judgments(
+                j,
+                r,
+                n,
+                scope,
+                &item_id,
+                run_id.as_deref().unwrap_or_default(),
+            )?;
         }
         Ok(())
     }
@@ -1123,33 +1136,27 @@ impl Applier<'_> {
         n: usize,
         scope: Scope<'_>,
         item_id: &str,
-    ) -> Result<(), String> {
-        let joined = match &l.join {
+    ) -> Result<(), RowError> {
+        let file = match &l.join {
             None => None,
-            Some((file, format, path)) => {
+            Some((file, format, _)) => {
                 if self.labelled.contains(item_id) {
                     return Ok(());
                 }
                 let file = file.id(scope, &*self.host)?;
-                // Insertions read the row; the resulting path reads the joined file.
-                let Some(p) = path.render(scope) else {
-                    return Ok(());
-                };
-                let p = Path::parse(&p).map_err(|e| format!("label.join.path: {e}"))?;
-                let root = self.joined(&file, *format)?.clone();
-                let none = BTreeMap::new();
-                let found = p.first(Scope {
-                    row: &root,
-                    current: None,
-                    vars: &none,
-                });
-                match found {
-                    Some(v) => Some(v),
-                    None => return Ok(()),
-                }
+                self.load(&file, *format)?;
+                Some(file)
             }
         };
-        let scope = match &joined {
+        let joined = match (&l.join, &file) {
+            // The path walks the joined file; its insertions read the row.
+            (Some((_, _, path)), Some(f)) => match path.first_from(&self.joined[f], scope) {
+                Some(v) => Some(v),
+                None => return Ok(()),
+            },
+            _ => None,
+        };
+        let scope = match joined {
             Some(v) => scope.with_current(v),
             None => scope,
         };
@@ -1160,10 +1167,7 @@ impl Applier<'_> {
         for (k, e) in &l.fields {
             let v = match *k {
                 "rater_id" | "source" => Some(e.need(scope, host)?),
-                "version" => e
-                    .maybe(scope, host)?
-                    .map(|v| as_int(v, &e.at))
-                    .transpose()?,
+                "version" => e.int(scope, host)?,
                 _ => e.maybe(scope, host)?,
             };
             if let Some(v) = v {
@@ -1171,30 +1175,91 @@ impl Applier<'_> {
             }
         }
         label.entry("version").or_insert(json!(1));
-        match l.value.eval(scope, host) {
-            Ok(v) => {
-                label.insert("value".into(), v);
+        match l.value.eval(scope, host).and_then(|v| match v {
+            // Text cells (CSV) become booleans or numbers as in a plain CSV import.
+            Json::String(s) => {
+                crate::table::map_value(&s, None, None).map_err(|_| Miss::Unmapped(s))
             }
-            Err(m) => {
-                label.insert("missing".into(), invalid_output(&l.value, m));
-            }
-        }
+            other => Ok(other),
+        }) {
+            Ok(v) => label.insert("value".into(), v),
+            Err(m) => label.insert("missing".into(), invalid_output(&l.value, m)),
+        };
         self.labelled.insert(item_id.to_owned());
         self.records.push((n, Json::Object(label)));
         Ok(())
     }
 
+    /// The judgment's value, or the missing value it is instead.
+    fn value_or_missing(
+        j: &Judgment,
+        (output_type, levels): (Option<OutputType>, Option<u32>),
+        scope: Scope<'_>,
+        host: &dyn Host,
+    ) -> Result<Result<Json, Json>, RowError> {
+        for (cond, reason, detail) in &j.missing_if {
+            if cond.holds(scope) {
+                let mut m = Map::new();
+                m.insert("reason".into(), reason.need(scope, host)?);
+                if let Some(v) = detail
+                    .as_ref()
+                    .map(|d| d.maybe(scope, host))
+                    .transpose()?
+                    .flatten()
+                {
+                    m.insert("detail".into(), v);
+                }
+                return Ok(Err(Json::Object(m)));
+            }
+        }
+        Ok(match j.value.eval(scope, host) {
+            Ok(v) => match typed_value(&v, output_type, levels) {
+                Some(v) => Ok(v),
+                None => Err(invalid_output(&j.value, Miss::Unmapped(shown(&v)))),
+            },
+            Err(m) => Err(invalid_output(&j.value, m)),
+        })
+    }
+
+    fn features(
+        (path, id, fired, strength): &(Path, Expr, Expr, Option<Expr>),
+        scope: Scope<'_>,
+        host: &dyn Host,
+    ) -> Result<Json, RowError> {
+        let mut list = Vec::new();
+        for f in path.eval(scope) {
+            let s = scope.with_current(f);
+            let mut feature = Map::new();
+            feature.insert("feature_id".into(), json!(id.id(s, host)?));
+            let on = fired.need(s, host)?;
+            let on = on
+                .as_bool()
+                .ok_or_else(|| row_error(&fired.at, format!("{on} is not a boolean")))?;
+            feature.insert("fired".into(), json!(on));
+            if let Some(v) = strength
+                .as_ref()
+                .map(|st| st.maybe(s, host))
+                .transpose()?
+                .flatten()
+            {
+                feature.insert("strength".into(), v);
+            }
+            list.push(Json::Object(feature));
+        }
+        Ok(Json::Array(list))
+    }
+
     fn judgments(
         &mut self,
         j: &Judgment,
+        run: &Run,
         n: usize,
         scope: Scope<'_>,
         item_id: &str,
-        run_id: &Json,
-        (output_type, levels): &(Option<String>, Option<u32>),
-    ) -> Result<(), String> {
+        run_id: &str,
+    ) -> Result<(), RowError> {
         // Each element: the variable's value, its position and the element itself.
-        let elements: Vec<(Option<String>, usize, Option<Json>)> = match &j.spread {
+        let elements: Vec<(Option<String>, usize, Option<&Json>)> = match &j.spread {
             Spread::None => vec![(None, 0, None)],
             Spread::Keys(keys) => keys
                 .iter()
@@ -1203,16 +1268,21 @@ impl Applier<'_> {
                 .collect(),
             Spread::Path(p) => match p.first(scope) {
                 Some(Json::Array(xs)) => xs
-                    .into_iter()
+                    .iter()
                     .enumerate()
                     .map(|(i, x)| (Some(i.to_string()), i, Some(x)))
                     .collect(),
                 Some(Json::Object(m)) => m
-                    .into_iter()
+                    .iter()
                     .enumerate()
-                    .map(|(i, (k, x))| (Some(k), i, Some(x)))
+                    .map(|(i, (k, x))| (Some(k.clone()), i, Some(x)))
                     .collect(),
-                _ => Vec::new(),
+                _ => {
+                    return Err(row_error(
+                        "judgment.explode.path",
+                        "no array or object to split into judgments",
+                    ));
+                }
             },
         };
         for (var, index, element) in elements {
@@ -1224,114 +1294,59 @@ impl Applier<'_> {
                 vars: &vars,
                 ..scope
             };
-            if let Some(e) = &element {
+            if let Some(e) = element {
                 scope = scope.with_current(e);
             }
             let host = &*self.host;
             let mut out = Map::new();
             out.insert("record".into(), json!("judgment"));
             out.insert("item_id".into(), json!(item_id));
-            out.insert("run_id".into(), run_id.clone());
+            out.insert("run_id".into(), json!(run_id));
             out.insert("gen_replicate".into(), json!(0));
             for (k, e) in &j.replicates {
-                if let Some(v) = e.maybe(scope, host)? {
-                    out.insert((*k).into(), as_int(v, &e.at)?);
+                if let Some(v) = e.int(scope, host)? {
+                    out.insert((*k).into(), v);
                 }
             }
             if let Some(field) = &j.index {
                 out.insert(field.clone(), json!(index));
             }
-            if let Some(t) = &j.task
-                && let Some(v) = t.maybe(scope, host)?
+            if let Some(v) = j
+                .task
+                .as_ref()
+                .map(|t| t.maybe(scope, host))
+                .transpose()?
+                .flatten()
             {
                 out.insert("task".into(), v);
             }
-            if let Some(o) = output_type {
+            if let Some(o) = &run.output_type {
                 out.insert("output_type".into(), json!(o));
             }
-            if let Some(l) = levels {
+            if let Some(l) = run.levels {
                 out.insert("levels".into(), json!(l));
             }
-            let mut missing = None;
-            for (cond, reason, detail) in &j.missing_if {
-                if cond.holds(scope) {
-                    let mut m = Map::new();
-                    m.insert("reason".into(), reason.need(scope, host)?);
-                    if let Some(d) = detail
-                        && let Some(v) = d.maybe(scope, host)?
-                    {
-                        m.insert("detail".into(), v);
+            let kind = run
+                .output_type
+                .as_deref()
+                .and_then(|o| serde_json::from_value(json!(o)).ok());
+            match Self::value_or_missing(j, (kind, run.levels), scope, host)? {
+                Ok(v) => {
+                    out.insert("value".into(), v);
+                    if let Some(f) = &j.features {
+                        out.insert("features".into(), Self::features(f, scope, host)?);
                     }
-                    missing = Some(Json::Object(m));
-                    break;
                 }
-            }
-            if missing.is_none() {
-                match j.value.eval(scope, host) {
-                    Ok(v) => match typed_value(v.clone(), output_type.as_deref()) {
-                        Some(v) => {
-                            out.insert("value".into(), v);
-                        }
-                        None => {
-                            let shown = text(&v).unwrap_or_else(|| v.to_string());
-                            missing = Some(invalid_output(&j.value, Miss::Unmapped(shown)));
-                        }
-                    },
-                    Err(m) => missing = Some(invalid_output(&j.value, m)),
-                }
-            }
-            match missing {
-                Some(m) => {
+                Err(m) => {
                     out.insert("missing".into(), m);
                 }
-                None => {
-                    if let Some((path, id, fired, strength)) = &j.features {
-                        let mut list = Vec::new();
-                        for f in path.eval(scope) {
-                            let s = scope.with_current(&f);
-                            let mut feature = Map::new();
-                            feature.insert("feature_id".into(), json!(id.id(s, host)?));
-                            let on = fired.need(s, host)?;
-                            feature.insert(
-                                "fired".into(),
-                                json!(on.as_bool().ok_or_else(|| format!(
-                                    "{}: {on} is not a boolean",
-                                    fired.at
-                                ))?),
-                            );
-                            if let Some(st) = strength
-                                && let Some(v) = st.maybe(s, host)?
-                            {
-                                feature.insert("strength".into(), v);
-                            }
-                            list.push(Json::Object(feature));
-                        }
-                        out.insert("features".into(), Json::Array(list));
-                    }
-                }
             }
-            let mut cost = Map::new();
-            for (k, e) in &j.cost {
-                if let Some(v) = e.maybe(scope, host)? {
-                    cost.insert(k.clone(), v);
-                }
-            }
-            if !cost.is_empty() {
-                out.insert("cost".into(), Json::Object(cost));
-            }
+            insert_nonempty(&mut out, "cost", collect(&j.cost, scope, host)?);
             self.bodies(&j.bodies, scope, &mut out)?;
             self.records.push((n, Json::Object(out)));
         }
         Ok(())
     }
-}
-
-fn invalid_output(e: &Expr, m: Miss) -> Json {
-    let detail = match m {
-        Miss::Absent => format!("{}: no value", e.at),
-        Miss::Unmapped(v) => format!("{}: {v:?} is not mapped", e.at),
-    };
-    json!({"reason": "invalid_output", "detail": detail})
 }
 
 /// The records of the source rows, each with its row number, in row order. Stops at
@@ -1351,6 +1366,7 @@ pub fn apply(
         host,
         joined: BTreeMap::new(),
         labelled: BTreeSet::new(),
+        emitted: BTreeSet::new(),
         records: Vec::new(),
     };
     let mut issues = Vec::new();
@@ -1365,15 +1381,11 @@ pub fn apply(
         {
             return Err(MapError::Unexpected { row: *n });
         }
-        if let Err(message) = a.row(c, *n, row) {
-            let (at, message) = match message.split_once(": ") {
-                Some((at, m)) => (at.to_owned(), m.to_owned()),
-                None => (String::new(), message),
-            };
+        if let Err(e) = a.row(c, *n, row) {
             issues.push(Issue {
                 row: *n,
-                at,
-                message,
+                at: e.at,
+                message: e.message,
             });
         }
     }
@@ -1384,19 +1396,7 @@ pub fn apply(
 mod tests {
     use super::*;
 
-    struct Args(BTreeMap<String, String>);
-
-    impl Host for Args {
-        fn arg(&self, name: &str) -> Option<&str> {
-            self.0.get(name).map(String::as_str)
-        }
-        fn read(&mut self, file: &str) -> Result<Vec<u8>, String> {
-            Err(format!("{file}: no files in this test"))
-        }
-        fn body(&mut self, value: &Json) -> Result<String, String> {
-            Ok(format!("body:{value}"))
-        }
-    }
+    use crate::testing::Recorder;
 
     fn expr(def: Json) -> Expr {
         let def: ExprDef = serde_json::from_value(def).unwrap();
@@ -1414,7 +1414,13 @@ mod tests {
             current: None,
             vars: &vars,
         };
-        e.eval(scope, &Args(BTreeMap::from([("id".into(), "r-1".into())])))
+        e.eval(
+            scope,
+            &Recorder {
+                args: BTreeMap::from([("id".into(), "r-1".into())]),
+                ..Recorder::default()
+            },
+        )
     }
 
     #[test]
@@ -1463,7 +1469,7 @@ mod tests {
             ["judgment.explode.index", "judgment.value.value_map.none"]
         );
         let rows = vec![(1, json!({"schema": "triage-run/1"}))];
-        assert!(apply(&c, &rows, &mut Args(BTreeMap::new())).is_err());
+        assert!(apply(&c, &rows, &mut Recorder::default()).is_err());
     }
 
     #[test]
