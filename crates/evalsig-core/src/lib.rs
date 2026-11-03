@@ -8,5 +8,6 @@ pub mod missing;
 pub mod numeric;
 pub mod records;
 pub mod rules;
+pub mod sdt;
 pub mod time;
 pub mod validity;
