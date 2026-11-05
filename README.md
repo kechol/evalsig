@@ -1,5 +1,7 @@
 # evalsig
 
+[日本語](README.ja.md)
+
 evalsig reads the evaluation records of judges that do not always give the
 same answer — LLM judges, classifiers, rule sets — and answers, with
 intervals:
@@ -45,6 +47,14 @@ came from before trusting it as a referee:
 ```sh
 gh attestation verify evalsig-cli-aarch64-apple-darwin.tar.xz --repo kechol/evalsig
 ```
+
+## Quick start
+
+[docs/quickstart.md](docs/quickstart.md) goes from an empty directory to a
+report and a comparison in under ten minutes. The specification is in
+[docs/spec.md](docs/spec.md), the metric definitions in
+[docs/metrics.md](docs/metrics.md) and every command and option in
+[docs/cli.md](docs/cli.md).
 
 ## What it answers
 
