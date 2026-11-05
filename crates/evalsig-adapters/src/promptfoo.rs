@@ -43,12 +43,9 @@ pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Json, PromptfooError> {
 }
 
 /// The evaluation in `out.json` form, from the local database: `eval` by ID, or the
-/// most recent.
-pub fn read_database(
-    path: &Path,
-    eval: Option<&str>,
-    limits: &Limits,
-) -> Result<Json, PromptfooError> {
+/// most recent. The caller has checked the file's size against the byte limit
+/// (`limits::read_file`), which bounds every stored value.
+pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooError> {
     let db = |e: rusqlite::Error| PromptfooError::Database(e.to_string());
     let conn = rusqlite::Connection::open_with_flags(
         path,
@@ -62,8 +59,9 @@ pub fn read_database(
     conn.pragma_update(None, "trusted_schema", false)
         .map_err(db)?;
     conn.pragma_update(None, "query_only", true).map_err(db)?;
-    // A view could yield rows without end, and the ORDER BY below would wait for all of
-    // them; tables are bounded by the file.
+    // A view could yield rows without end (the ORDER BY below would wait for all of
+    // them), and a generated column can compute values larger than the file: only
+    // plain tables are read.
     for name in ["evals", "eval_results"] {
         let kind: Option<String> = conn
             .query_row(
@@ -75,6 +73,18 @@ pub fn read_database(
             .map_err(db)?;
         if kind.as_deref() != Some("table") {
             return Err(PromptfooError::Database(format!("`{name}` is not a table")));
+        }
+        let computed: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_xinfo(?1) WHERE hidden <> 0",
+                [name],
+                |r| r.get(0),
+            )
+            .map_err(db)?;
+        if computed > 0 {
+            return Err(PromptfooError::Database(format!(
+                "`{name}` has generated columns"
+            )));
         }
     }
     // NULL is null; text that is not JSON is an error, not null, so corrupt rows do not
@@ -112,52 +122,27 @@ pub fn read_database(
              WHERE eval_id = ?1 ORDER BY test_idx, prompt_idx",
         )
         .map_err(db)?;
-    // Generated columns can make values larger than the file, so what is read counts
-    // against the byte limit; every row costs at least ROW_COST, empty or not.
-    const ROW_COST: u64 = 64;
-    let mut read = 0u64;
-    let mut rows = Vec::new();
-    for row in stmt
+    let rows = stmt
         .query_map([&id], |r| {
-            let mut size = ROW_COST;
-            for i in 2..=8 {
-                if let rusqlite::types::ValueRef::Text(t) | rusqlite::types::ValueRef::Blob(t) =
-                    r.get_ref(i)?
-                {
-                    size += t.len() as u64;
-                }
-            }
             let test_case = parse_col(2, r.get(2)?)?;
-            Ok((
-                size,
-                json!({
-                    "testIdx": r.get::<_, i64>(0)?,
-                    "promptIdx": r.get::<_, i64>(1)?,
-                    "testCase": test_case,
-                    "prompt": parse_col(3, r.get(3)?)?,
-                    "provider": parse_col(4, r.get(4)?)?,
-                    "response": parse_col(5, r.get(5)?)?,
-                    "gradingResult": parse_col(6, r.get(6)?)?,
-                    "namedScores": parse_col(7, r.get(7)?)?,
-                    "error": r.get::<_, Option<String>>(8)?,
-                    "failureReason": r.get::<_, Option<i64>>(9)?,
-                    "success": r.get::<_, Option<bool>>(10)?,
-                    "score": r.get::<_, Option<f64>>(11)?,
-                }),
-            ))
+            Ok(json!({
+                "testIdx": r.get::<_, i64>(0)?,
+                "promptIdx": r.get::<_, i64>(1)?,
+                "testCase": test_case,
+                "prompt": parse_col(3, r.get(3)?)?,
+                "provider": parse_col(4, r.get(4)?)?,
+                "response": parse_col(5, r.get(5)?)?,
+                "gradingResult": parse_col(6, r.get(6)?)?,
+                "namedScores": parse_col(7, r.get(7)?)?,
+                "error": r.get::<_, Option<String>>(8)?,
+                "failureReason": r.get::<_, Option<i64>>(9)?,
+                "success": r.get::<_, Option<bool>>(10)?,
+                "score": r.get::<_, Option<f64>>(11)?,
+            }))
         })
         .map_err(db)?
-    {
-        let (size, row) = row.map_err(db)?;
-        read += size;
-        if read > limits.max_bytes {
-            return Err(PromptfooError::Database(format!(
-                "the results are larger than {} bytes",
-                limits.max_bytes
-            )));
-        }
-        rows.push(row);
-    }
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db)?;
     Ok(json!({
         "evalId": id,
         "config": parse_col(1, config).map_err(db)?,
@@ -448,7 +433,7 @@ mod tests {
             .unwrap();
         }
         drop(conn);
-        let from_db = read_database(&dir, None, &Limits::default()).unwrap();
+        let from_db = read_database(&dir, None).unwrap();
         std::fs::remove_file(&dir).unwrap();
         let a = judgments(&records(&from_db, &mut Recorder::default()).unwrap());
         let b = judgments(&records(&eval, &mut Recorder::default()).unwrap());
@@ -456,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn a_view_in_place_of_a_table_is_refused() {
+    fn only_plain_tables_are_read() {
         let dir = std::env::temp_dir().join(format!("evalsig-pf-view-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&dir);
         let conn = rusqlite::Connection::open(&dir).unwrap();
@@ -472,11 +457,23 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
-        std::fs::remove_file(&dir).unwrap();
+        let e = read_database(&dir, None).unwrap_err();
         assert!(
             e.to_string().contains("`eval_results` is not a table"),
             "{e}"
         );
+        let conn = rusqlite::Connection::open(&dir).unwrap();
+        conn.execute_batch(
+            "DROP VIEW eval_results;
+             CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
+               test_case TEXT AS (hex(zeroblob(1000000000))) VIRTUAL, prompt TEXT, provider TEXT,
+               response TEXT, grading_result TEXT, named_scores TEXT, error TEXT,
+               failure_reason INTEGER, success INTEGER, score REAL);",
+        )
+        .unwrap();
+        drop(conn);
+        let e = read_database(&dir, None).unwrap_err();
+        std::fs::remove_file(&dir).unwrap();
+        assert!(e.to_string().contains("generated columns"), "{e}");
     }
 }
