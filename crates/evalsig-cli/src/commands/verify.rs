@@ -145,6 +145,16 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             message: "the comparison was not recorded in the ledger, so its validation_uses is taken as saved".into(),
         });
     }
+    if prov["spec_version"].as_str() != Some(evalsig_core::SPEC_VERSION) {
+        envelope.warnings.push(Warning {
+            code: "spec_version_differs".into(),
+            message: format!(
+                "the result follows metric definitions {}, this evalsig {}; see CHANGELOG.md",
+                prov["spec_version"],
+                evalsig_core::SPEC_VERSION
+            ),
+        });
+    }
     if prov["tool"].as_str() != Some(crate::tool_version().as_str()) {
         envelope.warnings.push(Warning {
             code: "tool_version_differs".into(),

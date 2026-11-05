@@ -162,6 +162,9 @@ pub struct Provenance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
     pub tool: String,
+    /// The metric definitions the results follow (`evalsig_core::SPEC_VERSION`).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub spec_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ledger: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -178,6 +181,7 @@ impl Provenance {
     pub fn tool_only() -> Self {
         Provenance {
             tool: crate::tool_version(),
+            spec_version: evalsig_core::SPEC_VERSION.into(),
             ..Provenance::default()
         }
     }

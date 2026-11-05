@@ -3,6 +3,11 @@
 // Published on crates.io: every public item states what it means.
 #![warn(missing_docs)]
 
+/// The version of the metric definitions (metrics spec). It changes, with an entry
+/// in CHANGELOG.md, whenever a metric's formula or method changes, so a saved result
+/// says which definitions produced it (audit spec §5).
+pub const SPEC_VERSION: &str = "metrics/1";
+
 pub mod agreement;
 pub mod bootstrap;
 pub mod capabilities;

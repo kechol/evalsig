@@ -60,6 +60,9 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Refuse a tag whose version has no CHANGELOG entry
+        if: ${{ !github.event.pull_request }}
+        run: scripts/check_changelog.sh "$GITHUB_REF_NAME"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0

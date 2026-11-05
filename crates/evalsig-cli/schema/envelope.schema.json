@@ -145,6 +145,10 @@
     "output": {
      "type": "string",
      "description": "Hash of the canonical results"
+    },
+    "spec_version": {
+     "type": "string",
+     "description": "The metric definitions the results follow, such as metrics/1; CHANGELOG.md records each change"
     }
    }
   },

@@ -144,6 +144,7 @@
     "config": "blake3:35df6c9b1761f59e71df1f15c21fd15d0ccfff20f8edc7aa9de2dac17c5837d1",
     "seed": 20261103,
     "tool": "evalsig <VERSION>",
+    "spec_version": "metrics/1",
     "ledger": "agent",
     "ledger_seq": 1,
     "request": {

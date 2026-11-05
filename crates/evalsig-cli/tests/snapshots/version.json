@@ -55,7 +55,8 @@
   "warnings": [],
   "next": [],
   "provenance": {
-    "tool": "evalsig <VERSION>"
+    "tool": "evalsig <VERSION>",
+    "spec_version": "metrics/1"
   },
   "truncated": null
 }

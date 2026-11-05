@@ -137,6 +137,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | gate | `gate` | Deciding pass or fail under preregistered conditions and returning it as the exit code |
 | snapshot | `snapshot` | An immutable copy of imported data. Identified by its content hash |
 | ledger | `ledger` | An append-only record of imports, revisions, splits, gates and other operations. Each line carries the hash of the previous one. There is a referee ledger and an agent-side ledger; only the referee ledger is evidence |
+| spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/1`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
 | content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
 | migration | `migrate` | Rewriting snapshots in an earlier canonical record format as new snapshots in the current one, with a ledger line; the originals are kept |
