@@ -1,0 +1,68 @@
+# A mapping for Langfuse traces with their scores (evalsig.mapping/1): an LLM judge's
+# score as the judgment of one run, and the annotation queue's score on the same trace as
+# the human reference label. The data are fictional.
+#
+# Export one JSON line per trace, each the response of GET /api/public/traces/{traceId},
+# for the traces the queue has finished. Each trace carries one score name; filter the
+# scores to it when there are several.
+#
+# This is the state after `evalsig map draft traces.jsonl` wrote it and people filled in
+# each DECIDE (`evalsig map decide`).
+# Usage: evalsig import --mapping examples/langfuse/mapping.toml --arg run-id=judge-v1 \
+#          examples/langfuse/traces.jsonl
+schema = "evalsig.mapping/1"
+name = "langfuse-helpfulness"
+
+[source]
+format = "jsonl"
+
+[run]
+run_id = { arg = "run-id" }
+system = { id = { const = "support-assistant" }, version = "$.version" }   # The prompt version Langfuse recorded on the trace
+grader = { id = { const = "llm-judge-helpfulness" }, version = { arg = "judge-version", default = "1" }, kind = { const = "model" } }
+value_semantics = "decision"           # Decision: value_semantics
+output_type = "binary"                 # Decision: output_type
+
+[item]
+id = "$.id"                            # Decision: item_key
+cluster = "$.sessionId"                # The traces of one session are correlated
+occurred_at = "$.timestamp"
+
+[judgment]
+value = { path = '$.scores[?(@.source == "EVAL")].stringValue', value_map = { True = true, False = false } }   # Decision: value
+
+# One reviewer per trace in the queue.
+[label]
+rater_id = { template = 'human:{$.scores[?(@.source == "ANNOTATION")].authorUserId}' }
+source = { const = "human" }
+value = { path = '$.scores[?(@.source == "ANNOTATION")].stringValue', value_map = { True = true, False = false } }
+labeled_at = '$.scores[?(@.source == "ANNOTATION")].timestamp'
+version = { const = 1 }
+
+[[decisions]]
+id = "item_key"
+choice = "trace id (cluster = sessionId)"
+decided_by = "user:alice"
+ledger_seq = 2
+applies_to = "mapping"
+
+[[decisions]]
+id = "value_semantics"
+choice = "decision"
+decided_by = "user:alice"
+ledger_seq = 3
+applies_to = "mapping"
+
+[[decisions]]
+id = "output_type"
+choice = "binary"
+decided_by = "user:alice"
+ledger_seq = 4
+applies_to = "mapping"
+
+[[decisions]]
+id = "value"
+choice = { True = true, False = false }
+decided_by = "user:alice"
+ledger_seq = 5
+applies_to = "mapping"

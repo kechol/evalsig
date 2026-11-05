@@ -483,3 +483,55 @@ fn a_mapping_draft_is_never_written_into_the_store() {
     }
     assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
 }
+
+/// The Langfuse example (T-122): judge and annotation scores on the same traces become a
+/// run's judgments and human labels, and the expectations beside the mapping hold.
+#[test]
+fn the_langfuse_example_maps_judge_and_annotation_scores() {
+    let mapping = example("langfuse/mapping.toml");
+    let traces = example("langfuse/traces.jsonl");
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .args(["--format", "json", "map", "test"])
+        .arg(&mapping)
+        .arg(&traces)
+        .args(["--arg", "run-id=judge-v1"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    let r = &v["results"];
+    assert_eq!(r["tests"]["passed"], 1, "{r}");
+    assert_eq!(r["coverage"]["mapped"], 12, "{r}");
+    assert_eq!(r["integrity"]["items_without_label"], 0, "{r}");
+    assert_eq!(r["invalid_records"], 0, "{r}");
+
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    evalsig(dir.path())
+        .args(["import", "--mapping"])
+        .arg(&mapping)
+        .args(["--arg", "run-id=judge-v1"])
+        .arg(&traces)
+        .assert()
+        .success();
+    let out = evalsig(dir.path())
+        .args(["report", "judge-v1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    // The judge agrees with the reviewers on 9 of the 12 traces.
+    let accuracy = v["results"]["metrics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["metric"] == "accuracy")
+        .unwrap();
+    assert_eq!(accuracy["value"], 0.75, "{accuracy}");
+    assert_eq!(v["results"]["reference"]["raters"], 2);
+}

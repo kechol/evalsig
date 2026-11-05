@@ -105,11 +105,11 @@ fn steps(source: Source) -> &'static [&'static str] {
             "Give tests a stable ID in metadata.testCaseId; otherwise evalsig keys items by description and vars",
         ],
         Source::Langfuse => &[
-            "Export the scores as JSON, for example from the public API (GET /api/public/scores)",
-            "Look at the shape without printing contents: evalsig map probe scores.json",
-            "Draft a mapping and let a person decide its choices: evalsig map draft scores.json --out mapping.toml",
-            "Use traceId (or observationId) as the item, the score name as the task, and value or stringValue as the value",
-            "Map annotation scores (source ANNOTATION) as labels with rater_id from authorUserId; scores edited later need a new label version",
+            "Export one JSON line per finished trace, each the public API's GET /api/public/traces/{traceId}, so a trace's judge and annotation scores sit together; keep one score name",
+            "Look at the shape without printing contents: evalsig map probe traces.jsonl",
+            "Draft a mapping and let a person decide its choices: evalsig map draft traces.jsonl --out mapping.toml",
+            "Use the trace id as the item and sessionId as the cluster; take the judgment from $.scores[?(@.source == \"EVAL\")] and the label from $.scores[?(@.source == \"ANNOTATION\")] with rater_id from authorUserId",
+            "examples/langfuse/mapping.toml is a worked mapping; scores edited later need a new label version",
         ],
         Source::Csv => &[
             "One judgment per row with columns named after record fields: evalsig import results.csv",

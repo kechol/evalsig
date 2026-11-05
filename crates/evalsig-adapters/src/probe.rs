@@ -270,11 +270,22 @@ pub fn fingerprint(shape: Shape, rows: &[&Json]) -> Option<Known> {
             hint: "lm-evaluation-harness samples (--log_samples): map doc_id to the item and the metric field to the value",
         });
     }
+    if has(&["id", "scores"])
+        && first["scores"]
+            .get(0)
+            .is_some_and(|s| s.get("traceId").is_some() && s.get("dataType").is_some())
+    {
+        return Some(Known {
+            format: "langfuse-traces",
+            adapter: None,
+            hint: "Langfuse traces with their scores: see `evalsig recipes acquire langfuse` and examples/langfuse/mapping.toml",
+        });
+    }
     if has(&["traceId", "name", "dataType"]) {
         return Some(Known {
             format: "langfuse-scores",
             adapter: None,
-            hint: "a Langfuse score export: see `evalsig recipes acquire langfuse`",
+            hint: "a Langfuse score export, one row per score: export traces with their scores so judge and annotation scores share a row (`evalsig recipes acquire langfuse`)",
         });
     }
     None
@@ -386,6 +397,8 @@ mod tests {
         assert_eq!(known(Shape::Jsonl, lm), Some("lm-evaluation-harness"));
         let lf = br#"[{"id": "s1", "traceId": "t1", "name": "helpfulness", "value": 1, "dataType": "NUMERIC", "source": "ANNOTATION"}]"#;
         assert_eq!(known(Shape::Json, lf), Some("langfuse-scores"));
+        let traces = br#"{"id": "t1", "sessionId": "s1", "scores": [{"id": "s1", "traceId": "t1", "name": "helpfulness", "dataType": "BOOLEAN", "source": "EVAL"}]}"#;
+        assert_eq!(known(Shape::Jsonl, traces), Some("langfuse-traces"));
         assert_eq!(known(Shape::Jsonl, br#"{"a": 1}"#), None);
     }
 
