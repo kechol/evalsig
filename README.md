@@ -24,6 +24,23 @@ use, and decides pass or fail under conditions a human approved in advance.
 Pre-release. The command-line interface, the record format and the output
 envelope are under construction and may change until 1.0.
 
+## Install
+
+From source, with Rust 1.90 or later (the minimum supported Rust version):
+
+```sh
+cargo install --locked evalsig-cli
+```
+
+Prebuilt binaries for macOS and Linux (aarch64 and x86_64) come with each
+GitHub Release, beside a SHA-256 checksum per archive and a shell installer.
+Every archive carries a GitHub artifact attestation; check where a download
+came from before trusting it as a referee:
+
+```sh
+gh attestation verify evalsig-cli-aarch64-apple-darwin.tar.xz --repo kechol/evalsig
+```
+
 ## What it answers
 
 | Question | Command |

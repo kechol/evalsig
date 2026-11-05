@@ -947,3 +947,27 @@ after the entry is `Accepted`.
 - Consequences: no new dependencies. The HTTP handling is minimal by design
   and must stay GET-only and loopback-only; anything more (uploads, label
   editing in v2) needs this entry revisited.
+
+## D-020 Distribution channels and supply-chain guarantees
+
+- Status: Accepted
+- Date: 2026-11-04
+- Context: evalsig claims to be a referee, so a user must be able to check
+  where a binary came from (SPEC §14). The channels are cargo, Homebrew,
+  GitHub Releases and a PyPI wheel; macOS and Linux first, Windows later
+  (T-113).
+- Decision:
+  - cargo-dist (pinned in `dist-workspace.toml`) builds the release from a
+    tag on GitHub Actions for aarch64 and x86_64 macOS and Linux, with a
+    SHA-256 checksum per artifact, a shell installer and GitHub artifact
+    attestations for every artifact.
+  - The documented install is `cargo install --locked evalsig-cli`; the MSRV
+    is the workspace `rust-version`.
+  - Homebrew, the PyPI wheel (maturin `bin`), crates.io and Windows are
+    T-111, T-112 and T-113.
+- Alternatives: hand-written release workflows (not taken: cargo-dist
+  already produces checksums, installers and attestations from one
+  config); signing with a project key (not taken: attestations tie an
+  artifact to the workflow run without a key to guard).
+- Consequences: a release needs a pushed tag and GitHub's attestation
+  service, so the first verifiable artifacts come from that external step.
