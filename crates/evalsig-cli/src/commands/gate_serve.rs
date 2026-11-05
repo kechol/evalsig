@@ -73,6 +73,8 @@ const SOCKET: &str = "gate.sock";
 const HEAD_LIMIT: u64 = 16 * 1024;
 /// How long a connection may take, in all, to send its submission.
 const SEND_DEADLINE: Duration = Duration::from_secs(60);
+/// The longest one read waits before the deadline is looked at again.
+const READ_SLICE: Duration = Duration::from_secs(1);
 /// Connections read at once; more are closed on arrival.
 const MAX_CONNECTIONS: usize = 32;
 /// The largest submission read. Each of MAX_CONNECTIONS may buffer this much before
@@ -104,14 +106,36 @@ impl Timed for std::os::unix::net::UnixStream {
     }
 }
 
+impl<S: Read + Timed> Deadline<S> {
+    /// Reads time out in short slices set once: setting the timeout again after the
+    /// peer has shut down its side makes macOS answer EAGAIN where EOF is due.
+    fn new(stream: S, deadline: Duration) -> std::io::Result<Self> {
+        stream.set_timeout(READ_SLICE.min(deadline))?;
+        Ok(Deadline {
+            stream,
+            until: Instant::now() + deadline,
+        })
+    }
+}
+
 impl<S: Read + Timed> Read for Deadline<S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let left = self.until.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(std::io::ErrorKind::TimedOut.into());
+        loop {
+            if Instant::now() >= self.until {
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+            match self.stream.read(buf) {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                r => return r,
+            }
         }
-        self.stream.set_timeout(left)?;
-        self.stream.read(buf)
     }
 }
 
@@ -185,10 +209,7 @@ fn http_exchange(
     token: &str,
     handle: impl FnOnce(&[u8]) -> Answer,
 ) -> std::io::Result<()> {
-    let mut reader = BufReader::new(Deadline {
-        stream: stream.try_clone()?,
-        until: Instant::now() + SEND_DEADLINE,
-    });
+    let mut reader = BufReader::new(Deadline::new(stream.try_clone()?, SEND_DEADLINE)?);
     // The request line and headers share one small budget, so a client cannot make the
     // referee buffer much before its token is checked.
     let mut budget = HEAD_LIMIT;
@@ -347,25 +368,21 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
                     return;
                 };
                 let mut body = Vec::new();
-                let mut reader = Deadline {
-                    stream,
-                    until: Instant::now() + SEND_DEADLINE,
+                let read = Deadline::new(stream, SEND_DEADLINE).and_then(|mut reader| {
+                    (&mut reader)
+                        .take(SUBMISSION_BYTES + 1)
+                        .read_to_end(&mut body)
+                });
+                // A submission that cannot be read is answered with why, never dropped.
+                let a = match read {
+                    Err(e) => failed(&transport(format!("cannot read the submission: {e}"))),
+                    Ok(_) if body.len() as u64 > SUBMISSION_BYTES => failed(&transport(format!(
+                        "the submission is larger than {} MiB",
+                        SUBMISSION_BYTES >> 20
+                    ))),
+                    Ok(_) => answer(&root, &referee, &lock, &body),
                 };
-                if (&mut reader)
-                    .take(SUBMISSION_BYTES + 1)
-                    .read_to_end(&mut body)
-                    .is_ok()
-                {
-                    let a = if body.len() as u64 > SUBMISSION_BYTES {
-                        failed(&transport(format!(
-                            "the submission is larger than {} MiB",
-                            SUBMISSION_BYTES >> 20
-                        )))
-                    } else {
-                        answer(&root, &referee, &lock, &body)
-                    };
-                    let _ = writer.write_all(&serde_json::to_vec(&a).expect("answer serializes"));
-                }
+                let _ = writer.write_all(&serde_json::to_vec(&a).expect("answer serializes"));
             });
         }
     }));
