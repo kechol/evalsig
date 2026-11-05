@@ -21,7 +21,7 @@ use crate::replicates::{Disagreement, item_value};
 use crate::rules::Rule;
 
 mod detail;
-pub use detail::{Calibration, FeatureRow, ProxyEstimate, Roc};
+pub use detail::{Calibration, FeatureRow, ProxyEstimate, Roc, Sdt};
 
 /// What a report needs besides the records.
 #[derive(Debug, Clone)]
@@ -218,6 +218,9 @@ pub struct Report {
     /// ROC and AUC of the detail tier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roc: Option<Roc>,
+    /// d′ and c of the detail tier, for runs with a decision rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sdt: Option<Sdt>,
     /// Calibration of the detail tier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calibration: Option<Calibration>,
@@ -660,6 +663,7 @@ pub fn from_prepared(
         by,
         items: item_rows,
         roc: s.detail.then(|| p.roc()).flatten(),
+        sdt: s.detail.then(|| p.sdt()).flatten(),
         calibration: s.detail.then(|| p.calibration()).flatten(),
         features: s
             .features

@@ -36,6 +36,18 @@ pub struct Roc {
     pub zroc: Option<Vec<(f64, f64)>>,
 }
 
+/// Sensitivity d′ and criterion c of the decision rule (metrics spec §2), from the
+/// same weighted counts as H and F, with the log-linear correction on every cell.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Sdt {
+    /// d′ = z(H′) − z(F′).
+    pub dprime: f64,
+    /// c = −(z(H′) + z(F′)) / 2; negative means liberal.
+    pub criterion: f64,
+    /// One ROC point gives d′ and c only under this assumption.
+    pub assumption: &'static str,
+}
+
 /// Calibration of scores read as probabilities.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Calibration {
@@ -210,20 +222,44 @@ impl Prepared<'_> {
         (!units.is_empty()).then_some((pos, neg))
     }
 
-    /// The point hit rate and false-alarm rate under the decision rule.
-    pub fn rates(&self) -> Option<(f64, f64)> {
+    /// The weighted (hits, positives) and (false alarms, negatives) under the decision
+    /// rule.
+    fn counts(&self) -> Option<((f64, f64), (f64, f64))> {
         let calc = self.calc();
         let all: Vec<&Unit> = self.units.iter().collect();
-        let point = |id| {
+        let count = |id| {
             let parts = calc.parts(id, &calc.eligible(id, &all), Fill::Policy);
             let num: f64 = parts.iter().flatten().map(|p| p.0).sum();
             let den: f64 = parts.iter().flatten().map(|p| p.1).sum();
-            (den > 0.0).then(|| num / den)
+            (den > 0.0).then_some((num, den))
         };
         Some((
-            point(super::MetricId::HitRate)?,
-            point(super::MetricId::FalseAlarmRate)?,
+            count(super::MetricId::HitRate)?,
+            count(super::MetricId::FalseAlarmRate)?,
         ))
+    }
+
+    /// The point hit rate and false-alarm rate under the decision rule.
+    pub fn rates(&self) -> Option<(f64, f64)> {
+        let ((h, p), (f, n)) = self.counts()?;
+        Some((h / p, f / n))
+    }
+
+    /// d′ and c under the decision rule.
+    pub fn sdt(&self) -> Option<Sdt> {
+        let ((h, p), (f, n)) = self.counts()?;
+        let (dprime, criterion) = crate::sdt::Confusion {
+            hits: h,
+            misses: p - h,
+            false_alarms: f,
+            correct_rejections: n - f,
+        }
+        .dprime_and_criterion();
+        Some(Sdt {
+            dprime,
+            criterion,
+            assumption: crate::sdt::ASSUMPTION,
+        })
     }
 
     /// The Brier score and reliability bins of score runs whose scores lie in [0, 1].

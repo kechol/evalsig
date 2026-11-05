@@ -131,6 +131,11 @@
       }
     },
     "run": "r-base",
+    "sdt": {
+      "assumption": "equal_variance_normal",
+      "criterion": -0.3372448751,
+      "dprime": 0.6744897502
+    },
     "seed": 20261029,
     "task": "default",
     "value_semantics": "decision",
@@ -192,7 +197,7 @@
       },
       "command": "report"
     },
-    "output": "blake3:3ea1304d4541c967f2c4ed0ae46b42514ecfaca2488c4389512fc8e5de1d034e"
+    "output": "blake3:6fd12b2426cfa4d64d4ed6e96dd26584ee7f087833a1ef1c07bcabbd8934aa6a"
   },
   "truncated": null
 }

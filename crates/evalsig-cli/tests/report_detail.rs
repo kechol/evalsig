@@ -100,6 +100,11 @@ fn score_runs_get_roc_and_calibration() {
         roc["ci"][1].as_f64().unwrap(),
     );
     assert!(lo < auc && auc < hi && auc > 0.8, "{roc}");
+    // A run that separates the classes this well has a clearly positive d′.
+    let sdt = &r["sdt"];
+    assert_eq!(sdt["assumption"], "equal_variance_normal");
+    assert!(sdt["dprime"].as_f64().unwrap() > 1.0, "{sdt}");
+    assert!(sdt["criterion"].as_f64().unwrap().is_finite(), "{sdt}");
     assert_eq!(roc["points"][0], serde_json::json!([0.0, 0.0]));
     assert!(r["calibration"]["brier"].as_f64().unwrap() < 0.25);
     // Soft references (two raters who sometimes disagree) move the interval to the
