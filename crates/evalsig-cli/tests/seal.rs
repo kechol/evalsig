@@ -145,13 +145,13 @@ fn sealed_labels_open_with_the_age_cli() {
             );
             o.stdout
         }
-        // CI installs age and sets EVALSIG_REQUIRE_AGE, so only a local run without the
-        // CLI skips this check.
+        // CI installs age and sets EVALSIG_REQUIRE_AGE=1 where it can, so only a run
+        // without the CLI and without that setting skips this check.
         Err(e)
             if e.kind() == std::io::ErrorKind::NotFound
-                && std::env::var_os("EVALSIG_REQUIRE_AGE").is_none() =>
+                && !std::env::var("EVALSIG_REQUIRE_AGE").is_ok_and(|v| v == "1") =>
         {
-            eprintln!("age CLI not installed; skipped (set EVALSIG_REQUIRE_AGE to require it)");
+            eprintln!("age CLI not installed; skipped (set EVALSIG_REQUIRE_AGE=1 to require it)");
             return;
         }
         Err(e) => panic!("the age CLI cannot run: {e}"),

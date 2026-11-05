@@ -85,6 +85,8 @@ fn submit_cmd(w: &World, records: &Path, how: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
+// The Unix socket half exists only where Unix sockets do.
+#[cfg(unix)]
 #[test]
 fn submissions_over_the_socket_and_http_get_the_gate_answer() {
     let w = world(GATE, None);
@@ -171,4 +173,26 @@ fn submissions_over_the_socket_and_http_get_the_gate_answer() {
             .count(),
         2
     );
+}
+
+/// Token HTTP alone, as on platforms without Unix sockets.
+#[test]
+fn a_submission_over_token_http_gets_the_gate_answer() {
+    let w = world(GATE, None);
+    let (_server, at) = serve(&w);
+    let url = at["http"].as_str().unwrap().to_owned();
+    let token = at["token_file"].as_str().unwrap().to_owned();
+    let out = submit_cmd(
+        &w,
+        &variant(w.agent.path(), 1),
+        &["--url", &url, "--token-file", &token],
+    );
+    assert_eq!(
+        code(&out),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(json(&out)["verdict"]["code"], "pass");
+    assert_eq!(accesses(&w), 1);
 }

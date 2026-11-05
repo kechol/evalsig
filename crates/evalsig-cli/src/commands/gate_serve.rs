@@ -69,6 +69,7 @@ struct Answer {
     body: Value,
 }
 
+#[cfg(unix)]
 const SOCKET: &str = "gate.sock";
 const HEAD_LIMIT: u64 = 16 * 1024;
 /// How long a connection may take, in all, to send its submission.
@@ -270,6 +271,13 @@ fn token(referee: &Referee) -> Result<String, CliError> {
 
 /// Serve until killed. The first line on stdout names where it listens.
 pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
+    // Without Unix sockets the only listener is token HTTP (SPEC §14).
+    #[cfg(not(unix))]
+    if args.http.is_none() {
+        return Err(CliError::usage(
+            "gate serve needs --http <port> where Unix sockets are not available",
+        ));
+    }
     let referee = Arc::new(Referee::open(args.referee.as_deref())?);
     let root = Arc::new(root.to_path_buf());
     let lock = Arc::new(Mutex::new(()));
