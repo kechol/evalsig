@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites><testsuite name="evalsig.check/1" tests="2" failures="1" skipped="0">
-<testcase classname="evalsig" name="accuracy lower_bound_at_least 0.8"><failure message="estimate 0.7583333333, bound 0.72 (one-sided)"/></testcase>
+<testcase classname="evalsig" name="accuracy lower_bound_at_least 0.8"><failure message="estimate 0.7583333333, bound 0.6504675006 (one-sided)"/></testcase>
 <testcase classname="evalsig" name="missing_rate upper_bound_at_most 0.05"></testcase>
 </testsuite></testsuites>

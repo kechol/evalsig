@@ -80,6 +80,7 @@ pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
         items: false,
         detail: false,
         features: false,
+        exact_rates: false,
         proxy: None,
     }
 }

@@ -664,6 +664,7 @@ fn settings(r: &Value, args: &Request, candidate_hash: &str) -> Settings {
         items: false,
         detail: false,
         features: false,
+        exact_rates: true,
         proxy: None,
     }
 }

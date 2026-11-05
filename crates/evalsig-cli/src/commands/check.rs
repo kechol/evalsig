@@ -88,6 +88,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             let s = report::Settings {
                 level: c.interval_level(settings.level),
                 threshold: c.threshold.or(settings.threshold),
+                exact_rates: true,
                 ..settings.clone()
             };
             slot.insert(

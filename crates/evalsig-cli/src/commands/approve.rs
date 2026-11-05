@@ -372,6 +372,7 @@ fn power_at_hypothesis(
         items: false,
         detail: false,
         features: false,
+        exact_rates: false,
         proxy: None,
     };
     let r =

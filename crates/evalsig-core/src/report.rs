@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
 use crate::config::{Estimand, RaterDesign, ReferenceMode};
-use crate::interval::wilson_two_sided;
+use crate::interval::{clopper_pearson, wilson_two_sided};
 use crate::missing::{MissingPolicy, Policy, Side};
 use crate::numeric::{Rng, mean, sum};
 use crate::records::{
@@ -59,6 +59,9 @@ pub struct Settings {
     pub detail: bool,
     /// Add the feature likelihood ratios (`report --features`).
     pub features: bool,
+    /// Bound rates with the exact (Clopper-Pearson) interval on the effective number
+    /// of items, as pass/fail decisions need (`gate`, `check`; metrics spec §1).
+    pub exact_rates: bool,
     /// Correct the human-scale value with this model rater's labels (PPI++,
     /// `report --reference human --proxy`).
     pub proxy: Option<String>,
@@ -1066,9 +1069,30 @@ impl Calc<'_> {
         let independent = units
             .iter()
             .all(|u| u.weight == 1.0 && u.cluster == u.item_id && u.replicates.len() <= 1);
+        let rate = self.binary || which == Values::AtLeast;
         let (ci, interval, resamples) = if value.is_none() {
             (None, "none", None)
-        } else if (self.binary || which == Values::AtLeast) && integral && independent {
+        } else if rate && self.settings.exact_rates {
+            // The effective number of items is Kish's over the clusters' denominators:
+            // the item count when every item is its own cluster with unit weight, the
+            // cluster count when clusters are equal.
+            let mut by_cluster: BTreeMap<&str, f64> = BTreeMap::new();
+            for (u, p) in units.iter().zip(&point_parts) {
+                if let Some((_, d)) = p {
+                    *by_cluster.entry(u.cluster.as_str()).or_default() += d;
+                }
+            }
+            let (s1, s2) = by_cluster
+                .values()
+                .fold((0.0, 0.0), |(a, b), d| (a + d, b + d * d));
+            let n_eff = s1 * s1 / s2;
+            let k = value.unwrap_or_default() * n_eff;
+            (
+                Some(clopper_pearson(k, n_eff, self.settings.level)),
+                "clopper_pearson",
+                None,
+            )
+        } else if rate && integral && independent {
             let k = sum(point_parts.iter().flatten().map(|x| x.0));
             (
                 Some(wilson_two_sided(k, n, self.settings.level)),

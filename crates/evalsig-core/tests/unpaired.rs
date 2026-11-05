@@ -32,6 +32,7 @@ fn settings(positive: Option<Rule>) -> Settings {
         items: false,
         detail: false,
         features: false,
+        exact_rates: false,
         proxy: None,
     }
 }
