@@ -905,6 +905,11 @@ the zip and decompressed with `ruzstd`.
   (`--max-bytes` changes it), 100,000 entries per archive, and 64 levels of JSON nesting
   (checked before parsing, per line for JSONL). Archive methods other than Deflate and
   Zstandard are refused. The records an adapter produces are validated like any import.
+- **promptfoo databases.** The file and its write-ahead log together must fit the byte
+  limit, and the database is opened read-only in SQLite's defensive mode with
+  untrusted schemas off; `evals` and `eval_results` must be plain tables without
+  generated columns, and every JSON column passes the nesting limit. A column default
+  that a hand-edited schema makes SQLite compute while reading is not bounded.
 - **Fuzzing.** `fuzz/` holds cargo-fuzz targets for the zip, Zstandard and JSON readers
   (nightly toolchain; its own workspace).
 - **Numerics.** The normal and Beta functions come from statrs and match the reference

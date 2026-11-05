@@ -36,17 +36,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let held = referee.holdout_items(&args.holdout)?;
     // The agent's environment must never have held these labels (SPEC §8.2). Snapshots
     // that `exclude` or a re-import replaced stay in the store, so every stored object
-    // that reads as a snapshot is searched, not only those in force.
+    // is searched line by line: a line this version cannot read does not hide the rest.
     let store = Project::open(&args.agent_project)?.objects();
     let mut leaked = BTreeSet::new();
     for h in store.list().map_err(CliError::store)? {
-        let Ok(records) = snapshot::read(&store, &h) else {
-            continue;
-        };
-        for r in records {
-            if let Record::Label(l) = r
-                && held.contains(&l.item_id)
-            {
+        let bytes = store.get(&h).map_err(CliError::store)?;
+        for line in snapshot::lines(&bytes) {
+            let Some(Record::Label(l)) = std::str::from_utf8(line)
+                .ok()
+                .and_then(|t| Record::from_json(t).ok())
+            else {
+                continue;
+            };
+            if held.contains(&l.item_id) {
                 leaked.insert(l.item_id);
             }
         }

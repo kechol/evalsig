@@ -74,13 +74,12 @@ pub fn read_database(
         .map_err(db)?;
     conn.pragma_update(None, "query_only", true).map_err(db)?;
     // A view could yield rows without end (the ORDER BY below would wait for all of
-    // them), and a generated column or an expression default (always parenthesized in
-    // SQLite's grammar) computes values that need not fit the file: only plain tables
-    // with literal defaults are read.
+    // them), and a generated column computes values that need not fit the file: only
+    // plain tables are read.
     for name in ["evals", "eval_results"] {
         let kind: Option<String> = conn
             .query_row(
-                "SELECT type FROM sqlite_schema WHERE name = ?1",
+                "SELECT type FROM sqlite_schema WHERE name = ?1 COLLATE NOCASE",
                 [name],
                 |r| r.get(0),
             )
@@ -91,29 +90,26 @@ pub fn read_database(
         }
         let computed: i64 = conn
             .query_row(
-                "SELECT count(*) FROM pragma_table_xinfo(?1) \
-                 WHERE hidden <> 0 OR instr(coalesce(dflt_value, ''), '(') > 0",
+                "SELECT count(*) FROM pragma_table_xinfo(?1) WHERE hidden <> 0",
                 [name],
                 |r| r.get(0),
             )
             .map_err(db)?;
         if computed > 0 {
             return Err(PromptfooError::Database(format!(
-                "`{name}` has computed columns"
+                "`{name}` has generated columns"
             )));
         }
     }
     // NULL is null; text that is not JSON is an error, not null, so corrupt rows do not
     // collapse into one item.
     let parse_col = |i: usize, s: Option<String>| -> rusqlite::Result<Json> {
+        let failed = |e: Box<dyn std::error::Error + Send + Sync>| {
+            rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e)
+        };
         s.map(|s| {
-            serde_json::from_str(&s).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    i,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })
+            limits::check_json_depth(s.as_bytes(), limits).map_err(|e| failed(Box::new(e)))?;
+            serde_json::from_str(&s).map_err(|e| failed(Box::new(e)))
         })
         .transpose()
         .map(Option::unwrap_or_default)
@@ -478,33 +474,18 @@ mod tests {
             e.to_string().contains("`eval_results` is not a table"),
             "{e}"
         );
-        // `eval_results` as a table whose test_case column computes its value.
-        for (old, test_case) in [
-            (
-                "VIEW",
-                "test_case TEXT AS (hex(zeroblob(1000000000))) VIRTUAL",
-            ),
-            (
-                "TABLE",
-                "test_case TEXT DEFAULT (hex(zeroblob(1000000000)))",
-            ),
-        ] {
-            let conn = rusqlite::Connection::open(&dir).unwrap();
-            conn.execute_batch(&format!(
-                "DROP {old} eval_results;
-                 CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
-                   {test_case}, prompt TEXT, provider TEXT, response TEXT, grading_result TEXT,
-                   named_scores TEXT, error TEXT, failure_reason INTEGER, success INTEGER DEFAULT 0,
-                   score REAL);"
-            ))
-            .unwrap();
-            drop(conn);
-            let e = read_database(&dir, None, &Limits::default()).unwrap_err();
-            assert!(
-                e.to_string().contains("computed columns"),
-                "{test_case}: {e}"
-            );
-        }
+        let conn = rusqlite::Connection::open(&dir).unwrap();
+        conn.execute_batch(
+            "DROP VIEW eval_results;
+             CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
+               test_case TEXT AS (hex(zeroblob(1000000000))) VIRTUAL, prompt TEXT, provider TEXT,
+               response TEXT, grading_result TEXT, named_scores TEXT, error TEXT,
+               failure_reason INTEGER, success INTEGER DEFAULT 0, score REAL);",
+        )
+        .unwrap();
+        drop(conn);
+        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
+        assert!(e.to_string().contains("generated columns"), "{e}");
         let small = Limits {
             max_bytes: 1024,
             ..Limits::default()

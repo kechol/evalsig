@@ -390,6 +390,8 @@ fn a_rerun_that_moves_more_than_the_difference_is_flagged() {
             rerun.push(r.to_string());
         }
     }
+    // A run of the same version with nothing for this task is not a repeat.
+    rerun.push(r#"{"record":"run","run_id":"triage-v1-empty","system":{"id":"triage","version":"prompt-v1"},"value_semantics":"decision","output_type":"binary","grader":{"id":"rule-check","version":"1","kind":"rule"}}"#.to_owned());
     let file = dir.path().join("rerun.jsonl");
     std::fs::write(&file, rerun.join("\n") + "\n").unwrap();
     evalsig(dir.path())
@@ -403,4 +405,14 @@ fn a_rerun_that_moves_more_than_the_difference_is_flagged() {
         "{}",
         v["warnings"]
     );
+    // The configuration switches the warning off.
+    let config = dir.path().join(".evalsig/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        format!("{text}\n[checks]\nwarn_run_variance_exceeds_delta = false\n"),
+    )
+    .unwrap();
+    let v = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    assert!(!codes(&v).contains(&"run_variance_exceeds_delta".to_owned()));
 }

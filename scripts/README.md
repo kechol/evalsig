@@ -21,7 +21,7 @@ uv run --project scripts scripts/<script>.py
 | `smoke_test.sh` | End-to-end smoke test of the binary over the examples |
 | `gate_two_users.sh` | Runs `gate serve` and `gate submit` between the OS users `referee` and `agent` on a disposable Linux machine (CI job `gate-two-users`) |
 | `gate_serve_docker.sh` | Builds evalsig in a Rust container and runs `gate_two_users.sh` there |
-| `check_changelog.sh` | Refuses a release tag whose version has no section in `CHANGELOG.md` (run by the release workflow) |
+| `check_changelog.sh` | Refuses a release tag whose version has no dated section in `CHANGELOG.md` (run by the release workflow) |
 | `sim_latent_reference.py` | Simulates the bias and interval coverage of the `soft` and `latent` references (D-016) |
 | `sim_ladder.py` | Simulates the false pass rate under an adaptive agent and the share of real improvements that pass, by holdout size, budget and Ladder step (D-015) |
 

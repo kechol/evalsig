@@ -1,0 +1,2 @@
+# Keep line endings LF on every platform: tests compare generated files byte for byte.
+* text=auto eol=lf

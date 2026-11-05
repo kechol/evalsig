@@ -212,6 +212,24 @@ fn labels_in_a_replaced_snapshot_still_stop_the_seal() {
 }
 
 #[test]
+fn a_line_this_version_cannot_read_hides_no_label() {
+    let s = setup();
+    let agent = project(&agent_records(&s.held));
+    let item = s.held.iter().next().unwrap();
+    // A stored object with an unreadable line before a holdout label.
+    let object = format!(
+        "{{\"record\":\"from_the_future\"}}\n{{\"record\":\"label\",\"item_id\":\"{item}\",\"rater_id\":\"rater:a\",\"source\":\"human\",\"value\":true,\"version\":1}}"
+    );
+    evalsig_store::objects::ObjectStore::new(agent.path().join(".evalsig/objects"))
+        .put(object.as_bytes())
+        .unwrap();
+    let out = seal(&s, agent.path());
+    assert_eq!(out.status.code(), Some(3));
+    let e: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(e["error"]["code"], "holdout_labels_in_agent");
+}
+
+#[test]
 fn a_revision_is_resealed_and_logged_by_hash_only() {
     let s = setup();
     let agent = project(&agent_records(&s.held));

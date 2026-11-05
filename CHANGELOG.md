@@ -1,7 +1,8 @@
 # Changelog
 
 Each release has a section headed `## [<version>] - <date>`; the release
-workflow refuses a tag whose version has no section (`scripts/check_changelog.sh`).
+workflow refuses a tag whose version has no such section, or one still marked
+Unreleased (`scripts/check_changelog.sh`).
 Changes not yet released go under `## [Unreleased]`.
 
 Within a section, list changes under Added, Changed, Fixed and Removed. A change

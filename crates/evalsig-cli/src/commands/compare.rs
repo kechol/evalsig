@@ -467,7 +467,12 @@ pub fn compute(
     });
     // Runs repeated for one system version give the run-to-run spread of the primary
     // metric: a diagnostic beside the interval, never part of it (metrics spec §6.3).
-    if let Some(delta) = verdict.as_ref().and_then(|m| m.delta) {
+    let spread_delta = verdict.as_ref().and_then(|m| m.delta);
+    if let (Some(delta), Some(i), true) = (
+        spread_delta,
+        chosen,
+        config.checks.warn_run_variance_exceeds_delta,
+    ) {
         let mut runs: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
         for r in &d.records {
             if let Record::Run(run) = r {
@@ -475,18 +480,37 @@ pub fn compute(
                 runs.entry(key).or_default().push(&run.run_id);
             }
         }
-        let chosen = chosen.map(|i| (comparisons[i].0.as_str(), &comparisons[i].1));
+        let prepared: BTreeMap<&str, &Prepared<'_>> =
+            std::iter::once((args.baseline.as_str(), &base))
+                .chain(comparisons.iter().map(|(id, p, _, _)| (id.as_str(), p)))
+                .collect();
+        let cand = &comparisons[i].1;
+        // Every run is measured on the items the difference was measured on.
+        let items: Option<BTreeSet<String>> = base
+            .metric_ids()
+            .into_iter()
+            .find(|id| id.name() == primary)
+            .map(|id| {
+                let b = base.item_values(id, Fill::Policy);
+                cand.item_values(id, Fill::Policy)
+                    .into_keys()
+                    .filter(|k| b.contains_key(k))
+                    .filter(|k| scope.is_none_or(|s| s.items.contains(k)))
+                    .collect()
+            });
         let point = |p: &Prepared<'_>| {
             let id = p.metric_ids().into_iter().find(|id| id.name() == primary)?;
-            compare::total_ratio(&p.item_values(id, Fill::Policy))
+            let mut v = p.item_values(id, Fill::Policy);
+            if let Some(items) = &items {
+                v.retain(|k, _| items.contains(k));
+            }
+            compare::total_ratio(&v)
         };
+        let versions: BTreeSet<(&str, &str)> = [base_run, d.run(&comparisons[i].0)?]
+            .into_iter()
+            .map(|r| (r.system.id.as_str(), r.system.version.as_str()))
+            .collect();
         let mut spread: Option<f64> = None;
-        let versions: BTreeSet<(&str, &str)> =
-            [Some(base_run), chosen.and_then(|(id, _)| d.run(id).ok())]
-                .into_iter()
-                .flatten()
-                .map(|r| (r.system.id.as_str(), r.system.version.as_str()))
-                .collect();
         for version in versions {
             let ids = &runs[&version];
             if ids.len() < 2 {
@@ -494,11 +518,10 @@ pub fn compute(
             }
             let mut values = Vec::new();
             for &id in ids {
-                // The arms are prepared already; only their siblings are new.
-                let value = match chosen {
-                    _ if id == args.baseline => point(&base),
-                    Some((c, p)) if c == id => point(p),
-                    _ => point(&prepare(id)?.1),
+                // A sibling that cannot be prepared for this task is not a repeat.
+                let value = match prepared.get(id) {
+                    Some(p) => point(p),
+                    None => prepare(id).ok().and_then(|(_, p)| point(&p)),
                 };
                 values.extend(value);
             }

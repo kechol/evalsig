@@ -76,7 +76,7 @@ const SEND_DEADLINE: Duration = Duration::from_secs(60);
 /// Connections read at once; more are closed on arrival.
 const MAX_CONNECTIONS: usize = 32;
 /// The largest submission read. Each of MAX_CONNECTIONS may buffer this much before
-/// the judge lock is taken, so it stays far below the import limit.
+/// the judge lock is taken, so a referee holds at most 2 GiB of submissions at once.
 const SUBMISSION_BYTES: u64 = 64 << 20;
 /// How long `gate submit` waits for the referee's answer, judging included.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(600);
@@ -387,6 +387,13 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
         agent_ledger_head: s.agent_ledger_head()?,
     };
     let body = serde_json::to_vec(&wire).expect("submission serializes");
+    // The referee stops reading past the cap, which the client would see as a reset.
+    if body.len() as u64 > SUBMISSION_BYTES {
+        return Err(CliError::usage(format!(
+            "the submission is larger than {} MiB, the most the referee reads",
+            SUBMISSION_BYTES >> 20
+        )));
+    }
     let reply = match (&args.socket, &args.url) {
         (Some(p), _) => send_socket(p, &body)?,
         (None, Some(url)) => send_http(url, &token_for(args)?, &body)?,
@@ -443,25 +450,26 @@ fn send_socket(_: &Path, _: &[u8]) -> Result<Vec<u8>, CliError> {
 }
 
 fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, CliError> {
+    let not_loopback = |why: &str| {
+        CliError::usage(format!(
+            "{url}: {why}; gate submit speaks plain HTTP to a loopback address"
+        ))
+        .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port")
+    };
     let addr = url
         .strip_prefix("http://")
         .map(|a| a.trim_end_matches('/'))
-        .ok_or_else(|| {
-            CliError::usage(format!(
-                "{url}: gate submit speaks plain HTTP to a loopback address"
-            ))
-            .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port")
-        })?;
+        .ok_or_else(|| not_loopback("not an http:// URL"))?;
     let target = std::net::ToSocketAddrs::to_socket_addrs(addr)
         .ok()
         .and_then(|mut a| a.next())
         .ok_or_else(|| CliError::usage(format!("{url}: not a host and port")))?;
     // The token travels in clear text, so it never leaves the machine.
     if !target.ip().is_loopback() {
-        return Err(CliError::usage(format!(
-            "{url}: gate submit speaks plain HTTP to a loopback address"
-        ))
-        .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port"));
+        return Err(not_loopback(&format!(
+            "{} is not a loopback address",
+            target.ip()
+        )));
     }
     let mut s = TcpStream::connect_timeout(&target, Duration::from_secs(10))
         .map_err(|e| transport(format!("cannot reach {url}: {e}")))?;

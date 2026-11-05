@@ -150,7 +150,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             code: "spec_version_differs".into(),
             message: format!(
                 "the result follows metric definitions {}, this evalsig {}; see CHANGELOG.md",
-                prov["spec_version"],
+                prov["spec_version"]
+                    .as_str()
+                    .unwrap_or("of no recorded version"),
                 evalsig_core::SPEC_VERSION
             ),
         });
@@ -160,7 +162,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             code: "tool_version_differs".into(),
             message: format!(
                 "the result was produced by {}; differences may come from the version",
-                prov["tool"]
+                prov["tool"].as_str().unwrap_or("an unrecorded tool")
             ),
         });
     }
