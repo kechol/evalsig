@@ -91,6 +91,7 @@ fn rule(v: &Value, fallback: Option<Rule>) -> Result<Option<Rule>, CliError> {
 
 pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
     let referee = Referee::open(args.referee.as_deref())?;
+    let _lock = referee.lock()?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let mut doc = draft(args.from.as_deref().unwrap_or(root), &args.draft)?;

@@ -3,7 +3,7 @@
 //! a wrong token gets nothing. `scripts/gate_serve_docker.sh` runs the same across
 //! two OS users.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, Stdio};
 
@@ -195,4 +195,46 @@ fn a_submission_over_token_http_gets_the_gate_answer() {
     );
     assert_eq!(json(&out)["verdict"]["code"], "pass");
     assert_eq!(accesses(&w), 1);
+}
+
+#[test]
+fn an_oversized_submission_and_a_remote_url_are_refused() {
+    let w = world(GATE, None);
+    let (_server, at) = serve(&w);
+    let token_file = at["token_file"].as_str().unwrap().to_owned();
+    let token = std::fs::read_to_string(&token_file).unwrap();
+    let addr = at["http"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches("http://")
+        .to_owned();
+    let mut s = std::net::TcpStream::connect(&addr).unwrap();
+    write!(
+        s,
+        "POST /submit HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n",
+        token.trim(),
+        65u64 << 20
+    )
+    .unwrap();
+    let mut reply = String::new();
+    s.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 413"), "{reply}");
+    // The token travels in clear text, so a non-loopback address gets nothing.
+    let out = submit_cmd(
+        &w,
+        &variant(w.agent.path(), 1),
+        &[
+            "--url",
+            "http://192.0.2.1:7000",
+            "--token-file",
+            &token_file,
+        ],
+    );
+    assert_eq!(
+        code(&out),
+        Some(64),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(accesses(&w), 0);
 }

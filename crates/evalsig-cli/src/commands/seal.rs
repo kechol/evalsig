@@ -8,7 +8,7 @@ use evalsig_core::records::Record;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
-use evalsig_store::seal;
+use evalsig_store::{seal, snapshot};
 use serde_json::{Value, json};
 
 use crate::data;
@@ -33,17 +33,25 @@ pub struct Args {
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let referee = Referee::open(args.referee.as_deref())?;
+    let _lock = referee.lock()?;
     let held = referee.holdout_items(&args.holdout)?;
-    // The agent's environment must never have held these labels (SPEC §8.2).
-    let agent = data::load(&Project::open(&args.agent_project)?)?;
-    let leaked: BTreeSet<&str> = agent
-        .records
-        .iter()
-        .filter_map(|r| match r {
-            Record::Label(l) if held.contains(&l.item_id) => Some(l.item_id.as_str()),
-            _ => None,
-        })
-        .collect();
+    // The agent's environment must never have held these labels (SPEC §8.2). Snapshots
+    // that `exclude` or a re-import replaced stay in the store, so every stored object
+    // that reads as a snapshot is searched, not only those in force.
+    let store = Project::open(&args.agent_project)?.objects();
+    let mut leaked = BTreeSet::new();
+    for h in store.list().map_err(CliError::store)? {
+        let Ok(records) = snapshot::read(&store, &h) else {
+            continue;
+        };
+        for r in records {
+            if let Record::Label(l) = r
+                && held.contains(&l.item_id)
+            {
+                leaked.insert(l.item_id);
+            }
+        }
+    }
     if !leaked.is_empty() {
         return Err(CliError::new(
             "holdout_labels_in_agent",

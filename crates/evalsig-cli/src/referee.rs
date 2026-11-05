@@ -196,8 +196,9 @@ impl Referee {
         self.dir.join(sub).join(format!("{}.{ext}", hex(hash)))
     }
 
-    /// An exclusive lock on the home, held while the guard lives: one budget-changing
-    /// operation at a time, whichever process runs it.
+    /// An exclusive lock on the home, held while the guard lives: one operation that
+    /// writes the home (gate, approve, seal, split, exclude) at a time, whichever
+    /// process runs it.
     pub fn lock(&self) -> Result<std::fs::File, CliError> {
         let p = self.path("state").join("gate.lock");
         let f = std::fs::OpenOptions::new()
@@ -232,6 +233,11 @@ impl Referee {
         let Value::Object(summary) = summary else {
             panic!("a ledger summary is a JSON object");
         };
+        // The home may be open to a group for the socket, so the ledger is never
+        // created with the process umask.
+        if !self.ledger_path().exists() {
+            write_private(&self.ledger_path(), b"")?;
+        }
         ledger::append(
             &self.ledger_path(),
             LedgerSide::Referee,

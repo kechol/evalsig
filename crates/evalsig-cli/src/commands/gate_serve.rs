@@ -11,7 +11,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use evalsig_adapters::limits::MAX_BYTES;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -76,6 +75,9 @@ const HEAD_LIMIT: u64 = 16 * 1024;
 const SEND_DEADLINE: Duration = Duration::from_secs(60);
 /// Connections read at once; more are closed on arrival.
 const MAX_CONNECTIONS: usize = 32;
+/// The largest submission read. Each of MAX_CONNECTIONS may buffer this much before
+/// the judge lock is taken, so it stays far below the import limit.
+const SUBMISSION_BYTES: u64 = 64 << 20;
 /// How long `gate submit` waits for the referee's answer, judging included.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -168,6 +170,17 @@ fn answer(root: &Path, referee: &Referee, lock: &Mutex<()>, bytes: &[u8]) -> Ans
     }
 }
 
+fn too_large() -> Answer {
+    let e = transport(format!(
+        "the submission is larger than {} MiB",
+        SUBMISSION_BYTES >> 20
+    ));
+    Answer {
+        exit: e.exit.code(),
+        body: json!({ "error": e }),
+    }
+}
+
 /// Bytes compared in time that does not depend on where they differ.
 fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
@@ -229,7 +242,7 @@ fn http_exchange(
     if !authorized {
         return reply(&mut out, "401 Unauthorized", "{}");
     }
-    let Some(n) = length.filter(|n| *n <= MAX_BYTES) else {
+    let Some(n) = length.filter(|n| *n <= SUBMISSION_BYTES) else {
         return reply(&mut out, "413 Content Too Large", "{}");
     };
     let mut body = Vec::new();
@@ -345,8 +358,16 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
                     stream,
                     until: Instant::now() + SEND_DEADLINE,
                 };
-                if (&mut reader).take(MAX_BYTES).read_to_end(&mut body).is_ok() {
-                    let a = answer(&root, &referee, &lock, &body);
+                if (&mut reader)
+                    .take(SUBMISSION_BYTES + 1)
+                    .read_to_end(&mut body)
+                    .is_ok()
+                {
+                    let a = if body.len() as u64 > SUBMISSION_BYTES {
+                        too_large()
+                    } else {
+                        answer(&root, &referee, &lock, &body)
+                    };
                     let _ = writer.write_all(&serde_json::to_vec(&a).expect("answer serializes"));
                 }
             });
@@ -439,6 +460,13 @@ fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, CliError> {
         .ok()
         .and_then(|mut a| a.next())
         .ok_or_else(|| CliError::usage(format!("{url}: not a host and port")))?;
+    // The token travels in clear text, so it never leaves the machine.
+    if !target.ip().is_loopback() {
+        return Err(CliError::usage(format!(
+            "{url}: gate submit speaks plain HTTP to a loopback address"
+        ))
+        .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port"));
+    }
     let mut s = TcpStream::connect_timeout(&target, Duration::from_secs(10))
         .map_err(|e| transport(format!("cannot reach {url}: {e}")))?;
     s.set_read_timeout(Some(ANSWER_TIMEOUT))

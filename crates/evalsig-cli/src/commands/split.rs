@@ -226,6 +226,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 /// names the holdout and its budget; the agent gets the other item IDs only.
 fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
     let referee = Referee::open(args.referee.as_deref())?;
+    let _lock = referee.lock()?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;

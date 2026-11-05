@@ -58,6 +58,14 @@ Ladder (metrics spec §11.3, T-126), whose defaults await D-015.
   `compare` with a budget (v2).
 - **Tampering with the agent-side ledger.** It is evidence, not proof; the
   referee copies its head into each `gate` line, and only the referee ledger counts.
+- **Which items are in the holdout.** The agent receives the remaining item
+  IDs, and a refused submission says how many holdout items it left out.
+  Only the labels are sealed.
+- **A referee under the agent's own OS user.** `gate` cannot tell that user
+  from another one; see the end of Deployments for what it does detect.
+- **Framing the dashboard.** Its Content-Security-Policy (D-019) sets no
+  `frame-ancestors`, so a page that knows the URL token could frame the
+  read-only views.
 
 ## Removing holdout labels from the agent's environment
 
@@ -83,8 +91,11 @@ Cut and seal the holdout on the referee side before the agent sees the data:
 | Remote | `gate serve --http <port>` on another machine | `gate submit --url` with a token, through a tunnel to the referee's 127.0.0.1 port (for example `ssh -L`) | As local, plus the tunnel's own authentication |
 
 Running `gate` with the agent's own privileges, key included, makes the seal
-meaningless; `gate` then warns that the seal is void and records it in the
-ledger.
+meaningless. `gate` warns that the seal is void, and records it in the ledger,
+when the referee's home lies inside the directory that holds the project, or
+when `identity.txt` is readable by its group or others (Unix only). A home
+kept at 0700 by the agent's own OS user passes both checks, so separating the
+users is the operator's part.
 
 ## Serving submissions
 
@@ -106,5 +117,11 @@ ledger.
   and `--token-file <file>` (or `EVALSIG_GATE_TOKEN`), prints the same answer
   `gate` gives and exits with its code. `--agent-ledger` sends the head of
   the agent-side ledger, which the referee copies into its `gate` line.
+  `--url` must resolve to a loopback address, since the token travels in
+  clear text.
+- A submission is at most 64 MiB on either transport; a larger one is
+  refused before it is judged. `gate`, `approve`, `seal`, `split --holdout`
+  and `exclude --referee` take the home's lock, so they never see one
+  another's half-written files.
 - `scripts/gate_two_users.sh` runs this between two OS users;
   `scripts/gate_serve_docker.sh` runs it in a container.

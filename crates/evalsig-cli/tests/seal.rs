@@ -195,6 +195,23 @@ fn sealing_refuses_when_the_agent_holds_holdout_labels() {
 }
 
 #[test]
+fn labels_in_a_replaced_snapshot_still_stop_the_seal() {
+    let s = setup();
+    let agent = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    // Excluding the holdout items replaces the snapshot; the old one stays stored.
+    evalsig(agent.path())
+        .arg("exclude")
+        .args(&s.held)
+        .args(["--reason", "duplicate"])
+        .assert()
+        .success();
+    let out = seal(&s, agent.path());
+    assert_eq!(out.status.code(), Some(3));
+    let e: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(e["error"]["code"], "holdout_labels_in_agent");
+}
+
+#[test]
 fn a_revision_is_resealed_and_logged_by_hash_only() {
     let s = setup();
     let agent = project(&agent_records(&s.held));
