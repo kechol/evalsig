@@ -16,6 +16,7 @@ use crate::project::{actor, hex, io_error, now, str_set};
 
 pub const ENV: &str = "EVALSIG_REFEREE";
 const IDENTITY: &str = "identity.txt";
+const LEDGER: &str = "ledger.jsonl";
 const RECIPIENT: &str = "recipient.txt";
 const SUBDIRS: [&str; 6] = [
     "holdouts",
@@ -97,6 +98,9 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
     )?;
     let r = dir.join(RECIPIENT);
     std::fs::write(&r, format!("{recipient}\n")).map_err(|e| io_error(&r, &e))?;
+    // The home may be opened to a group for the socket, so the ledger is private from
+    // the moment it exists.
+    write_private(&dir.join(LEDGER), b"")?;
     Ok(Output::success(Envelope::new(
         "evalsig.referee/1",
         json!({ "home": dir.display().to_string(), "recipient": recipient }),
@@ -122,6 +126,14 @@ fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, Cl
 }
 
 impl Referee {
+    /// The home, as `open` finds it, locked against every other writer while the
+    /// returned guard lives.
+    pub fn open_exclusive(arg: Option<&Path>) -> Result<(Referee, std::fs::File), CliError> {
+        let referee = Referee::open(arg)?;
+        let lock = referee.lock()?;
+        Ok((referee, lock))
+    }
+
     /// The home named by `arg` or `EVALSIG_REFEREE`, if its identity can be read.
     pub fn open(arg: Option<&Path>) -> Result<Referee, CliError> {
         let dir = match arg {
@@ -197,8 +209,7 @@ impl Referee {
     }
 
     /// An exclusive lock on the home, held while the guard lives: one operation that
-    /// writes the home (gate, approve, seal, split, exclude) at a time, whichever
-    /// process runs it.
+    /// writes the home at a time, whichever process runs it.
     pub fn lock(&self) -> Result<std::fs::File, CliError> {
         let p = self.path("state").join("gate.lock");
         let f = std::fs::OpenOptions::new()
@@ -212,7 +223,7 @@ impl Referee {
     }
 
     pub fn ledger_path(&self) -> PathBuf {
-        self.dir.join("ledger.jsonl")
+        self.dir.join(LEDGER)
     }
 
     pub fn entries(&self) -> Result<Vec<Entry>, CliError> {
@@ -233,11 +244,6 @@ impl Referee {
         let Value::Object(summary) = summary else {
             panic!("a ledger summary is a JSON object");
         };
-        // The home may be open to a group for the socket, so the ledger is never
-        // created with the process umask.
-        if !self.ledger_path().exists() {
-            write_private(&self.ledger_path(), b"")?;
-        }
         ledger::append(
             &self.ledger_path(),
             LedgerSide::Referee,

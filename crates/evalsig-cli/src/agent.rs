@@ -55,16 +55,13 @@ pub fn shape(e: &mut Envelope, mode: Mode) {
         let mut cut = Cut::default();
         e.results = page(&full, mode.cursor, rows, &mut cut);
         e.warnings = warnings.clone();
+        (e.untrusted_content, e.content_notice) = (None, None);
         // Content is taken from the rows shown, so its pointers name those rows.
         separate_content(e, mode);
         withhold_warnings(e, mode);
         cut_cells(&mut e.results, &mut cut.cells);
         for w in &mut e.warnings {
-            let mut v = Value::String(std::mem::take(&mut w.message));
-            cut_cells(&mut v, &mut cut.cells);
-            if let Value::String(m) = v {
-                w.message = m;
-            }
+            cut_cell(&mut w.message, &mut cut.cells);
         }
         if let Some(u) = e.untrusted_content.as_mut() {
             cut_cells(u, &mut cut.cells);
@@ -184,13 +181,17 @@ fn page(results: &Value, cursor: usize, rows: usize, cut: &mut Cut) -> Value {
     }
 }
 
+fn cut_cell(s: &mut String, cells: &mut u64) {
+    // Bytes bound characters from above, so short strings skip the count.
+    if s.len() > CELL && s.chars().count() > CELL {
+        *s = s.chars().take(CELL).chain(std::iter::once('…')).collect();
+        *cells += 1;
+    }
+}
+
 fn cut_cells(v: &mut Value, cells: &mut u64) {
     match v {
-        // Bytes bound characters from above, so short strings skip the count.
-        Value::String(s) if s.len() > CELL && s.chars().count() > CELL => {
-            *s = s.chars().take(CELL).chain(std::iter::once('…')).collect();
-            *cells += 1;
-        }
+        Value::String(s) => cut_cell(s, cells),
         Value::Array(a) => a.iter_mut().for_each(|x| cut_cells(x, cells)),
         Value::Object(o) => o.values_mut().for_each(|x| cut_cells(x, cells)),
         _ => {}
@@ -261,18 +262,7 @@ fn separate_content(e: &mut Envelope, mode: Mode) {
             taken.insert(String::new(), std::mem::take(&mut e.results));
         }
     }
-    if taken.is_empty() {
-        return;
-    }
-    if mode.include_content {
-        e.untrusted_content = Some(Value::Object(taken));
-        e.content_notice = Some(NOTICE.into());
-    } else {
-        e.warnings.push(Warning {
-            code: "content_withheld".into(),
-            message: "some values come from the evaluated data; pass --include-content to receive them in untrusted_content".into(),
-        });
-    }
+    publish(e, taken, mode);
 }
 
 /// Warning messages quote runs, tasks and values from the data, so they are withheld
@@ -286,6 +276,12 @@ fn withhold_warnings(e: &mut Envelope, mode: Mode) {
             taken.insert(format!("/warnings/{i}/message"), full.into());
         }
     }
+    publish(e, taken, mode);
+}
+
+/// Text taken from the envelope, keyed by pointer: returned in `untrusted_content` on
+/// request, otherwise announced once by `content_withheld`.
+fn publish(e: &mut Envelope, taken: Map<String, Value>, mode: Mode) {
     if taken.is_empty() {
         return;
     }

@@ -383,7 +383,8 @@ fn cluster_totals(v: &BTreeMap<String, ItemValue>) -> Vec<[f64; 2]> {
     c.into_values().collect()
 }
 
-fn total_ratio(v: &BTreeMap<String, ItemValue>) -> Option<f64> {
+/// The pooled ratio Σ numerator / Σ denominator of item values; none when empty.
+pub fn total_ratio(v: &BTreeMap<String, ItemValue>) -> Option<f64> {
     let den = sum(v.values().map(|x| x.denominator));
     (den > 0.0).then(|| sum(v.values().map(|x| x.numerator)) / den)
 }

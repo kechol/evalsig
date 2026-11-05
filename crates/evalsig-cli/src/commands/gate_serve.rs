@@ -163,18 +163,11 @@ fn answer(root: &Path, referee: &Referee, lock: &Mutex<()>, bytes: &[u8]) -> Ans
             exit: out.exit.code(),
             body: serde_json::to_value(&out.envelope).expect("envelope serializes"),
         },
-        Err(e) => Answer {
-            exit: e.exit.code(),
-            body: json!({ "error": e }),
-        },
+        Err(e) => failed(&e),
     }
 }
 
-fn too_large() -> Answer {
-    let e = transport(format!(
-        "the submission is larger than {} MiB",
-        SUBMISSION_BYTES >> 20
-    ));
+fn failed(e: &CliError) -> Answer {
     Answer {
         exit: e.exit.code(),
         body: json!({ "error": e }),
@@ -364,7 +357,10 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
                     .is_ok()
                 {
                     let a = if body.len() as u64 > SUBMISSION_BYTES {
-                        too_large()
+                        failed(&transport(format!(
+                            "the submission is larger than {} MiB",
+                            SUBMISSION_BYTES >> 20
+                        )))
                     } else {
                         answer(&root, &referee, &lock, &body)
                     };

@@ -176,8 +176,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
 }
 
 fn referee_side(args: &Args) -> Result<Output, CliError> {
-    let referee = Referee::open(args.referee.as_deref())?;
-    let _lock = referee.lock()?;
+    let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let (items, bytes, set_hash) = item_set(&args.items)?;
     let held = referee.all_holdout_items()?;
     if let Some(other) = items.iter().find(|i| !held.contains(*i)) {

@@ -468,29 +468,39 @@ pub fn compute(
     // Runs repeated for one system version give the run-to-run spread of the primary
     // metric: a diagnostic beside the interval, never part of it (metrics spec §6.3).
     if let Some(delta) = verdict.as_ref().and_then(|m| m.delta) {
-        let chosen_run = chosen.and_then(|i| d.run(&comparisons[i].0).ok());
-        let systems: BTreeSet<(&str, &str)> = [Some(base_run), chosen_run]
-            .into_iter()
-            .flatten()
-            .map(|r| (r.system.id.as_str(), r.system.version.as_str()))
-            .collect();
+        let mut runs: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+        for r in &d.records {
+            if let Record::Run(run) = r {
+                let key = (run.system.id.as_str(), run.system.version.as_str());
+                runs.entry(key).or_default().push(&run.run_id);
+            }
+        }
+        let chosen = chosen.map(|i| (comparisons[i].0.as_str(), &comparisons[i].1));
+        let point = |p: &Prepared<'_>| {
+            let id = p.metric_ids().into_iter().find(|id| id.name() == primary)?;
+            compare::total_ratio(&p.item_values(id, Fill::Policy))
+        };
         let mut spread: Option<f64> = None;
-        for (system, version) in systems {
+        let versions: BTreeSet<(&str, &str)> =
+            [Some(base_run), chosen.and_then(|(id, _)| d.run(id).ok())]
+                .into_iter()
+                .flatten()
+                .map(|r| (r.system.id.as_str(), r.system.version.as_str()))
+                .collect();
+        for version in versions {
+            let ids = &runs[&version];
+            if ids.len() < 2 {
+                continue;
+            }
             let mut values = Vec::new();
-            for r in &d.records {
-                let Record::Run(run) = r else { continue };
-                if (run.system.id.as_str(), run.system.version.as_str()) != (system, version) {
-                    continue;
-                }
-                let (_, p) = prepare(&run.run_id)?;
-                let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == primary) else {
-                    continue;
+            for &id in ids {
+                // The arms are prepared already; only their siblings are new.
+                let value = match chosen {
+                    _ if id == args.baseline => point(&base),
+                    Some((c, p)) if c == id => point(p),
+                    _ => point(&prepare(id)?.1),
                 };
-                let parts = p.item_values(id, Fill::Policy);
-                let den: f64 = parts.values().map(|v| v.denominator).sum();
-                if den > 0.0 {
-                    values.push(parts.values().map(|v| v.numerator).sum::<f64>() / den);
-                }
+                values.extend(value);
             }
             if let Some(sd) = replicates::run_to_run_sd(&values) {
                 spread = Some(spread.map_or(sd, |s| s.max(sd)));

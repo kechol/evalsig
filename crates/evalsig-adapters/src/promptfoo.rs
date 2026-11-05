@@ -478,30 +478,33 @@ mod tests {
             e.to_string().contains("`eval_results` is not a table"),
             "{e}"
         );
-        let conn = rusqlite::Connection::open(&dir).unwrap();
-        conn.execute_batch(
-            "DROP VIEW eval_results;
-             CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
-               test_case TEXT AS (hex(zeroblob(1000000000))) VIRTUAL, prompt TEXT, provider TEXT,
-               response TEXT, grading_result TEXT, named_scores TEXT, error TEXT,
-               failure_reason INTEGER, success INTEGER, score REAL);",
-        )
-        .unwrap();
-        drop(conn);
-        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
-        assert!(e.to_string().contains("computed columns"), "{e}");
-        let conn = rusqlite::Connection::open(&dir).unwrap();
-        conn.execute_batch(
-            "DROP TABLE eval_results;
-             CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
-               test_case TEXT DEFAULT (hex(zeroblob(1000000000))), prompt TEXT, provider TEXT,
-               response TEXT, grading_result TEXT, named_scores TEXT, error TEXT,
-               failure_reason INTEGER, success INTEGER DEFAULT 0, score REAL);",
-        )
-        .unwrap();
-        drop(conn);
-        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
-        assert!(e.to_string().contains("computed columns"), "{e}");
+        // `eval_results` as a table whose test_case column computes its value.
+        for (old, test_case) in [
+            (
+                "VIEW",
+                "test_case TEXT AS (hex(zeroblob(1000000000))) VIRTUAL",
+            ),
+            (
+                "TABLE",
+                "test_case TEXT DEFAULT (hex(zeroblob(1000000000)))",
+            ),
+        ] {
+            let conn = rusqlite::Connection::open(&dir).unwrap();
+            conn.execute_batch(&format!(
+                "DROP {old} eval_results;
+                 CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
+                   {test_case}, prompt TEXT, provider TEXT, response TEXT, grading_result TEXT,
+                   named_scores TEXT, error TEXT, failure_reason INTEGER, success INTEGER DEFAULT 0,
+                   score REAL);"
+            ))
+            .unwrap();
+            drop(conn);
+            let e = read_database(&dir, None, &Limits::default()).unwrap_err();
+            assert!(
+                e.to_string().contains("computed columns"),
+                "{test_case}: {e}"
+            );
+        }
         let small = Limits {
             max_bytes: 1024,
             ..Limits::default()

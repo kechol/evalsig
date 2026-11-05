@@ -32,8 +32,7 @@ pub struct Args {
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
-    let referee = Referee::open(args.referee.as_deref())?;
-    let _lock = referee.lock()?;
+    let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let held = referee.holdout_items(&args.holdout)?;
     // The agent's environment must never have held these labels (SPEC §8.2). Snapshots
     // that `exclude` or a re-import replaced stay in the store, so every stored object
