@@ -1,4 +1,4 @@
-//! The referee's protected paths (SPEC §8.0 "Protects", §13.2 "Judge path tests";
+//! The referee's protected paths (SPEC §8.0 "Protects", §13.2 "Referee path tests";
 //! `docs/referee.md`): one test per path an agent could use to pass the gate without
 //! a real improvement or to learn the holdout's labels.
 

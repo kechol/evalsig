@@ -1,0 +1,1000 @@
+# evalsig specification
+
+This is the overview of what evalsig does and how its parts fit together.
+Definitions and details live in the documents below; this page links to them
+instead of repeating them. Terms follow [`glossary.md`](glossary.md); choices
+are recorded in [`decisions.md`](decisions.md) as `D-NNN`.
+
+| Document | Contents |
+|---|---|
+| [`metrics.md`](metrics.md) | Definitions and methods of every metric |
+| [`audit.md`](audit.md) | Objects, snapshots, ledgers, provenance and `verify` |
+| [`referee.md`](referee.md) | The referee's threat model and deployment |
+| [`agent-interface.md`](agent-interface.md) | The output envelope, agent mode and the Skill |
+| [`cli.md`](cli.md) | Generated reference of every command and option |
+| [`sample-size.md`](sample-size.md) | Generated tables of required item counts |
+
+The published schemas live in `crates/evalsig-cli/schema/` and are printed by
+`evalsig schema <name>` (`records`, `ledger-entry`, `mapping`, `gate`,
+`envelope`).
+
+## 0. Summary
+
+evalsig reads the evaluation records of judges that do not always give the same
+answer (LLM judges, classifiers, rule sets). With intervals, it answers how well
+the judge separates what humans call positive from what they call negative,
+where it starts saying "positive", how often its answers split when the same
+input is judged again, and whether a change really helped. It is an
+analysis-only command-line tool with a local web dashboard. It never calls an AI
+model.
+
+It treats human reference labels as noisy too: it measures how much they vary,
+states what each estimate targets, and compares systems and humans under the
+same rule. When an AI agent improves a system in a loop, evalsig can act as a
+referee that keeps the holdout labels away from the agent. What the referee does
+and does not protect is stated in §8.0.
+
+## 1. Purpose
+
+### 1.1 Problems it addresses
+
+- **Averages are not enough.** A mean score or pass rate does not say whether a
+  difference is within noise, whether discrimination improved or only the
+  decision line moved, or how many items are needed to say so.
+- **Measurement errors look like improvements.** A shrunken denominator, mixed
+  grader versions and double-counted replicates have each shown up as gains.
+  evalsig stops these by default (§7).
+- **Human labels vary but are treated as truth.** Raters disagree with one
+  another and with themselves over time. Fixing one label as correct makes a
+  system that is as good as a person look wrong. Humans often label only some
+  items.
+- **Agents fit the evaluation.** An agent that improves a system while reading
+  its evaluation can overfit the holdout or rewrite the evaluation itself.
+  Optimisation frameworks do not count or seal holdout use.
+
+### 1.2 Questions it answers
+
+| Question | Output | Command |
+|---|---|---|
+| Can this ship? | Pass or fail under conditions a person approved, on a sealed holdout; or a check of absolute thresholds with intervals and no preregistration | `gate`, `check` |
+| Did the change help? | Paired interval, verdict against a minimum effect, transition table, pairwise win rate | `compare` |
+| Did the grader's score rise when there are no reference labels? | Paired comparison of mean score and share at or above a threshold | `compare` on `score` runs |
+| Better at telling cases apart, or just a moved threshold? | Hit rate, false-alarm rate, empirical ROC and AUC with an interval | `report` |
+| How good is the system once human disagreement is included? | Reference built from the raters (share, majority), rater design and estimand, agreement among humans and of system with humans under one rule | `report`, `agree` |
+| How many generations should production use, and what do they cost? | Performance and expected cost for k = 1 … K | `report --k-curve` |
+| What is the performance on the human standard when humans labelled only some items? | Grader labels corrected with human labels (prediction-powered inference) | `report --proxy` |
+| Is production drifting? | Per-period metrics against a baseline period; unpaired comparison | `trend`, `compare --unpaired` |
+| Which feature to fix? | Likelihood ratio and class per feature | `report --features` |
+| How many items are enough? | Required items, minimum detectable difference, pass probability of a gate | `power` |
+| Can the labels and the grader be trusted? | Rater agreement, rater variability, grader meta-evaluation | `agree` |
+| Where should the decision threshold sit? | Cost-optimal threshold and its sensitivity to the cost ratio | `threshold` |
+
+### 1.3 Non-goals
+
+- Calling AI models or running evaluations. Inspect, promptfoo and custom
+  harnesses run them; evalsig reads their records.
+- Prompt management, trace observation or a labelling interface.
+- A multi-user server or a cloud service.
+
+### 1.4 Quality bar
+
+- **Numerical correctness.** Reference values in
+  `tests/fixtures/reference-values.json` (from scipy, closed forms and
+  published examples; generated by `scripts/reference_values.py`) match to an
+  absolute 1e-9 in `crates/evalsig-core/tests/reference_*.rs`.
+- **Interval coverage.** `crates/evalsig-core/tests/coverage.rs` checks that the
+  Wilson, exact, Tango and cluster-bootstrap intervals contain the true value
+  93–97% of the time, at the reported level and at the gate's per-submission
+  level.
+- **Reproducibility.** Every saved report is recomputed by `evalsig verify`.
+  Canonicalization and hashing match the Python reference
+  `scripts/evalsig_canon.py` on the shared vectors in
+  `tests/fixtures/canonicalization-vectors.json`.
+- **Validity checks.** Every check of §7 is registered with a default action and
+  has a test (`crates/evalsig-core/src/checks.rs`).
+- **Referee paths.** Every path of §8.0 that the referee protects has a test in
+  `crates/evalsig-cli/tests/referee_paths.rs`.
+
+## 2. Position
+
+```
+ runs the evaluation              evalsig (analysis, referee)               where results go
+┌────────────────────┐        ┌───────────────────────────────┐        ┌───────────────────────────┐
+│ Inspect            │        │ import -> immutable snapshot  │        │ CI (exit code, JUnit,     │
+│ promptfoo          │─records▶ report / compare / agree      │───────▶│   Markdown for PR comments)│
+│ lm-evaluation-…    │        │ split / seal / preregister    │        │ people (dashboard, HTML)  │
+│ custom harness     │        │ gate (sealed holdout)         │        │ AI agents (JSON, Skill)   │
+│ human labels (CSV) │        │ ledger (hash chain)           │        └───────────────────────────┘
+└────────────────────┘        └───────────────────────────────┘
+```
+
+| Kind of tool | Relation to evalsig |
+|---|---|
+| Evaluation harnesses (Inspect, promptfoo, lm-evaluation-harness, custom) | The source of records. Not competitors |
+| Trace and annotation platforms | Possible sources of human labels; evalsig has no adapter for them |
+| Statistics libraries | Closest in purpose. evalsig adds signal detection and cost analysis, agreement coefficients and rater design, an audit trail with sealing, and a CLI with a dashboard |
+| Optimisation frameworks | evalsig can be inserted as the judge of adoption; none of them counts holdout use |
+
+## 3. Use
+
+### 3.1 An evaluator compares a change
+
+evalsig reads only the judgment records, whatever ran the evaluation.
+
+```sh
+evalsig init
+evalsig import records/baseline.jsonl records/candidate.jsonl     # canonical records (§5.2 ①)
+evalsig import --adapter inspect logs/candidate.eval              # Inspect log (③)
+evalsig import --adapter csv --as label labels/human.csv          # human labels
+evalsig map probe logs/run.jsonl                                  # an unknown shape (§5.3)
+evalsig map draft logs/run.jsonl --out mapping.toml
+evalsig map test mapping.toml logs/run.jsonl
+evalsig import --mapping mapping.toml logs/run.jsonl
+evalsig runs
+evalsig compare triage-v1 triage-v2    # paired interval, verdict, transition table
+evalsig dashboard                      # prints a URL on 127.0.0.1 with a per-launch token
+```
+
+With no reference labels and a grader's scores only, the run has
+`value_semantics = "score"` and `compare` reports the difference in mean score
+and in the share at or above a threshold (§5.1).
+
+### 3.2 CI uses a gate
+
+```sh
+# Absolute criteria with intervals; the output says it is not preregistered.
+evalsig check check.toml --run triage-v2 --format junit > check.xml
+# A sealed holdout under conditions a person approved.
+evalsig gate --approved <hash> --candidate triage-v2 --records candidate.jsonl --format junit > gate.xml
+```
+
+Exit code 0 is a pass and 1 a fail; the other codes are in §10.2. `check`
+accepts a subset of the `gate.toml` keys (D-021) and needs neither a holdout nor
+a referee.
+
+### 3.3 An agent improves a system in a loop
+
+- **What the agent may use.** Development and validation data. `report` and
+  `compare` are free to use.
+- **Submitting a candidate.** The agent sends the candidate's records to the
+  referee. The referee runs with other privileges, holds the secret key and the
+  referee ledger, and returns pass or fail per condition and the budget left
+  (§8.3, §8.4).
+- **Guarding the holdout.** Submissions are limited by a budget and each is
+  judged at a level divided by that budget.
+- **What is protected.** Sealing works when reference labels exist independently
+  of the judgment (`decision` runs), are not graded inside the agent's
+  environment and cannot be reproduced by the agent (a human's judgment). For
+  `score` runs the agent sees its own scores on the holdout items; §8.0 states
+  this limit.
+- **Where the referee runs.** §8.5.
+
+## 4. Terms
+
+[`glossary.md`](glossary.md) defines every term used in CLI output, reports and
+documents. The ones used most in this page:
+
+- **item**: one object being judged.
+- **reference label**: a judgment treated as correct, from a **rater**.
+- **value semantics**: `decision` (a system decision compared with reference
+  labels) or `score` (a grade of an output, itself the result).
+- **generation replicate**, **grading replicate**: a re-run of the system, a
+  re-grading of the same output.
+- **sensitivity index d′**, **criterion c**: how well positives and negatives are
+  told apart, and where the system starts saying "positive". c is not a gate
+  condition.
+- **conditions**: the rules a gate requires; pass means all hold.
+- **estimand**: which performance is estimated; default `single_shot`.
+- **rater design**: `nested` or `crossed`.
+- **minimum effect** (`min_effect`): differences smaller than this are not called
+  improvements.
+- **dev, validation, holdout**; **seal**; **preregistration**; **referee**.
+
+## 5. Data model
+
+The canonical format is `records/1`: JSONL, one record per line, tagged by
+`record`, described by `crates/evalsig-cli/schema/records.schema.json` (D-003).
+Unknown records and unknown fields are rejected. Examples:
+`examples/records.jsonl`, `examples/synthetic/records.jsonl`.
+
+| Record | Key | Contents |
+|---|---|---|
+| `item` | `item_id` | `cluster` (the resampling and splitting unit), `strata`, `weight`, `label_inclusion_prob`, `occurred_at`, `input_ref` (the system-independent input only), `reference_ref` (for example the target of a graded generation task), `attrs` |
+| `label` | `item_id`, `rater_id`, `task`, `label_replicate`, `version` | Value or `missing`; `source` (`human`, `model`, `consensus`, `external`); `kind` (`independent`, `revision`, `adjudication`); `reason`; `source_ref` |
+| `judgment` | `item_id`, `run_id`, `task`, `gen_replicate`, `grade_replicate` | Value or `missing`; `features` that fired; `output_ref`, `rationale_ref`; `cost`; `source_ref` |
+| `preference` | `item_id`, `left_run_id`, `right_run_id`, `rater_id`, `task`, `grade_replicate` | `outcome` (`left`, `right`, `tie`) or `missing`. A judgment with the presentation order swapped is a separate record |
+| `run` | `run_id` | `system` (id, version, config hash), `value_semantics`, `output_type` and `levels`, `grader` (id, version, config hash, kind), `harness` (name, version, run reference) |
+| `content` | `ref` | Catalogue of a body: media type, size, storage state (`full`, `hash`, `redact`, `purged`) |
+
+### 5.1 Rules
+
+- **One value semantics per run** (`run.value_semantics`).
+  - `decision`: the system's decision, compared with reference labels for hit
+    rate, false-alarm rate, ROC and agreement. The positive definition (`positive`,
+    on the label side) and the decision rule (`decision`, on the judgment side,
+    for example `score_at_least = 0.5`) are configured separately.
+  - `score`: a grade of an output (correctness, pass, points). No reference label
+    is needed; mean score, share at or above a threshold and pass rate are
+    reported. Inspect's C/I and promptfoo's pass are `score`. `run.grader` is
+    required.
+- **The output type is constant within a run.** `output_type` (`binary`,
+  `ordinal`, `score`) and `levels` are checked against every judgment; a mix
+  stops the command (§7).
+- **Missing is exclusive with a value.** A judgment or label has `value` or
+  `missing{reason, detail}`. There are ten reason codes: `error`, `timeout`,
+  `refused`, `invalid_output`, `limit` (system side) and `grader_failed`,
+  `not_run`, `invalidated`, `excluded`, `other` (measurement side).
+- **Missing values are treated by the side that failed.**
+  - System side: by default the worst judgment for that item. Dropping them
+    would favour a system that refuses hard items. The report also gives the range
+    obtained by filling them with the best and the worst judgment
+    (`missing_bounds`).
+  - Measurement side: by default dropped from the denominator.
+  - `[missing]` in the configuration sets `worst`, `best` or `drop` per reason.
+  - On a gate's holdout every missing judgment, whatever its reason, counts as the
+    worst (§8.3).
+- **Labels are never overwritten.** A revision of the same (item, rater, task,
+  label replicate) appends a higher `version`. Analyses use the latest version, or
+  the labels as of a time given with `--labels-as-of`. A gate reads only the
+  sealed set (§8.2).
+- **The positive definition is configured once** (for example
+  `positive = { ordinal_at_least = 2 }`) and can be overridden per task. It is
+  required only by metrics that read reference labels, and every report states the
+  definition used. Binary labels default to `true` as positive.
+- **One item with several findings.** The user expands the output to one item per
+  finding. Matching findings to reference findings is a judgment of meaning and
+  stays outside the tool.
+- **Multi-class labels** are analysed as one class against the rest.
+- **`input_ref` holds the system-independent input**, never a prompt template or
+  system prompt. Otherwise every prompt change would mark every item as changed
+  and remove it from comparisons (§7).
+
+### 5.2 Ingestion routes
+
+The route that depends on no harness is primary; the Inspect and promptfoo
+adapters are shortcuts for people who have those logs.
+
+| Route | When | Reads | Notes |
+|---|---|---|---|
+| ① Write `records/1` | A custom evaluation platform whose record shape you control | JSONL | `evalsig schema records` prints the schema; `evalsig validate --records <file>` checks a file; `evalsig schema records --emit python` (or `typescript`) writes a standard-library-only writer. See `examples/custom-harness/` |
+| ② Declare a mapping | Fixed-shape JSON, JSONL or CSV (nesting, several judgments per row, labels in another file) | Any of those | A flat table can be an `[[import]]` block in the configuration (`examples/evalsig.toml`); otherwise a `mapping.toml` (`evalsig.mapping/1`, D-011, example `examples/mapping.toml`), drafted and tested with `evalsig map` (§5.3) |
+| ③ `inspect` | Inspect logs | `.eval` (zip of JSON entries, Zstandard or Deflate) and `.json`; `EvalLog.version` 2 | |
+| ④ `promptfoo` | promptfoo results | `-o out.json` (`results.version` 2 and 3) and the local SQLite database, opened read-only | |
+
+- **What ② can express**: splitting a row into several records (`explode`),
+  assembling IDs (`template`), mapping values (`value_map`, `offset`), missing
+  conditions (`missing_if`), joining labels from another file (`join`), and
+  refusing source versions it does not know (`expect`). Paths are a JSONPath
+  subset. `examples/mapping.toml` states the mapping that
+  `examples/custom-harness/convert_runlog.py` performs in code.
+- **Use ② when the shape allows**: a mapping file is hashed into the
+  snapshot's provenance, can be read and checked by a person, and can be pinned by
+  an approval. Use a converter script (①) only for shapes a mapping cannot
+  express; `import --converter` records its hash.
+- **Three fields every route decides.**
+
+| Field | Definition | Inspect | promptfoo |
+|---|---|---|---|
+| `item.input_ref` | Hash of the system-independent input | The user-role input only (no system prompt) | Hash of the canonical JSON of `vars` |
+| `run.system.version` | What changes when the version changes | `task@task_version` + `model` + `revision.commit` (+ dirty) | `provider.id` + the prompt's hash |
+| `run.grader` | What graded | Scorer name + the grader model (model-graded) | Assertion types + the grading model |
+
+  `import --system-version` and `--grader` override them.
+- **Unknown versions stop the import.** Each adapter declares the format
+  versions it reads and refuses others instead of reading them silently.
+- **Unmappable values become missing.** A value that cannot be mapped to a number
+  or boolean (and a NaN or infinite score) becomes `missing` with reason
+  `invalid_output`, never 0.
+- **Replicates.** Inspect epochs and promptfoo repeats re-run both the system and
+  the grader, so they are generation replicates (`gen_replicate`). promptfoo keeps
+  no replicate number; the replicates of one (run, item) are numbered in result
+  order.
+- **Graded outputs.** Inspect's C/I/P and promptfoo's pass/fail are `score`
+  judgments. No reference label is synthesised; the target becomes the item's
+  `reference_ref` body.
+- **Untrusted input.** Every reader applies the limits of §13.1.
+
+### 5.3 Records of an unknown shape (`evalsig map`)
+
+Existing evaluation records seldom match `records/1`. `evalsig map` probes the
+shape, drafts a mapping, asks a person for the choices that change results, and
+shows what the mapping loses. Deterministic commands do the probing and testing;
+an AI agent only reads the draft and asks the person.
+
+| Command | Does |
+|---|---|
+| `map probe <file>` | Per JSON path: types, counts, distinct-value counts. Proposes unique fields as item-key candidates and small repeating integers as replicate-number candidates. Recognises known formats by fingerprint (Inspect, promptfoo, Langfuse exports, lm-evaluation-harness samples) and points to the adapter |
+| `map draft <file> --out mapping.toml` | Writes a draft. Choices that change results stay `DECIDE`, listed in `decisions_needed` with their options and effects |
+| `map decide <id> <choice> --by <who>` | Writes one decision into the mapping file and the ledger as a `mapping_decision` line |
+| `map test <mapping> <files>` | Shows what the mapping loses (below) and runs the expectations in `<mapping>.tests.jsonl` |
+| `capabilities` | The analyses the imported data allow, those it does not, and how to obtain what is missing |
+| `schema records --emit python\|typescript` | A standard-library-only writer for custom harnesses |
+| `recipes acquire <source>` | Steps to get judgments, replicates and labels out of a source |
+
+- **Decisions a person makes.** `map draft` never guesses these (`map decide`
+  accepts these IDs): `item_key` (what one item is, and its `cluster`),
+  `value_semantics`, `value` (which field is the judgment), `output_type`,
+  `value.none` (values with no conclusion, or partial credit), `replicate_kind`
+  (generation or grading), `missing.reason` (system or measurement side) and
+  `positive` (the positive definition and the decision rule). Each lists its
+  options and the effect on the metrics. `map test` and `import` stop while a
+  `DECIDE` remains.
+- **What `map test` shows.**
+
+| Part | Contents |
+|---|---|
+| Coverage | Source rows mapped, made missing, or dropped, and why |
+| Unused paths | Source paths no part of the mapping reads |
+| Key integrity | Duplicate item keys, missing and duplicated replicate numbers, items with no joined label |
+| Values | Distribution of mapped values and values missing from `value_map` |
+| Capabilities | The same list `capabilities` prints |
+| Tests | Agreement with the expectations in `<mapping>.tests.jsonl` |
+
+- **What `capabilities` reports.** For each analysis: available or not, why not,
+  and what to add.
+
+| Missing information | Analyses lost | How to get it |
+|---|---|---|
+| Reference labels | H, F, AUC, d′, agreement, meta-evaluation | Compare mean scores as `score` runs, or import human labels with `--as label` |
+| Replicates | Replicate disagreement, k-run rules | Run each item two or more times (Inspect epochs, promptfoo repeat) |
+| Replicate numbers | Telling replicates apart | Recover them from the order of the same key, or record them |
+| `cluster` | Cluster-level intervals (intervals may be too narrow) | Map a field that names the same document, conversation or object |
+| Grader version | Mixed-grader check, gate | `import --grader` |
+| `input_ref` | Detecting items whose input changed | Map the system-independent input |
+| `occurred_at` | Time-based splits, trends | Map the time the item arose |
+
+- **Values stay private.** `map probe` never prints free-text values (only types
+  and lengths) and never prints secret-like strings. It lists values only for paths
+  with at most 20 distinct short (at most 32 characters) values, so a mapping's
+  `value_map` can be written; `--no-values` suppresses even those. This makes it
+  usable on confidential logs.
+- **Audit.** The mapping file's hash is recorded in the snapshot's provenance and
+  each decision, with who made it, in the ledger. For a converter script,
+  `import --converter` records its hash.
+- **Pinning in a gate.** Approval pins the hash of the mapping or converter that
+  makes the candidate's records, because changing `value_map` (for example mapping
+  partial credit to full credit) changes results even though missing reasons do not
+  matter on a holdout (§8.3).
+- **Not `migrate`.** `evalsig migrate` raises the version of evalsig's own
+  canonical format; it does not map external records (§10.1).
+
+### 5.4 Projects and configuration
+
+A project is a directory with `.evalsig/` (`evalsig init`):
+`config.toml`, `ledger.jsonl` (the agent-side ledger), `objects/` (immutable
+snapshots and bodies), `cache/` (the SQLite working copy), `reports/`, and
+`drafts/` and `splits/` when used. `--project` selects the root.
+
+`config.toml` (D-004) is TOML. Every table rejects unknown keys and suggests the
+closest known one. For hashing, defaults are filled in and the file is
+canonicalized, so equivalent files hash the same. Tables:
+
+| Table | Sets |
+|---|---|
+| `[project]` | `name`, the positive definition `positive`, the decision rule `decision`, per-task overrides in `[project.tasks.<task>]` |
+| `[store]` | `content` (`full`, `hash`, `redact`), `redact_patterns`, `engine` (`sqlite`) |
+| `[stats]` | `level` (0.95), `bootstrap` (2000), `seed` (default 0, recorded in every result), `estimand`, `interval` (`auto`, `wilson`, `clopper_pearson`, `jeffreys`, `bootstrap`) |
+| `[missing]` | `worst`, `best` or `drop` per missing reason |
+| `[reference]` | `mode` (`single`, `majority`, `soft`), `rater_design` (`auto`, `nested`, `crossed`) |
+| `[compare]` | `min_effect` per metric, `validation_warn_after` (20) |
+| `[cost]` | `matrix`, production `prevalence`, `ratio_range` |
+| `[checks]` | Switches for the configurable validity checks |
+| `[[import]]` | Named import blocks for flat tables and harness logs (②) |
+
+Rules are one-key tables: `{ ordinal_at_least = n }`, `{ score_at_least = x }` or
+`{ equals = v }`. `examples/evalsig.toml` shows every table.
+
+The referee never reads `config.toml`. Approval resolves every setting a gate
+depends on and freezes it (§8.3).
+
+## 6. Metrics
+
+`docs/metrics.md` defines every metric and method. `report` presents a plain tier
+first and the signal-detection tier after it.
+
+| Tier | Metrics |
+|---|---|
+| Default | Accuracy, hit rate, false-alarm rate and precision (precision converted to a stated prevalence), or for `score` runs mean score, share at or above a threshold and pass rate, each with an interval; the range when system-side missing values are filled with best and worst; replicate disagreement (generation and grading separately) with a one-sided upper bound; the reference mode, rater design and estimand; for crossed designs the range of values with each rater alone as the reference; results per stratum |
+| Detail | Empirical ROC and AUC (DeLong interval; cluster-aware variance with clusters; bootstrap for soft or weighted references), z-ROC points, calibration (Brier score and reliability bins), feature likelihood ratios, performance and expected cost over k generations, prediction-powered inference with a proxy rater |
+| `compare` | Paired difference with interval, exact McNemar p-value, verdict, transition table; unpaired comparison; confidence sequence; pairwise win rate and position bias |
+| `agree` | Pairwise rater agreement (Cohen's κ, quadratic-weighted κ for ordered levels, Gwet's AC1, positive and negative agreement, Spearman's ρ), rater variability, system and grader agreement with humans under the same rule, ceiling of a soft reference, pairwise-preference agreement and Bradley-Terry ranking |
+| `threshold`, `power`, `trend` | Cost-optimal threshold with cost-ratio sensitivity; required items, minimum detectable difference, pass probability; per-period metrics |
+
+`report` prints d′ and the criterion c in its detail tier, under the
+equal-variance normal assumption it names beside them ([metrics](metrics.md) §2).
+
+### Main decisions
+
+- **Value semantics sets the metrics.** `decision` runs use reference-label
+  metrics; `score` runs use mean score, share at or above a threshold and pass
+  rate.
+- **The counting unit is the item; only the top level is resampled.** Replicates
+  do not add to counts. Intervals resample clusters when items have `cluster`, else
+  items. Replicates, raters and runs are not resampled, because lower levels would
+  count variance twice and widen intervals.
+- **The interval method is `auto`.** Rates in gate conditions and `check` use the
+  exact (Clopper-Pearson) upper or lower bound on the effective number of items,
+  because the bootstrap degenerates at zero events. A displayed rate uses Wilson's two-sided interval when every unit
+  is one item with unit weight and a whole-number contribution, and the cluster
+  bootstrap otherwise (clusters, weights, soft references, replicates). Paired
+  differences of rates use Tango's score interval, AUC uses DeLong, and the rest use
+  the bootstrap. To claim a disagreement rate below 1% with no events takes 299 items
+  by the exact method and 268 by Wilson (`sample-size.md`).
+- **The default estimand is one production run** (`single_shot`). `majority@k`,
+  `any@k` and `all@k` estimate a rule over k generations.
+- **Human labels are treated as variable.** With two or more human raters, the
+  default reference is the share of raters who said positive (`soft`); `single` and
+  `majority` are also available. The rater design (`nested` or `crossed`) is
+  detected from the overlap of raters and items, and raters are not resampled.
+- **System and humans are compared under one rule.** Each rater, grader or run is
+  compared with every human rater but itself and the results are averaged, so the
+  system is not compared with a majority while a human is compared with one person.
+- **The verdict follows the interval and the minimum effect only** (the rule in
+  `crates/evalsig-core/src/paired.rs`, in order): an interval inside ±`min_effect`
+  is `negligible`; an interval below 0 is `worsened`; an interval above 0 is
+  `improved` when the point difference reaches `min_effect` and `negligible`
+  otherwise; anything else is `indistinguishable`; no interval is
+  `insufficient_data`. Run-to-run variation is a diagnostic only.
+- **Reuse of a validation split is counted and warned about, not corrected.**
+  `validation_uses` counts comparisons on the same split and warns after
+  `validation_warn_after`. Error control for adoption belongs to the sealed
+  holdout. When looking repeatedly while data accrue, use the confidence sequence.
+- **Three or more arms.** `compare` takes one baseline and several candidates; it
+  reports Holm-adjusted p-values for the deciding metric and notes that a best
+  candidate's estimate is biased upwards (`selected_after_comparison`).
+- **Random numbers** come from ChaCha20 seeded from the recorded seed, so a result
+  repeats on every platform. Sums run in a fixed order (D-009).
+
+## 7. Validity checks
+
+Measurement errors are stopped by default; the output says why and how to lift the
+check. `gate` accepts no override. `evalsig explain <code>` describes a check and
+`evalsig validate` runs them alone.
+
+| Check (code) | Default | Lifted by |
+|---|---|---|
+| Missing values counted by reason, `n_missing` in every output (`missing_counted`) | Always | Not possible |
+| A missing value with no reason (`unexplained_missing`) | Stop | `--allow-unexplained-missing` |
+| Compared arms used different grader versions (`mixed_grader`) | Stop | `--allow-mixed-grader` |
+| Compared arms cover different items (`unpaired_items`) | Compare on the common items and report `n_unpaired` | No override. A gate refuses a candidate that leaves holdout items out (§8.3) |
+| The same item has a different input body in the arms (`input_changed`) | Leave it out and report `n_input_changed` | `--allow-input-change` |
+| System-side missing rates differ between arms (`missing_rate_differs`) | Warn | |
+| Counting replicates as independent items (`replicates_as_independent`) | Not possible | Not possible |
+| One run mixes output types or level counts (`mixed_output_type`) | Stop | Not possible |
+| All generation replicates of an item have the same output; a cache is suspected (`identical_replicates`) | Warn; a gate stops | |
+| Run-to-run standard deviation exceeds the point difference (`run_variance_exceeds_delta`) | Warn | |
+| A split puts one cluster on both sides (`split_crosses_cluster`) | Stop | Not possible |
+| Humans labelled only some items and `label_inclusion_prob` is unknown (`verification_bias_suspected`) | Warn | |
+| In pairwise comparison the first-shown side wins more; no swapped pairs; a disconnected comparison graph (`position_bias`, `no_swapped_pairs`, `comparison_graph_disconnected`) | Warn | |
+| Adjudicated labels used in agreement (`adjudication_in_agreement`) | Not possible (they are not independent) | Not possible |
+| A gate has fewer paired items than `min_items` (`gate_min_items`) | No decision; exit 4 | Not possible |
+| Conditions not approved, or changed since approval (`conditions_not_approved`) | Stop; exit 3 | Draft again and obtain approval |
+| The holdout budget is spent (`budget_exhausted`) | Stop; exit 2 | Not possible |
+| A holdout item's reference labels come only from models (`model_only_holdout_reference`) | A gate stops | Not possible |
+| Content looks like a secret (`secret_in_content`) | Warn | `--fail-on-secret` stops instead |
+| Reference labels come from a model (`model_derived_reference`) | Warn; stated at the top of the report | |
+| A latent reference with fewer than three raters per item (`latent_reference_unidentified`) | Registered; the `latent` reference is not available (§15) | |
+
+The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_versions`,
+`fail_on_unexplained_missing`, `warn_missing_rate_differs`,
+`warn_identical_replicates`, `warn_run_variance_exceeds_delta`).
+
+## 8. Experiment procedure
+
+### 8.0 Threat model (what the referee protects)
+
+- **Assumptions.** The agent can run any command in its own environment
+  (`.evalsig/`, the configuration, the source data files, git history) and writes
+  the candidate's records itself. The referee runs with other privileges and holds
+  the secret key, the sealed holdout labels and its own ledger. The agent never
+  holds the key.
+- **What the referee trusts.** The conditions as it resolved and pinned them at
+  approval (§8.3), its own ledger and the sealed labels. Everything else (the
+  candidate's records, the agent-side ledger, the project configuration, source
+  files) is a claim, and the referee checks it.
+- **Protects.** Each item below has a test in
+  `crates/evalsig-cli/tests/referee_paths.rs` unless noted; [`referee.md`](referee.md)
+  gives the mechanism and test of each.
+  - Holdout labels never enter the agent's environment (§8.2).
+  - Passing by leaving items out of the candidate's records, or by marking
+    judgments missing (full coverage; every missing judgment counts as the worst).
+  - Passing by rewriting item attributes (approval pins them by hash).
+  - Passing by rewriting the configuration: positive definition, missing handling,
+    level, seed (approval resolves and pins them).
+  - Passing by rewriting the mapping (approval pins the mapping's hash).
+  - Passing with another grader (the candidate's `run.grader` must match).
+  - Resetting the budget by rewriting the conditions (the budget belongs to the
+    sealed holdout).
+  - Inferring labels from "too few items" or from warnings (`min_items` counts
+    label-independent items; label-dependent warnings stay in the referee ledger).
+  - A forged pass (people read only the referee's results and ledger).
+- **Does not protect.**
+  - Alteration of the grader. The version check stops mix-ups; a referee that
+    does not run the grader cannot stop a changed one.
+  - Hiding holdout results of `score` runs. The grader's output is the result, so
+    the agent sees its own scores. See §17.
+  - Model-derived reference labels. They can be regenerated from the inputs, so
+    sealing protects nothing; a gate stops on such items.
+  - Selecting replicates: keeping only the favourable ones among many.
+  - Fitting the validation split. Its labels are in the agent's environment;
+    counting uses and warning are self-discipline, not a guard.
+  - Tampering with the agent-side ledger. It is evidence, not proof.
+
+### 8.1 Splitting (`split`)
+
+- **Two levels.** `split --holdout` cuts the holdout and, with `seal`, is the
+  referee's operation; the agent cannot run it. `split` divides the remaining items
+  into `dev` and `validation` with the agent's authority, since validation labels are
+  already in its environment (D-022).
+- **Unit.** Whole clusters (`item.cluster`, else the item), so items of one document
+  never land on both sides. A user assignment that splits a cluster is refused
+  (`split_crosses_cluster`).
+- **Methods.** `time` (the latest clusters, by their earliest `occurred_at`, go to
+  the later part), `random` (seeded, optionally stratified by a named stratum) and
+  an assignment file (`assign`, agent-side only). The default is `time` when every
+  item has `occurred_at`, else `random`. The default validation share is 0.3 and
+  the default holdout share 0.2.
+- **Order with a referee.** The referee cuts the holdout first and hands the agent
+  `remaining.json` (`evalsig.remaining/1`: the holdout's hash and the remaining
+  item IDs, never labels). `split --within remaining.json` splits only those items
+  and refuses an assignment or item outside them. Without a referee, `split` uses
+  all items and says no holdout is excluded.
+- **Records.** A split is named by the hash of each part's sorted item IDs. The
+  referee's split goes into the referee ledger with the holdout's hash, method and
+  seed, and writes `holdouts/<hash>.json` in the referee home. The agent's split
+  goes into the agent-side ledger and `splits/<hash>.json`; `splits` lists them
+  and `compare --split validation` restricts a comparison to the latest split's
+  validation items. A re-cut holdout is a new holdout with a new budget.
+
+### 8.2 Sealing (`seal`)
+
+- **Requirement.** Holdout reference labels are never in the agent's environment.
+  The referee imports the labelled data, cuts the holdout and seals it; the agent
+  receives item IDs only. `seal` refuses when any stored agent-side snapshot, even
+  a superseded one, holds a label of a holdout item
+  (`holdout_labels_in_agent`). Removing the original label files and git history
+  from the agent's checkout is the operator's part ([`referee.md`](referee.md)).
+- **Encryption.** The holdout's labels, every revision, are encrypted as an age v1
+  file to the referee's X25519 recipient and stored under `sealed/` in the referee
+  home. They decrypt with the standard `age` or `rage` tools (D-013). A gate decrypts
+  them in memory; plaintext labels are never written to the working store.
+- **Where it works.** Sealing works when reference labels exist independently of the
+  judgment and the agent cannot reproduce them. Items whose references are only from
+  models stop a gate; `score` runs have nothing to hide (§8.0).
+- **Revisions.** The referee revises holdout labels and seals again; a gate reads only
+  the sealed set, never snapshot revisions. A new seal makes earlier approvals stale
+  (the gate refuses until the referee approves again, and the budget stays with the
+  holdout). The ledger line for a revised holdout label keeps only hashes.
+- **Key location.** Outside the agent's authority (§8.5).
+
+### 8.3 Preregistration and gate (`preregister`, `gate`)
+
+- **Writing conditions.** `gate.toml` (`crates/evalsig-cli/schema/gate.schema.json`,
+  example `examples/gate.toml`) holds the name and hypothesis, the baseline and
+  candidate (the candidate may be `*`, meaning whatever the agent submits), the
+  grader the candidate must have (`[grader]`, required), the estimand, the number of
+  generation replicates, the reference mode, `min_items` (required), the `[holdout]`
+  budget, and a list of `[[conditions]]`. A condition names a metric, a rule, a value,
+  `sided` (`one` or `two`, required), an optional `min_effect`, and a level (default
+  0.95). The interval method must be `auto`.
+- **Preregistration has two steps.**
+  - `preregister --draft gate.toml` can be run by an AI or a person. It checks the
+    file against the schema, names the conditions by the hash of their canonical form,
+    writes the draft under `.evalsig/drafts/` and appends `preregister_draft` to the
+    agent-side ledger. In agent mode it needs `--yes`.
+  - `preregister approve <draft-hash> --holdout <holdout-hash>` works only with the
+    referee's authority (§8.5). It:
+    - checks `min_items` against the holdout's size;
+    - resolves every setting the draft leaves open: positive definition, decision
+      rule, estimand, level, the per-submission level, bootstrap count (raised to what
+      the strictest condition needs), reference mode and rater design, output type,
+      levels, value semantics and task, with all missing values the worst;
+    - pins by hash the baseline run's records, the split and seal ledger lines, the
+      holdout, the holdout items' attributes (weight, cluster, strata,
+      `label_inclusion_prob`, `input_ref`) and, when given, the mapping or converter;
+    - derives each submission's seed from the approval and the candidate's records;
+    - shows the probability of passing if the hypothesis is true (when the first
+      condition is a difference rule with a `min_effect`), warning below 0.5, the
+      holdout's accesses so far and the count of holdout labels by source;
+    - writes `approved/<hash>.toml` in the referee home and appends
+      `preregister_approve` to the referee ledger. `gate` reads only this copy, and
+      refuses it if its hash no longer matches.
+- **Why an AI does not approve.** If the side that makes the candidate also decides what
+  passes, it can register lenient conditions, re-register after a failure, or register
+  many and report the ones that pass. The ledger's actor is self-declared, so approval
+  is separated by authority.
+- **Rules.** Six rules, each reading an interval or a verdict and never a point value
+  alone (`crates/evalsig-core/src/gate.rs`): `lower_bound_at_least` and
+  `upper_bound_at_most` on the candidate's value; `delta_lower_bound_at_least` and
+  `delta_upper_bound_at_most` on the candidate-minus-baseline difference;
+  `not_worse_than` (non-inferiority: the difference's lower bound is at least a negative
+  margin); and `pass` for a verdict metric. For the two difference rules with a
+  `min_effect`, a point difference smaller than it does not pass. No gate can use `pass`
+  yet (§15).
+- **Several conditions.** All must hold. This is an intersection-union test, so the
+  overall error rate does not exceed any condition's level and no further correction is
+  needed.
+- **Missing rate.** The metric `missing_rate` bounds the share of missing judgments; on a
+  holdout every missing judgment counts, whatever its reason.
+- **Checks the referee makes on a submission.** In this order, with `gate` accepting no
+  overrides:
+
+| Check | Result |
+|---|---|
+| The approved copy exists and still hashes to its name; the referee's state (seal, holdout items, baseline) is still what was approved | A missing copy is a usage error (64); a changed copy or changed state is exit 3. No budget is spent |
+| The candidate's records are valid `records/1` | Otherwise exit 3 |
+| The same records and run were judged before | The earlier answer is returned and no budget is spent |
+| The records cover every holdout item | Otherwise exit 3 (`incomplete_coverage`). Coverage is checked before any label is read and spends no budget; an absent item is never scored |
+| The budget is spent | Exit 2 |
+| *From here every outcome spends one submission and writes a `holdout_access` and a `gate` line* | |
+| `run.grader` (id, version and, if approved, config hash), output type and levels, value semantics, task, the mapping hash the candidate reports, and the approved number of generation replicates match the approval | Otherwise exit 3 |
+| All generation replicates of an item are identical | Exit 5 (`blocked`) |
+| A holdout item's references come only from models | Exit 5 |
+| Fewer paired items than `min_items`, counted without reference labels | Exit 4 |
+| Each condition | Pass (0) or fail (1) |
+
+  The mapping hash is the candidate's own claim, so that check stops mix-ups rather than
+  lies.
+- **What the answer carries.** §8.4.
+
+### 8.4 Reusing the holdout
+
+- **Budget.** `holdout.budget` (default 5) is the number of submissions. It is counted
+  per sealed holdout in the referee ledger, survives rewriting and re-approving the
+  conditions, and counts every submission that passes the coverage check, whatever its
+  exit code. Resubmitting the same candidate is free.
+- **Error control across submissions.** Each submission is judged at level 1 − α/B
+  (Bonferroni, α = 1 − level, B = budget; one-sided bounds use the matching end of the
+  two-sided interval), so a candidate with no real effect passes at most once in the
+  whole budget with probability at most α. Judging each at α would let that probability
+  reach 64% over 20 independent submissions. The bound loosens to the extent that the
+  agent chooses its next candidate from earlier answers, which is why the answer is kept
+  small.
+- **Returned.** The verdict (`pass`, `fail` or a stop), each condition's pass or fail
+  with its metric, rule and approved threshold, and the budget (total, used, remaining).
+  The full result stays in the referee's `results/` and ledger.
+- **Not returned.** Intervals, measured values, item results, and warnings that depend on
+  labels (kept in the referee ledger).
+- **Limits.** The guarantee assumes the holdout is an independent sample from production
+  and that each test meets its nominal level (`bootstrap` is raised at approval for
+  that). Outputs of a few hundred items give only a weak protection against adaptive use;
+  the budget, the α/B level and the withheld values carry it. When the distribution
+  drifts, read the result as a guide.
+- **The reuse guard.** `[holdout]` accepts `reuse_guard`, `ladder_k` and `ladder_step`
+  for a rounding scheme that would return a value only when a candidate sets a new best.
+  A gate does not act on them yet (§15).
+
+### 8.5 Deployment
+
+```
+ agent's environment (no secret key)               referee (other OS user / CI / other host)
+┌──────────────────────────────────────┐        ┌───────────────────────────────────┐
+│ evalsig report / compare (dev, val)  │        │ evalsig gate serve  (or gate)     │
+│ evalsig gate submit  ────────────────┼───────▶│  - age secret key                 │
+│   (the candidate's records only)     │ verdict│  - referee ledger (budget,        │
+│ agent-side ledger (import, report,   │◀───────┼    approvals, splits, seals)       │
+│   compare, draft)                    │        │  - sealed holdout labels          │
+└──────────────────────────────────────┘        │  - results (what people read)     │
+                                                └───────────────────────────────────┘
+```
+
+- **Two ledgers.** The referee ledger (approvals, splits, seals, gates, holdout accesses,
+  holdout exclusions and label revisions) and the agent-side ledger (imports, splits,
+  reports, comparisons, drafts, mapping decisions, exclusions) are separate chains (D-007).
+  Each `gate` line copies the head of the agent-side ledger as submitted. An anchor
+  (§9) is placed by the referee or a person.
+- **People read only the referee's records.** The agent relays the verdict, and the
+  agent-side ledger can be rewritten. `gate serve` writes each result to a path the
+  referee owns, and in CI the job posts the result. A verdict relayed by the agent is not
+  evidence.
+- **The referee's home** is a plain directory named by `--referee` or `EVALSIG_REFEREE`
+  (`evalsig referee init` creates it with an age identity, the recipient, the referee
+  ledger, and `holdouts/`, `sealed/`, `approved/`, `results/`, `state/` and
+  `exclusions/`). Authority is possession: a referee-only command needs a home whose
+  identity the process can read, and fails with exit 3 (`referee_only`) otherwise
+  (D-014).
+- **In CI**, the agent only adds its candidate's records to a pull request; a job that
+  holds the secret key runs `gate` and posts the result. This holds only when the
+  workflow and the approved hash come from the base branch, the referee's home lives
+  where a pull request cannot write, the secret is protected by an environment, and fork
+  pull requests get no secret. See `examples/ci/` and [`referee.md`](referee.md).
+- **On one host**, run `evalsig gate serve` as another OS user that owns the key and the
+  home. `gate serve` listens on a Unix socket in the home and, when asked, on token HTTP
+  at 127.0.0.1; `gate submit` is the client. A submission is at most 64 MiB. Where
+  Unix sockets do not exist, `gate serve` requires the HTTP listener. `gate submit`
+  speaks plain HTTP and accepts only loopback addresses; reach a remote referee through
+  a tunnel.
+- **Same privileges.** If the referee runs with the agent's privileges, or its identity
+  is readable by group or others, or its home lies inside the project directory, the
+  seal protects nothing. `gate` then warns (`seal_void`) and records it in its ledger
+  line.
+- **Misuse of the evaluation.** Agents have been reported to rewrite graders and tests.
+  Besides separating authority, `gate` checks that the candidate's `run.grader` matches
+  the approval. That stops mix-ups; changing the grader itself is out of reach unless
+  the referee runs the grader (§8.0).
+
+## 9. Storage and audit
+
+[`audit.md`](audit.md) has the details.
+
+- **Source of truth.** Canonical JSONL snapshots (records in key order, canonical bytes
+  per RFC 8785 after Unicode NFC, hashed with BLAKE3 as `blake3:<hex>`), bodies stored as
+  immutable objects named by the hash of their content, and append-only hash-chained
+  ledgers (§8.5). `sha256:` references are also accepted when reading (D-005, D-007).
+- **Working store.** A SQLite database (`.evalsig/cache/evalsig.db`, bundled SQLite) with
+  STRICT tables, triggers that refuse UPDATE and DELETE, and WAL mode so the dashboard can
+  read while the CLI writes. Nothing hashed or verified reads it; `evalsig rebuild`
+  recreates it from the snapshots (D-006).
+- **Large analysis.** `evalsig export --to parquet|csv|jsonl --out <dir>` writes one
+  table per record type for tools such as DuckDB, plus per-item report rows on request.
+  Exports are derived; verification always runs on the snapshots (D-025).
+- **Content.** Bodies (inputs, outputs, grader rationales) are named by records through
+  the hash of the original body, whatever `store.content` is: `full` stores it, `hash`
+  stores nothing, `redact` stores it with `redact_patterns` matches replaced by
+  `[redacted]` (also in `item.attrs`, `label.reason`, `missing.detail` and stratum
+  values). `evalsig purge` deletes a body and the items' free-text fields, through
+  replacement snapshots and a ledger line. `evalsig exclude` leaves items out of every
+  analysis with a reason code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`,
+  `other`), likewise through replacement snapshots; the referee excludes holdout items
+  (D-024, D-027).
+- **Recomputation.** `evalsig verify <report>` recomputes a saved result from its
+  snapshots and compares output hashes. Numbers are rounded to ten decimal places before
+  hashing.
+- **Verification from other languages.** The canonicalization and hashing vectors in
+  `tests/fixtures/canonicalization-vectors.json` are shared with the Python reference
+  `scripts/evalsig_canon.py`, and `scripts/verify_store.py` checks a store's ledger chain
+  and snapshot hashes with the standard library only.
+- **Anchors.** `evalsig ledger anchor` prints a ledger's head hash for the referee or a
+  person to record outside the ledger (a git commit, a CI log, a pull request body). An
+  anchor detects truncation and a rebuilt chain, which the chain alone cannot. The
+  agent-side ledger is evidence, not proof.
+- **Concurrent appends.** Appends take an exclusive file lock. `ledger verify` checks the
+  chain. `evalsig migrate` rewrites snapshots from an earlier record format as new
+  snapshots with a ledger line and keeps the originals.
+
+## 10. CLI
+
+[`cli.md`](cli.md) lists every command and option.
+
+### 10.1 Subcommands
+
+| Command | Does |
+|---|---|
+| `init` | Create `.evalsig/` and a commented configuration |
+| `import` | Read records into a snapshot (adapters `records`, `csv`, `inspect`, `promptfoo`; `--mapping`; `--from` for a configuration block; `--converter` records a script's hash) |
+| `validate` | Run the validity checks alone, on a records file or the imported data |
+| `map probe`, `map draft`, `map decide`, `map test` | Onboard records of an unknown shape (§5.3) |
+| `capabilities` | The analyses the data allow and what to add |
+| `runs`, `items`, `splits` | List imported runs, items and recorded splits |
+| `report` | The metrics of one run (§6) |
+| `compare` | Paired comparison of a baseline with one or more candidates, or unpaired; confidence sequence; per-item rows; pairwise win rate and position bias when preference records exist |
+| `trend` | Metrics per day, week or month against a baseline period; `drifted` or `stable` |
+| `agree` | Rater agreement and variability, system and grader agreement with humans, pairwise-preference agreement |
+| `power` | Required items, minimum detectable difference, pass probability of a gate |
+| `threshold` | Cost-optimal decision threshold and cost-ratio sensitivity |
+| `check` | Absolute criteria with intervals, not preregistered (D-021) |
+| `split`, `seal` | Dev and validation split (agent authority); holdout cut and seal (referee authority) (§8.1, §8.2) |
+| `exclude` | Leave items out of every analysis (holdout items: the referee) |
+| `referee init` | Create a referee home |
+| `preregister`, `gate` | Draft, approve and show conditions; judge a candidate; `gate serve` and `gate submit` (§8.3, §8.5) |
+| `ledger` | Show, verify or anchor a ledger |
+| `verify` | Recompute a saved result |
+| `rebuild` | Recreate the working store from the snapshots |
+| `migrate` | Raise the record format of snapshots |
+| `export` | Write Parquet, CSV or canonical JSONL |
+| `purge` | Remove a body and the free-text fields that name it |
+| `dashboard` | Serve the local dashboard (§11) |
+| `help --json`, `explain`, `schema`, `recipes`, `version` | Self-description: the command definitions, the meaning of terms, metrics, verdicts, checks and exit codes, JSON Schemas, task recipes (§12.3) |
+| `skill install`, `skill check`, `agent-guide` | Agent Skill, `AGENTS.md` snippet and permission template (§12.3) |
+
+### 10.2 Output and exit codes
+
+- **Formats.** `--format json|md|junit|text|jsonl|html`; the default is `text`. `jsonl`
+  prints the per-item rows of `compare --items` and nothing else (D-023). `html` is one
+  self-contained page (§11). `json` carries a schema version such as `evalsig.report/1`.
+- **Compatibility.** Within a schema version, adding a field is compatible; changing the
+  meaning of a field, removing a field or adding a verdict code raises the version.
+  Consumers treat an unknown verdict code as uninterpreted and quote it.
+- **Envelope.** Every JSON output has the same shape: `schema`, `ok` (the command ran to
+  the end; not a pass), `verdict` (`code` and `text`), `results`, `warnings`, `next`,
+  `provenance` and `truncated`. Errors are `{"error": {"code", "message", "hint"}}` on
+  standard error (D-008; [`agent-interface.md`](agent-interface.md)).
+- **Verdict codes.** `pass`, `fail`, `improved`, `negligible`, `worsened`,
+  `indistinguishable`, `drifted`, `stable`, `human_parity`, `below_human`,
+  `insufficient_data`, `blocked`, `needs_decisions`, `budget_exhausted`. A verdict follows
+  only formulas and configuration.
+- **Exit codes.**
+
+| Code | Meaning |
+|---|---|
+| 0 | Success, or the gate or check passed |
+| 1 | The gate or check failed |
+| 2 | The holdout budget is exhausted |
+| 3 | Conditions are invalid or do not match the approval, or the candidate failed the referee's checks |
+| 4 | Too few items to decide |
+| 5 | Stopped by a validity check |
+| 64 | Usage error |
+
+## 11. Dashboard
+
+`evalsig dashboard` serves read-only pages of the numbers the CLI computes (D-019).
+
+- **Launch.** It listens on 127.0.0.1 only (default port 7777). To defeat DNS rebinding
+  it accepts a request only when the Host header is `127.0.0.1:<port>` or
+  `localhost:<port>` and the URL starts with a token made at each launch (other
+  requests get 421 or 403). It answers GET only and sets a strict Content-Security-Policy
+  (`default-src 'none'`). It reads the snapshots and never writes.
+- **Rendering.** Pages and charts are rendered on the server from the CLI's result JSON:
+  HTML through an escaping writer, charts as SVG. The displayed numbers therefore equal
+  the CLI's, and the browser computes nothing and loads nothing from outside. No
+  JavaScript is used; folding uses `<details>`.
+- **Static HTML.** `--format html` on a command writes one page with the verdict, the
+  warnings, the charts the result allows and the whole envelope embedded as
+  `<script type="application/json">`. It loads nothing from a network.
+- **Screens.** Overview (runs with their metrics and intervals), Comparison (difference
+  intervals, verdict, transition table, paired item values), Trend, Reproducibility
+  (replicate disagreement, performance and cost by k), Reference quality (same-rule
+  agreement, rater pairs, rater variability) and Discrimination (ROC, z-ROC,
+  calibration). Each chart has a collapsed "How to read" note built from the glossary
+  and metrics definitions, and validity-check warnings appear on the screens.
+
+## 12. Integration
+
+### 12.1 Entry points
+
+1. Canonical `records/1` (JSONL; CSV whose columns are record fields), with a published
+   JSON Schema.
+2. A declarative mapping (§5.3).
+3. Inspect logs.
+4. promptfoo JSON and its local database.
+
+### 12.2 Outputs
+
+- JSON (the envelope), Markdown (for pull-request comments and GitHub step summaries),
+  JUnit XML (the pass or fail display of CI), Parquet, CSV and canonical JSONL through
+  `export`, and exit codes. `--format json` always gives everything; only agent mode
+  (§12.3) cuts output.
+- Experiment trackers get the JSON; evalsig has no connector.
+- Python reads `--format json` from a subprocess. Per-item results come from
+  `compare --items --format jsonl` and `export`.
+
+### 12.3 Interface for AI agents
+
+[`agent-interface.md`](agent-interface.md) has the details (D-018).
+
+- **The CLI is the interface.** Agent mode is on with `--agent`, or when `AI_AGENT` is set
+  and not empty, output is not a terminal and no `--format` is given; `--no-agent` or
+  `EVALSIG_AGENT_MODE=0` turns it off. It prints the common envelope with size limits
+  (rows per list, string length, total size), omits text from the evaluated data unless
+  asked (then it goes in `untrusted_content`) and never asks a question. It changes the
+  shape of the output only; exit codes, verdicts, ledger lines and every referee check are
+  the same.
+- **evalsig decides how to read the statistics.** The `verdict.code` follows formulas and
+  configuration; an agent quotes it rather than re-reading numbers.
+- **How the usage is taught.** The binary itself (`help --json`, `explain`, `schema`,
+  `recipes`), an Agent Skill (`skill install`, with the improvement loop and the
+  unknown-shape onboarding as separate reference files) and an `AGENTS.md` snippet
+  (`agent-guide --snippet`). The Skill and the snippet are generated from the same text
+  embedded in the binary.
+- **No MCP server.** MCP is not a way to separate authority; the `gate serve` referee is
+  what protects the holdout (§8.5).
+- **Guarding the loop.** The protection is the separation of authority (§8.0, §8.5). The
+  agent permission template (`agent-guide --settings`) and the Skill's instructions are
+  aids.
+- **Evaluating the interface.** `evals/agent-interface/` measures whether agents quote
+  verdicts correctly and how often they overclaim, with evalsig's own `pass_rate`.
+
+## 13. Implementation
+
+### 13.1 Crates and untrusted input
+
+| Crate | Contents | Main dependencies |
+|---|---|---|
+| `evalsig-core` | Data types, metrics, validity checks. Pure computation, no I/O | statrs, rand_chacha |
+| `evalsig-store` | Objects, ledgers, SQLite working store, canonicalization and hashing, sealing | rusqlite (bundled), blake3, ruzstd, age |
+| `evalsig-adapters` | Ingestion adapters, probe, draft and test of mappings | zip (Deflate only), ruzstd |
+| `evalsig-cli` | The `evalsig` binary, agent output, generated help and Skill | clap, jsonschema, parquet |
+| `evalsig-dashboard` | Local web server and SVG rendering | standard library, serde_json |
+
+Dependencies point inwards (D-001). No C code is built into the binary except the
+bundled SQLite (D-006, D-010): Zstandard entries of an Inspect log are taken raw from
+the zip and decompressed with `ruzstd`.
+
+- **Limits on untrusted files.** Readers stop at a limit, so an archive bomb costs at
+  most the limit in memory. Defaults: 1 GiB for one file or decompressed archive entry
+  (`--max-bytes` changes it), 100,000 entries per archive, and 64 levels of JSON nesting
+  (checked before parsing, per line for JSONL). Archive methods other than Deflate and
+  Zstandard are refused. The records an adapter produces are validated like any import.
+- **Fuzzing.** `fuzz/` holds cargo-fuzz targets for the zip, Zstandard and JSON readers
+  (nightly toolchain; its own workspace).
+- **Numerics.** The normal and Beta functions come from statrs and match the reference
+  values to 1e-9; ChaCha20 is seeded with `seed_from_u64` and Lemire's unbiased integer
+  method (D-009).
+- **`evalsig-core` is a separate library**, so other Rust tools can embed the statistics.
+
+### 13.2 Tests
+
+- **Reference values.** `tests/fixtures/reference-values.json` and the
+  `reference_*.rs` tests (absolute 1e-9).
+- **Canonicalization vectors.** Rust and the Python reference produce the same hashes.
+- **Properties** (proptest): a monotone transformation of scores leaves AUC unchanged;
+  swapping positive and negative flips the sign of d′; scaling the item count leaves raw
+  rates unchanged and narrows intervals.
+- **Coverage simulation.** Intervals contain the true value 93–97% of the time at the
+  reported level and at the gate's per-submission level.
+- **Referee path tests.** Each path in §8.0 that the referee protects is tested in
+  `crates/evalsig-cli/tests/referee_paths.rs`: leaving items out, manipulating missing
+  reasons, rewriting attributes, configuration or mapping, re-approving to restore a
+  budget, resubmitting a candidate, the `min_items` boundary, a grader mismatch, and a
+  forged pass. `scripts/gate_two_users.sh` runs `gate serve` between two OS users.
+- **End to end.** The examples are imported and their report JSON is checked against fixed
+  values; the three kinds of ledger tampering are detected.
+- **Adapters.** Real Inspect and promptfoo outputs (`tests/fixtures/harness/`) are the
+  inputs; `map probe` recognises known formats by fingerprint, `map draft` leaves the
+  decisions of §5.3 as `DECIDE`, and `examples/mapping.toml` yields the same records as
+  `convert_runlog.py`.
+
+## 14. Distribution and licence
+
+- **Channels** (D-020). `cargo install --locked evalsig-cli` (MSRV is the workspace
+  `rust-version`); GitHub Releases with prebuilt binaries for macOS and Linux (aarch64 and
+  x86_64), a SHA-256 checksum per archive, a shell installer and a CycloneDX SBOM; a
+  Homebrew formula that builds from the release source (`packaging/homebrew/`); and a
+  PyPI wheel that contains the binary (maturin, `crates/evalsig-cli/pyproject.toml`).
+- **Provenance.** Releases are built by cargo-dist from a tag on GitHub Actions, and every
+  archive carries a GitHub artifact attestation. A referee binary should have its origin
+  checked before use (`gh attestation verify`). CI runs `cargo audit` and `cargo deny`.
+- **Licence.** `MIT OR Apache-2.0` (D-002). English is the canonical language of all
+  documentation; the README and quick start also exist in Japanese.
+- **Platforms.** macOS and Linux. The code builds `gate serve` without Unix sockets on
+  other targets, where it serves token HTTP only; no Windows binaries are released.
+
+## 15. Pending decisions
+
+Three decisions are `Proposed`; code that depends on them has not landed.
+
+| Decision | What happens now |
+|---|---|
+| D-015 Reuse guard defaults (step factor, budget) | The budget (default 5) and the α/B level apply. A gate returns the verdict, each condition's pass or fail and the budget left, never a value; approval fixes no step and no first best, and `reuse_guard`, `ladder_k` and `ladder_step` are accepted in `gate.toml` but unused |
+| D-016 Whether the `latent` reference (Dawid-Skene) ships | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
+| D-017 Parameters of the alternative annotator test | `agree` has no parity test, the verdicts `human_parity` and `below_human` are reserved, and a condition on the metric `human_parity` is refused when drafted |
+
+## 16. Security
+
+- **Reporting.** See [`../SECURITY.md`](../SECURITY.md). A way to bypass the referee
+  (reading sealed labels, replaying a gate, restoring a spent budget, forging a ledger
+  line) or to crash or exhaust the importer with a crafted file is a security issue.
+- **The referee** (§8.0, [`referee.md`](referee.md)). Authority is possession of the age
+  identity; holdout labels are age files that standard tools can open; decisions use only
+  the pinned approval, the referee ledger and the sealed labels.
+- **Untrusted files** (§13.1). Size, entry and nesting limits, a Rust-only archive path,
+  cargo-fuzz targets, and a records validator that rejects unknown fields and duplicate
+  keys.
+- **Untrusted text.** Text under evaluation is data. Agent mode withholds it by default
+  and, when it is returned, puts it in `untrusted_content`. `map probe` never prints free
+  text or secret-like values.
+- **Secrets in content.** Content that looks like a key or token (AWS, GitHub, Slack,
+  Stripe, Google, generic API keys and private keys) raises `secret_in_content`;
+  `redact_patterns` and `purge` remove text.
+- **The dashboard** (§11). Loopback only, per-launch token, Host check, GET only, no
+  external requests.
+- **Supply chain** (§14). Locked dependencies, `cargo deny` and `cargo audit` in CI,
+  attested release archives, SBOM.
+
+## 17. Out of scope for v1
+
+- Annotator interfaces: a dashboard screen to relabel items (revisions would be
+  `label_revision` ledger lines).
+- Adapters for OpenTelemetry `gen_ai.evaluation.result`, Langfuse, Phoenix and Opik
+  APIs.
+- Grading on the referee's side for `score` runs (the referee running the grader, or
+  sealing the target and rubric), and a sealed validation split with a budgeted
+  referee-side `compare`.
+- Signed receipts from the referee (minisign or Sigstore), and signed ledgers.
+- A Thresholdout-type guard for large holdouts.
+- An MCP server, which would be generated from the same command definitions as
+  `help --json`.
+- Python bindings (PyO3).
+- Intraclass correlation, shrinkage of likelihood ratios, and a cost-versus-latency
+  chart.
+- Prebuilt Windows binaries.

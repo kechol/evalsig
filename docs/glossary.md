@@ -55,8 +55,8 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | precision | `precision` | Share of positive judgments that were actually positive. Depends on prevalence |
 | precision at prevalence | `precision_at_prevalence` | Precision recomputed from the hit and false-alarm rates for a stated prevalence, when the sample's positive share differs from production's |
 | accuracy | `accuracy` | Share of items on which the system's judgment equals the reference label. With a soft reference, the expected share |
-| sensitivity index | `dprime` (d′) | How well positives and negatives are told apart. d′ = z(H) − z(F) |
-| criterion | `criterion` (c) | Where the system starts saying "positive". c = −(z(H) + z(F))/2. Negative means liberal. Distinct from gate `conditions` |
+| sensitivity index | `dprime` (d′) | How well positives and negatives are told apart. d′ = z(H′) − z(F′), with the log-linear corrected rates H′ = (hits + ½)/(positives + 1) and F′ likewise; assumes equal-variance normal distributions |
+| criterion | `criterion` (c) | Where the system starts saying "positive". c = −(z(H′) + z(F′))/2. Negative means liberal. Distinct from gate `conditions` |
 | calibration | `calibration` | How well scores read as probabilities match outcomes. Brier score and reliability diagram |
 | ROC curve | `roc` | The (F, H) path as the decision threshold moves |
 | AUC | `auc` | Area under the ROC curve. The probability that a random positive is scored above a random negative |
@@ -118,7 +118,10 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | design effect | `cluster_size`, `icc` | The factor 1 + (m̄ − 1)ρ by which clusters of mean size m̄ and intra-cluster correlation ρ multiply the items needed |
 | multiplicity correction | — | Controlling false positives when testing many metrics, strata or candidates at once (Holm) |
 | regression to the mean | — | Picking what looked bad and fixing it makes it look better next time even without a real change |
-| effective sample size | `n_eff` | The loss of sample size under weights. Kish: (Σw)²/Σw² |
+| effective sample size | `n_eff` | The loss of sample size under weights and clusters. Kish: (Σw)²/Σw², taken over clusters' summed weights in gate and check bounds |
+| baseline / candidate | `baseline`, `candidate` | The arm a comparison or gate measures against, and the arm being judged |
+| k-curve | `k_curve` | A metric and its cost as the number of replicates k combined by the estimand grows |
+| swapped pair | `swapped_pairs` | A pairwise preference judged in both presentation orders; the pair's mean cancels position bias |
 
 ## Experiment procedure and audit
 
@@ -133,10 +136,20 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | threat model | — | What the referee protects and what it does not (specification §8.0) |
 | adaptive overfitting | — | Fitting the holdout by trying repeatedly while looking at results |
 | holdout budget | `budget` | The maximum number of queries to a holdout. Counted per sealed holdout in the referee ledger |
+| per-submission level | `level` | The interval level of one gate condition: one-sided α/B for a budget of B, so B submissions keep the error rate at α |
+| submission | `gate submit` | One candidate's records sent to the referee for a gate decision; each new one spends one unit of budget |
+| coverage | `incomplete_coverage` | Whether a candidate's records judge every holdout item. A candidate that leaves any out is refused without spending budget |
+| approved conditions | `approved/<hash>.toml` | Conditions a person approved, with every setting resolved and the holdout's items and baseline pinned by hash. `gate` reads only these |
+| referee home | `EVALSIG_REFEREE` | The directory, owned by the referee's user, that holds the key, the sealed labels, the approved conditions and the referee ledger |
+| Ladder | `reuse_guard`, `ladder_k`, `ladder_step` | A rule for returning a value only on a new best, rounded to a step, to limit what the holdout leaks. Accepted in conditions; returns nothing until D-015 is settled |
 | preregistration | `preregister` | Recording gate conditions and hypotheses in the ledger before seeing results. Two steps: a draft (`--draft`, by an agent or a human) and approval (`approve`, referee authority only) |
 | gate | `gate` | Deciding pass or fail under preregistered conditions and returning it as the exit code |
 | snapshot | `snapshot` | An immutable copy of imported data. Identified by its content hash |
 | ledger | `ledger` | An append-only record of imports, revisions, splits, gates and other operations. Each line carries the hash of the previous one. There is a referee ledger and an agent-side ledger; only the referee ledger is evidence |
+| hash chain / head | `prev`, `ledger anchor` | Each ledger line names the hash of the line before it (`prev`); the head is the last line's hash, which `ledger anchor` prints for keeping elsewhere |
+| actor | `actor`, `EVALSIG_ACTOR` | Who an operation is recorded as in the ledger: `user:<name>` or `agent:<name>` |
+| object | `objects/` | A stored body (snapshot, provenance, content, result) named by the hash of its bytes |
+| working store | `cache/evalsig.db` | A SQLite copy of the data in force, derived from the snapshots; `rebuild` recreates it. Also called the working copy |
 | spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/1`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
 | content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
@@ -153,4 +166,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | agent mode | `agent_mode` | Output for AI agents: a JSON envelope with a size limit that omits content by default |
 | envelope | `envelope` | The JSON shape shared by all commands (`verdict`, `results`, `warnings`, `next`, `provenance`) |
 | untrusted content | `untrusted_content` | Text under evaluation. Passed as data whose instructions are not followed |
+| withheld content | `content_withheld` | In agent mode, text from the evaluated data left out of `results`, error messages and warnings; `--include-content` returns it in `untrusted_content` |
+| cursor | `--cursor`, `next_cursor` | In agent mode, the first row of each list to show; `truncated.next_cursor` gives the next one |
+| Skill | `skill install` | The instructions for coding agents that ship with the binary, installed into an agent's skills directory and checked against the binary's version |
 | referee | `gate serve` | A process or CI job, under a different authority from the agent, that holds the private key, the holdout labels and its own ledger, and performs split, seal, approval and gating |
