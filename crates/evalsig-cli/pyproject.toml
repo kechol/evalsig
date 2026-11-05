@@ -1,0 +1,25 @@
+# The PyPI wheel: maturin's `bin` binding ships the evalsig binary itself, as uv and
+# ruff do (SPEC §14). `pip install evalsig` puts `evalsig` on the PATH.
+[build-system]
+requires = ["maturin>=1.16,<2"]
+build-backend = "maturin"
+
+[project]
+name = "evalsig"
+description = "Statistics and signal detection theory for the evaluation records of non-deterministic judges"
+readme = "../../README.md"
+license = "MIT OR Apache-2.0"
+requires-python = ">=3.9"
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Environment :: Console",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Repository = "https://github.com/kechol/evalsig"
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"

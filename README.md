@@ -32,6 +32,11 @@ From source, with Rust 1.90 or later (the minimum supported Rust version):
 cargo install --locked evalsig-cli
 ```
 
+The same binary is packaged as a Python wheel (`pip install evalsig` puts
+`evalsig` on the PATH; built with maturin from `crates/evalsig-cli/pyproject.toml`)
+and as a Homebrew formula that builds from the release's source
+(`packaging/homebrew/evalsig.rb`).
+
 Prebuilt binaries for macOS and Linux (aarch64 and x86_64) come with each
 GitHub Release, beside a SHA-256 checksum per archive and a shell installer.
 Every archive carries a GitHub artifact attestation; check where a download
