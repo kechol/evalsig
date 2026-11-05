@@ -43,10 +43,24 @@ pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Json, PromptfooError> {
 }
 
 /// The evaluation in `out.json` form, from the local database: `eval` by ID, or the
-/// most recent. The caller has checked the file's size against the byte limit
-/// (`limits::read_file`), which bounds every stored value.
-pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooError> {
+/// most recent.
+pub fn read_database(
+    path: &Path,
+    eval: Option<&str>,
+    limits: &Limits,
+) -> Result<Json, PromptfooError> {
     let db = |e: rusqlite::Error| PromptfooError::Database(e.to_string());
+    // SQLite reads the write-ahead log beside the file too, so both count against the
+    // byte limit; together they bound every stored value.
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    let size = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+    if size(path) + size(Path::new(&wal)) > limits.max_bytes {
+        return Err(PromptfooError::Database(format!(
+            "the database is larger than {} bytes",
+            limits.max_bytes
+        )));
+    }
     let conn = rusqlite::Connection::open_with_flags(
         path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -60,8 +74,9 @@ pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooE
         .map_err(db)?;
     conn.pragma_update(None, "query_only", true).map_err(db)?;
     // A view could yield rows without end (the ORDER BY below would wait for all of
-    // them), and a generated column can compute values larger than the file: only
-    // plain tables are read.
+    // them), and a generated column or an expression default (always parenthesized in
+    // SQLite's grammar) computes values that need not fit the file: only plain tables
+    // with literal defaults are read.
     for name in ["evals", "eval_results"] {
         let kind: Option<String> = conn
             .query_row(
@@ -76,14 +91,15 @@ pub fn read_database(path: &Path, eval: Option<&str>) -> Result<Json, PromptfooE
         }
         let computed: i64 = conn
             .query_row(
-                "SELECT count(*) FROM pragma_table_xinfo(?1) WHERE hidden <> 0",
+                "SELECT count(*) FROM pragma_table_xinfo(?1) \
+                 WHERE hidden <> 0 OR instr(coalesce(dflt_value, ''), '(') > 0",
                 [name],
                 |r| r.get(0),
             )
             .map_err(db)?;
         if computed > 0 {
             return Err(PromptfooError::Database(format!(
-                "`{name}` has generated columns"
+                "`{name}` has computed columns"
             )));
         }
     }
@@ -433,7 +449,7 @@ mod tests {
             .unwrap();
         }
         drop(conn);
-        let from_db = read_database(&dir, None).unwrap();
+        let from_db = read_database(&dir, None, &Limits::default()).unwrap();
         std::fs::remove_file(&dir).unwrap();
         let a = judgments(&records(&from_db, &mut Recorder::default()).unwrap());
         let b = judgments(&records(&eval, &mut Recorder::default()).unwrap());
@@ -457,7 +473,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let e = read_database(&dir, None).unwrap_err();
+        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
         assert!(
             e.to_string().contains("`eval_results` is not a table"),
             "{e}"
@@ -472,8 +488,26 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let e = read_database(&dir, None).unwrap_err();
+        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
+        assert!(e.to_string().contains("computed columns"), "{e}");
+        let conn = rusqlite::Connection::open(&dir).unwrap();
+        conn.execute_batch(
+            "DROP TABLE eval_results;
+             CREATE TABLE eval_results (eval_id TEXT, test_idx INTEGER, prompt_idx INTEGER,
+               test_case TEXT DEFAULT (hex(zeroblob(1000000000))), prompt TEXT, provider TEXT,
+               response TEXT, grading_result TEXT, named_scores TEXT, error TEXT,
+               failure_reason INTEGER, success INTEGER DEFAULT 0, score REAL);",
+        )
+        .unwrap();
+        drop(conn);
+        let e = read_database(&dir, None, &Limits::default()).unwrap_err();
+        assert!(e.to_string().contains("computed columns"), "{e}");
+        let small = Limits {
+            max_bytes: 1024,
+            ..Limits::default()
+        };
+        let e = read_database(&dir, None, &small).unwrap_err();
         std::fs::remove_file(&dir).unwrap();
-        assert!(e.to_string().contains("generated columns"), "{e}");
+        assert!(e.to_string().contains("larger than 1024 bytes"), "{e}");
     }
 }

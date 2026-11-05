@@ -366,7 +366,8 @@ impl Reader {
                 // A local database (`.db`): the evaluation named by `--arg eval=ID`, or
                 // the most recent; `-o out.json` output otherwise.
                 let eval = if path.extension().is_some_and(|x| x == "db") {
-                    promptfoo::read_database(path, host.arg("eval")).map_err(|e| bad(&e))?
+                    promptfoo::read_database(path, host.arg("eval"), &host.limits)
+                        .map_err(|e| bad(&e))?
                 } else {
                     promptfoo::parse(bytes, &host.limits).map_err(|e| bad(&e))?
                 };
