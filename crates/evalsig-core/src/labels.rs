@@ -12,13 +12,18 @@ use crate::time::{Instant, TimestampError};
 /// The identity of a label across its revisions.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelKey {
+    /// ID of the item that was labelled.
     pub item_id: String,
+    /// ID of the rater who made the label.
     pub rater_id: String,
+    /// The task the label belongs to.
     pub task: String,
+    /// Which blind re-label of the item by this rater it is.
     pub label_replicate: u32,
 }
 
 impl LabelKey {
+    /// The identity of a label.
     pub fn of(label: &Label) -> Self {
         LabelKey {
             item_id: label.item_id.clone(),
@@ -29,10 +34,18 @@ impl LabelKey {
     }
 }
 
+/// Why a revision cannot be added to a label set.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LabelError {
+    /// A different record already exists under this key and version.
     #[error("label {key:?} version {version} already exists with different content")]
-    Conflict { key: LabelKey, version: u32 },
+    Conflict {
+        /// Identity of the label.
+        key: LabelKey,
+        /// The version that already exists.
+        version: u32,
+    },
+    /// The revision's `labeled_at` is not a valid timestamp.
     #[error(transparent)]
     Timestamp(#[from] TimestampError),
 }
@@ -40,7 +53,9 @@ pub enum LabelError {
 /// The labels selected as of an instant.
 #[derive(Debug, Default)]
 pub struct AsOf<'a> {
+    /// The latest revision of each label that existed at the instant.
     pub labels: Vec<&'a Label>,
+    /// Labels without a `labeled_at`, which an as-of selection cannot place.
     pub undated_skipped: usize,
 }
 

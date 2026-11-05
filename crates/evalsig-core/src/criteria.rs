@@ -9,47 +9,72 @@ use crate::rules::Rule;
 /// Sections of `gate.toml` that a check refuses.
 pub const GATE_ONLY: [&str; 5] = ["hypothesis", "split", "compare", "holdout", "budget"];
 
+/// A `check.toml` file: absolute-threshold conditions on one run, without arms or a
+/// referee.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckFile {
+    /// Name of the check.
     pub name: Option<String>,
+    /// Which performance is estimated.
     pub estimand: Option<Estimand>,
+    /// Minimum number of items the check requires.
     pub min_items: Option<u64>,
+    /// Number of generation replicates the check uses.
     pub replicates: Option<u32>,
+    /// Rule that decides which reference values are positive.
     pub positive: Option<Rule>,
+    /// Decision rule: from which judgment value a judgment counts as positive.
     pub decision: Option<Rule>,
+    /// How several human labels become a reference.
     pub reference: Option<Reference>,
+    /// The grader whose judgments the check is about.
     pub grader: Option<GraderSpec>,
+    /// The conditions the run must satisfy; all must hold.
     pub conditions: Vec<Condition>,
 }
 
+/// The grader a check applies to.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraderSpec {
+    /// Identifier of the grader.
     pub id: String,
+    /// Version of the grader; any version when omitted.
     pub version: Option<String>,
 }
 
+/// The absolute rules a check offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AbsoluteRule {
+    /// The interval's lower bound is at least the value.
     LowerBoundAtLeast,
+    /// The interval's upper bound is at most the value.
     UpperBoundAtMost,
 }
 
+/// Whether the interval is one-sided or two-sided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sided {
+    /// One-sided interval.
     One,
+    /// Two-sided interval.
     Two,
 }
 
+/// One condition of a check: a rule applied to a metric.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Condition {
+    /// Name of the metric the condition reads.
     pub metric: String,
+    /// The rule applied to the metric's interval.
     pub rule: AbsoluteRule,
+    /// The threshold the bound is compared with.
     pub value: f64,
+    /// Whether the interval is one-sided or two-sided.
     pub sided: Sided,
     /// `auto`, the only method a check offers.
     #[serde(default)]
@@ -62,20 +87,27 @@ pub struct Condition {
     pub level: Option<f64>,
 }
 
+/// Why a check file is refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CheckError {
+    /// The file contains a section that only `gate.toml` has.
     #[error("{0} belongs to gate.toml; a check has no {0}")]
     GateOnly(&'static str),
+    /// The rule needs arms or a referee, which a check does not have.
     #[error(
         "rule {0:?} needs arms or a referee; a check allows lower_bound_at_least and upper_bound_at_most"
     )]
     GateRule(String),
+    /// `min_effect` was set, but a check's rules are absolute.
     #[error("min_effect applies to gate's difference rules; a check's rules are absolute")]
     MinEffect,
+    /// The interval method is not `auto`.
     #[error("interval {0:?} is not available in a check; use auto")]
     Interval(String),
+    /// The file has no condition.
     #[error("a check needs at least one condition")]
     NoConditions,
+    /// The file is not valid TOML or does not match the schema.
     #[error("{0}")]
     Toml(String),
 }

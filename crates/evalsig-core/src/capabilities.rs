@@ -10,14 +10,20 @@ use crate::records::{Record, ValueSemantics};
 /// An analysis the data cannot support yet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Unavailable {
+    /// Name of the analysis that is not available.
     pub analysis: &'static str,
+    /// What the data lack for it.
     pub missing: &'static str,
+    /// How to obtain what is missing.
     pub how: &'static str,
 }
 
+/// The analyses the data support and the ones they do not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Capabilities {
+    /// Names of the analyses the data support.
     pub available: Vec<&'static str>,
+    /// The analyses the data do not support, each with what would enable it.
     pub unavailable: Vec<Unavailable>,
 }
 

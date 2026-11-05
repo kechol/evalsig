@@ -106,6 +106,7 @@ pub struct Disagreement {
 }
 
 impl Disagreement {
+    /// The disagreement among the replicates of each item; `None` when no item has two.
     pub fn of<T: PartialEq>(items: &[Vec<T>]) -> Option<Disagreement> {
         let per_item: Vec<(f64, bool)> =
             items.iter().filter_map(|r| item_disagreement(r)).collect();

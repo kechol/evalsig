@@ -137,9 +137,11 @@ impl Design {
 /// The rater design of a reference and what follows from it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DesignInfo {
+    /// Whether raters are nested or crossed.
     pub rater_design: Design,
     /// Whether the design was detected from the overlap rather than set.
     pub detected: bool,
+    /// What the reported performance is measured against.
     pub estimand: &'static str,
     /// The raters whose votes form the reference.
     pub voters: usize,

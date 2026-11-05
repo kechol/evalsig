@@ -16,11 +16,14 @@ use crate::records::MissingReason;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Side {
+    /// The system under test failed to produce a judgment.
     System,
+    /// The measurement failed: the grader, the run or the data pipeline.
     Measurement,
 }
 
 impl MissingReason {
+    /// The side that the reason code blames.
     pub fn side(self) -> Side {
         match self {
             MissingReason::Error
@@ -91,6 +94,7 @@ impl MissingPolicy {
         self
     }
 
+    /// How a missing value with this reason is handled.
     pub fn policy(&self, reason: MissingReason) -> Policy {
         if self.distrust_reasons {
             return Policy::Worst;
@@ -118,7 +122,9 @@ pub type Observed<T> = Result<T, MissingReason>;
 pub struct MissingCounts {
     /// Observations entering the denominator, including filled ones.
     pub n_used: u64,
+    /// Missing observations, filled or dropped.
     pub n_missing: u64,
+    /// Missing observations counted per reason.
     pub missing_by_reason: BTreeMap<MissingReason, u64>,
 }
 
@@ -126,11 +132,15 @@ pub struct MissingCounts {
 /// dataset, before any policy applies.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Tally {
+    /// Observations that have a value.
     pub values: u64,
+    /// Observations marked missing.
     pub n_missing: u64,
+    /// Missing observations counted per reason.
     pub missing_by_reason: BTreeMap<MissingReason, u64>,
 }
 
+/// Count the values and the missing markers of the records.
 pub fn tally(records: &[crate::records::Record]) -> Tally {
     use crate::records::Record;
     let mut t = Tally::default();
@@ -161,6 +171,7 @@ pub struct MeanWithMissing {
     /// System-side missing values filled with the best and the worst value, other
     /// reasons handled by the policy. Present only if a system-side value is missing.
     pub bounds: Option<(f64, f64)>,
+    /// Counts of observations used and missing.
     pub counts: MissingCounts,
 }
 

@@ -15,32 +15,51 @@ pub enum Method {
     /// The latest clusters (by their earliest `occurred_at`) go to validation.
     Time,
     /// Clusters shuffled by the seed, within each value of `stratum` when given.
-    Random { seed: u64, stratum: Option<String> },
+    Random {
+        /// Seed of the shuffle.
+        seed: u64,
+        /// Item field whose values are shuffled separately.
+        stratum: Option<String>,
+    },
     /// The user's assignment of each item.
     Assign(BTreeMap<String, Part>),
 }
 
+/// A part of a split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Part {
+    /// The part to look at while fixing.
     Dev,
+    /// The part for deciding.
     Validation,
 }
 
+/// Why a split cannot be made.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SplitError {
+    /// The cluster's items are assigned to both dev and validation.
     #[error("cluster {cluster:?} has items assigned to both dev and validation")]
-    CrossesCluster { cluster: String },
+    CrossesCluster {
+        /// ID of the cluster.
+        cluster: String,
+    },
+    /// The item is not among the items the split may use.
     #[error("item {0:?} is not among the items the split may use (sealed holdout or unknown)")]
     NotAvailable(String),
+    /// The assignment does not place the item.
     #[error("the assignment leaves item {0:?} out")]
     Unassigned(String),
+    /// The item has no `occurred_at`, so a time split cannot place it.
     #[error("item {0:?} has no occurred_at, so a time split cannot place it")]
     Undated(String),
+    /// An `occurred_at` is not a valid timestamp.
     #[error("{0}")]
     Timestamp(String),
+    /// The validation share is not strictly between 0 and 1.
     #[error("the validation share must lie strictly between 0 and 1")]
     Share,
+    /// There are no items to split.
     #[error("there are no items to split")]
     Empty,
 }
@@ -48,7 +67,9 @@ pub enum SplitError {
 /// Item IDs of each part, sorted.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Assignment {
+    /// IDs of the items in dev.
     pub dev: Vec<String>,
+    /// IDs of the items in validation.
     pub validation: Vec<String>,
 }
 

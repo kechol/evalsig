@@ -23,7 +23,9 @@ pub fn psi(x: f64, y: f64) -> f64 {
 /// A score with the weight it carries (1/K_i for one of an item's K_i replicates).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Weighted {
+    /// The score.
     pub score: f64,
+    /// The weight of the score.
     pub weight: f64,
 }
 
@@ -84,8 +86,11 @@ pub fn roc_points(pos: &[Weighted], neg: &[Weighted]) -> Vec<(f64, f64)> {
 /// positive, and its weight.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SoftItem {
+    /// The item's score.
     pub score: f64,
+    /// Share s of raters who call the item positive, in [0, 1].
     pub share: f64,
+    /// The item's weight.
     pub weight: f64,
 }
 
@@ -151,7 +156,9 @@ pub fn auc_soft_interval(
 /// The DeLong estimate for one AUC.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeLong {
+    /// The area under the ROC curve (Mann-Whitney statistic).
     pub auc: f64,
+    /// DeLong variance of the AUC.
     pub variance: f64,
     /// On the logit scale and transformed back; `None` when the AUC is 0 or 1, where
     /// the variance degenerates and a bootstrap is used instead.
@@ -269,13 +276,19 @@ pub fn delong_clustered(pos: &[(f64, usize)], neg: &[(f64, usize)], level: f64) 
 /// The paired DeLong comparison of two scores on the same items.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PairedAuc {
+    /// AUC of score a.
     pub auc_a: f64,
+    /// AUC of score b.
     pub auc_b: f64,
     /// AUC(b) − AUC(a).
     pub difference: f64,
+    /// DeLong variance of the AUC difference.
     pub variance: f64,
+    /// z statistic of the difference.
     pub z: f64,
+    /// Two-sided p-value of the z statistic.
     pub p_two_sided: f64,
+    /// Interval of the AUC difference.
     pub interval: (f64, f64),
 }
 
@@ -347,9 +360,13 @@ pub fn zroc_points(hist_pos: &[u64], hist_neg: &[u64]) -> Vec<(f64, f64)> {
 /// One reliability bin: scores in [bin/10, (bin+1)/10), the last including 1.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bin {
+    /// Index of the bin, from 0 to 9.
     pub bin: usize,
+    /// Number of items in the bin.
     pub n: usize,
+    /// Mean score of the items in the bin.
     pub mean_score: f64,
+    /// Share of positives among the items in the bin.
     pub positive_share: f64,
 }
 

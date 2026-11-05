@@ -10,20 +10,26 @@ use crate::config::Estimand;
 use crate::records::{Item, Judgment, Label, Run};
 use crate::report::{self, Metric, ReportError, Settings};
 
+/// The metrics of one k-run rule at one k.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Point {
+    /// The rule that combines k generations: `majority`, `any` or `all`.
     pub rule: &'static str,
+    /// Number of generation replicates combined.
     pub k: u32,
+    /// The run's metrics under the rule at this k.
     pub metrics: Vec<Metric>,
     /// k times the mean cost of one judgment, per cost key.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub cost_per_item: BTreeMap<String, f64>,
 }
 
+/// Performance as a function of the number of generation replicates k.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct KCurve {
     /// The smallest number of generation replicates of any item (min K_i).
     pub k_max: u32,
+    /// One point per rule and k, for k from 1 to `k_max`.
     pub points: Vec<Point>,
 }
 

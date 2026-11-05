@@ -26,21 +26,33 @@ pub use detail::{Calibration, FeatureRow, ProxyEstimate, Roc};
 /// What a report needs besides the records.
 #[derive(Debug, Clone)]
 pub struct Settings {
+    /// Task whose judgments are reported.
     pub task: String,
+    /// Positive definition for reference labels.
     pub positive: Option<Rule>,
+    /// Decision rule for judgments.
     pub decision: Option<Rule>,
     /// For score runs: report the share at or above this threshold.
     pub threshold: Option<f64>,
+    /// Which performance is estimated.
     pub estimand: Estimand,
+    /// Missing policy applied per reason.
     pub missing: MissingPolicy,
+    /// Reference mode for items with several human raters.
     pub reference: ReferenceMode,
+    /// Rater design of the labels.
     pub rater_design: RaterDesign,
+    /// Confidence level of the intervals.
     pub level: f64,
+    /// Number of bootstrap resamples.
     pub bootstrap: u32,
+    /// Seed for resampling.
     pub seed: u64,
     /// Production prevalence for the converted precision.
     pub prevalence: Option<f64>,
+    /// Name of the stratum key to report separately.
     pub by: Option<String>,
+    /// Include one row per item.
     pub items: bool,
     /// Add the detail tier's ROC and calibration (`report`; other commands that only
     /// read the metrics leave it off).
@@ -52,20 +64,28 @@ pub struct Settings {
     pub proxy: Option<String>,
 }
 
+/// Why a report could not be built.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReportError {
+    /// The run has no judgments for the task (run, task).
     #[error("run {0:?} has no judgments for task {1:?}")]
     NoJudgments(String, String),
+    /// The named reference mode cannot be used.
     #[error("the {0} reference mode is not available in this version")]
     UnsupportedReference(&'static str),
+    /// Ordinal and score decisions have no decision rule.
     #[error("ordinal and score decisions need a decision rule (`decision` or --threshold)")]
     NoDecisionRule,
+    /// Labels of the named kind need a positive definition.
     #[error("{0} labels need a positive definition (`positive`)")]
     NoPositiveDefinition(&'static str),
+    /// The named estimand needs pass or fail judgments.
     #[error("the {0} estimand needs pass or fail judgments; score runs need --threshold")]
     EstimandNeedsBinary(String),
+    /// A threshold was given for binary judgments.
     #[error("--threshold applies to score outputs; this run's judgments are binary")]
     ThresholdOnBinary,
+    /// The named rater has no item that also has a judgment.
     #[error("no item has both a label by {0:?} and a judgment, so it cannot serve as the proxy")]
     NoProxyLabels(String),
 }
@@ -73,10 +93,15 @@ pub enum ReportError {
 /// One interval-bearing metric.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Metric {
+    /// Metric name.
     pub metric: &'static str,
+    /// Estimate; absent when its denominator is empty.
     pub value: Option<f64>,
+    /// Interval at the report level; absent when no interval can be computed.
     pub ci: Option<(f64, f64)>,
+    /// Interval method used.
     pub interval: &'static str,
+    /// Bootstrap resamples used, when the interval is a bootstrap one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resamples: Option<u32>,
     /// System-side missing values filled with the worst and the best judgment.
@@ -86,26 +111,38 @@ pub struct Metric {
     /// reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rater_spread: Option<(f64, f64)>,
+    /// Number of items the value is computed from (weighted).
     pub n: f64,
 }
 
+/// Replicate disagreement of one kind of replicate.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReproducibilityRow {
+    /// Mean share of differing replicate pairs per item.
     pub pairwise_disagreement: f64,
+    /// Share of items with any differing replicate pair.
     pub items_with_any_disagreement: f64,
+    /// Items with at least two replicates.
     pub items: u64,
+    /// One-sided upper bound on the pairwise disagreement at the report level.
     pub upper_bound: f64,
 }
 
+/// How the reference was built.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReferenceInfo {
+    /// Reference mode used.
     pub mode: ReferenceMode,
+    /// Number of raters.
     pub raters: usize,
+    /// Items that have a reference.
     pub items_with_reference: usize,
+    /// Items whose reference comes from a model rater.
     pub model_derived_items: usize,
     /// Items weighted by 1 / label_inclusion_prob.
     #[serde(skip_serializing_if = "is_zero")]
     pub inclusion_weighted_items: usize,
+    /// Rater design details, flattened into the object.
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub design: Option<reference::DesignInfo>,
     /// In a crossed design: each metric with each rater alone as the reference.
@@ -113,50 +150,81 @@ pub struct ReferenceInfo {
     pub by_rater: BTreeMap<String, BTreeMap<&'static str, f64>>,
 }
 
+/// One item of a per-item report.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ItemRow {
+    /// Item ID.
     pub item_id: String,
+    /// Reference share of raters calling the item positive.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<f64>,
+    /// Combined judged value under the estimand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub judged: Option<f64>,
+    /// Number of generation replicates.
     pub replicates: usize,
+    /// Missing reasons of the item's missing replicates.
     pub missing: Vec<MissingReason>,
 }
 
+/// The default-tier report of one run.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
+    /// Run ID.
     pub run: String,
+    /// Task name.
     pub task: String,
+    /// Value semantics of the run.
     pub value_semantics: ValueSemantics,
+    /// Output type of the judgments.
     pub output_type: OutputType,
+    /// Positive definition used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive: Option<Rule>,
+    /// Decision rule used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<Rule>,
+    /// Estimand, in its string form.
     pub estimand: String,
+    /// Reference details; absent without a positive definition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<ReferenceInfo>,
+    /// Number of items.
     pub n_items: usize,
+    /// Number of judgments.
     pub n_judgments: usize,
+    /// Number of missing judgments, every reason counted.
     pub n_missing: u64,
+    /// Missing judgments per reason.
     pub missing_by_reason: BTreeMap<MissingReason, u64>,
+    /// Missing policy applied per reason.
     pub missing_policy: BTreeMap<MissingReason, Policy>,
+    /// Items with fewer replicates than the estimand's k.
     pub n_insufficient_replicates: usize,
+    /// Confidence level of the intervals.
     pub level: f64,
+    /// Seed used for resampling.
     pub seed: u64,
+    /// Metrics with intervals.
     pub metrics: Vec<Metric>,
+    /// Replicate disagreement keyed by `generation` or `grading`.
     pub reproducibility: BTreeMap<&'static str, ReproducibilityRow>,
+    /// Metrics per stratum.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub by: BTreeMap<String, Vec<Metric>>,
+    /// Per-item rows.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ItemRow>,
+    /// ROC and AUC of the detail tier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roc: Option<Roc>,
+    /// Calibration of the detail tier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calibration: Option<Calibration>,
+    /// Feature likelihood ratios.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<FeatureRow>>,
+    /// Proxy-corrected human-scale estimate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyEstimate>,
 }
@@ -635,16 +703,24 @@ struct Calc<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricId {
+    /// Share of items on which the judgment equals the reference.
     Accuracy,
+    /// Share of positives judged positive.
     HitRate,
+    /// Share of negatives judged positive.
     FalseAlarmRate,
+    /// Share of positive judgments that are positive.
     Precision,
+    /// Share of binary judgments that pass.
     PassRate,
+    /// Mean judgment value of a score run.
     MeanScore,
+    /// Share of score judgments at or above the threshold.
     RateAtLeast,
 }
 
 impl MetricId {
+    /// The metric's identifier in CLI output and JSON.
     pub fn name(self) -> &'static str {
         match self {
             MetricId::Accuracy => "accuracy",
@@ -1065,36 +1141,46 @@ pub enum Fill {
 /// One item's contribution to a metric.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemValue {
+    /// Cluster the item belongs to.
     pub cluster: String,
+    /// The item's numerator of the metric.
     pub numerator: f64,
+    /// The item's denominator of the metric.
     pub denominator: f64,
 }
 
 impl Prepared<'_> {
+    /// Value semantics of the run.
     pub fn semantics(&self) -> ValueSemantics {
         self.semantics
     }
 
+    /// Output type of the judgments.
     pub fn output_type(&self) -> OutputType {
         self.output_type
     }
 
+    /// Decision rule in effect, if any.
     pub fn rule(&self) -> Option<Rule> {
         self.rule
     }
 
+    /// Positive definition in effect, if any.
     pub fn positive(&self) -> Option<Rule> {
         self.positive
     }
 
+    /// Number of raters across the run's labels.
     pub fn raters(&self) -> usize {
         self.raters
     }
 
+    /// Missing judgments per reason.
     pub fn missing_by_reason(&self) -> &BTreeMap<MissingReason, u64> {
         &self.missing_by_reason
     }
 
+    /// Number of missing judgments, every reason counted.
     pub fn n_missing(&self) -> u64 {
         self.missing_by_reason.values().sum()
     }

@@ -10,11 +10,15 @@ pub struct Instant(i128);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Period {
+    /// Calendar day.
     Day,
+    /// Week.
     Week,
+    /// Calendar month.
     Month,
 }
 
+/// A string that is not an RFC 3339 timestamp.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("not an RFC 3339 timestamp: {0:?}")]
 pub struct TimestampError(pub String);
@@ -26,10 +30,12 @@ impl Instant {
         parse(s.as_bytes()).ok_or_else(|| TimestampError(s.to_owned()))
     }
 
+    /// Nanoseconds since the Unix epoch.
     pub fn as_unix_nanos(self) -> i128 {
         self.0
     }
 
+    /// The instant at this many nanoseconds since the Unix epoch.
     pub fn from_unix_nanos(nanos: i128) -> Self {
         Instant(nanos)
     }

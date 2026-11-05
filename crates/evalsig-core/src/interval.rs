@@ -144,11 +144,17 @@ pub enum Estimate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Method {
+    /// Wilson score interval for a proportion.
     Wilson,
+    /// Clopper-Pearson exact interval for a proportion.
     ClopperPearson,
+    /// Jeffreys Bayesian interval (Beta(½, ½) prior) for a proportion.
     Jeffreys,
+    /// Percentile bootstrap interval.
     Bootstrap,
+    /// Tango score interval for a paired difference of proportions.
     Tango,
+    /// DeLong interval for an AUC.
     DeLong,
 }
 

@@ -46,6 +46,8 @@ impl Confusion {
         self.correct_rejections += weight * (1.0 - reference) * (1.0 - judged);
     }
 
+    /// Accumulate a confusion table from (reference positive, judged positive, weight)
+    /// triples.
     pub fn from_pairs(pairs: impl IntoIterator<Item = (bool, bool, f64)>) -> Self {
         let mut c = Confusion::default();
         for (r, j, w) in pairs {
@@ -54,14 +56,17 @@ impl Confusion {
         c
     }
 
+    /// Total weight of reference positives (hits + misses).
     pub fn positives(&self) -> f64 {
         self.hits + self.misses
     }
 
+    /// Total weight of reference negatives (false alarms + correct rejections).
     pub fn negatives(&self) -> f64 {
         self.false_alarms + self.correct_rejections
     }
 
+    /// Total weight of all items.
     pub fn total(&self) -> f64 {
         self.positives() + self.negatives()
     }
@@ -70,6 +75,8 @@ impl Confusion {
         (b > 0.0).then(|| a / b)
     }
 
+    /// Share of weight on which the judgment equals the reference; `None` for an empty
+    /// table.
     pub fn accuracy(&self) -> Option<f64> {
         Self::ratio(self.hits + self.correct_rejections, self.total())
     }

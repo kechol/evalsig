@@ -11,32 +11,52 @@ use crate::numeric::{Rng, mean, norm_ppf, sum, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
 
+/// The change of one metric from the baseline arm to the candidate arm.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetricDelta {
+    /// Name of the metric.
     pub metric: &'static str,
+    /// `higher_is_better` or `lower_is_better`.
     pub direction: &'static str,
+    /// The metric's value in the baseline arm; `None` when it cannot be computed.
     pub baseline: Option<f64>,
+    /// The metric's value in the candidate arm; `None` when it cannot be computed.
     pub candidate: Option<f64>,
+    /// Candidate minus baseline, oriented by the metric as measured; `None` when either
+    /// value is missing.
     pub delta: Option<f64>,
+    /// Confidence interval of the difference; `None` when no interval could be formed.
     pub ci: Option<(f64, f64)>,
+    /// Method of the interval: `tango`, `newcombe`, `welch`, `bootstrap`, `too_few_units`
+    /// or `none`.
     pub interval: &'static str,
+    /// Number of bootstrap resamples, present for a bootstrap interval.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resamples: Option<u32>,
+    /// Minimum effect: differences smaller than this are not called improvements.
     pub min_effect: f64,
     /// The difference when system-side missing values are filled against the
     /// candidate (candidate worst, baseline best) and in its favour.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_bounds: Option<(f64, f64)>,
+    /// Two-sided p-value of the difference; `None` when the test could not be run.
     pub p_value: Option<f64>,
+    /// Test behind `p_value`: `mcnemar_exact`, `welch_t`, `bootstrap` or `none`.
     pub p_method: &'static str,
+    /// Verdict on the difference given its interval and the minimum effect.
     pub verdict: Verdict,
 }
 
+/// A comparison of two arms over every metric both support.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Comparison {
+    /// Number of paired items in the comparison.
     pub n_used: usize,
+    /// Number of items present in only one arm.
     pub n_unpaired: u64,
+    /// One entry per metric both arms support.
     pub metrics: Vec<MetricDelta>,
+    /// Items moving between correct and wrong; present for a binary decision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition: Option<Transition>,
 }
@@ -44,9 +64,13 @@ pub struct Comparison {
 /// Settings of a comparison.
 #[derive(Debug, Clone)]
 pub struct Options {
+    /// Confidence level of the intervals, in (0, 1).
     pub level: f64,
+    /// Number of bootstrap resamples.
     pub bootstrap: u32,
+    /// Seed of the random number generator for resampling.
     pub seed: u64,
+    /// Minimum effect per metric name; metrics not listed use 0.
     pub min_effect: BTreeMap<String, f64>,
     /// Items left out of the comparison (inputs that changed between arms).
     pub excluded: BTreeSet<String>,
@@ -76,6 +100,8 @@ fn values_of(p: &Prepared<'_>, id: MetricId) -> Filled {
 }
 
 impl<'p, 'a> Baseline<'p, 'a> {
+    /// Compute the per-metric item values of a prepared run once for reuse across
+    /// comparisons.
     pub fn new(prepared: &'p Prepared<'a>) -> Self {
         let values = prepared
             .metric_ids()
@@ -486,14 +512,19 @@ fn unpaired_delta(
 /// A paired difference monitored with a confidence sequence (metrics spec §7.2).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SequentialDelta {
+    /// Name of the metric.
     pub metric: &'static str,
+    /// `higher_is_better` or `lower_is_better`.
     pub direction: &'static str,
     /// Paired items in the order they were added.
     pub n: usize,
+    /// Mean paired difference (candidate minus baseline), oriented so positive is better.
     pub delta: Option<f64>,
     /// The confidence sequence after the last item; valid at every earlier look too.
     pub confidence_sequence: Option<(f64, f64)>,
+    /// Minimum effect used for the verdict.
     pub min_effect: f64,
+    /// Verdict on the difference given the confidence sequence and the minimum effect.
     pub verdict: Verdict,
 }
 
@@ -559,11 +590,15 @@ pub fn drift(d: &MetricDelta) -> Drift {
     }
 }
 
+/// A period's trend label against the baseline period.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Drift {
+    /// The interval of the difference excludes 0.
     Drifted,
+    /// The interval of the difference includes 0.
     Stable,
+    /// No interval could be formed.
     InsufficientData,
 }
 
@@ -571,6 +606,7 @@ pub enum Drift {
 /// comparisons against one baseline.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Multi {
+    /// Name of the primary metric the summary is about.
     pub primary: &'static str,
     /// Holm-adjusted p-values of the primary metric, in candidate order; `None` when a
     /// candidate has no p-value.

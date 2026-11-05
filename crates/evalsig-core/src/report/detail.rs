@@ -17,12 +17,16 @@ use crate::roc::{self, Bin, SoftItem, Weighted};
 /// The empirical ROC of a run's scores or levels against the reference.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Roc {
+    /// Area under the ROC curve.
     pub auc: f64,
+    /// Interval of the AUC; absent when none can be computed.
     pub ci: Option<(f64, f64)>,
     /// `delong`, `obuchowski` (clusters), `bootstrap` (soft or weighted references,
     /// or an AUC of 0 or 1) or `too_few_units`.
     pub interval: &'static str,
+    /// Weighted number of positives.
     pub n_positive: f64,
+    /// Weighted number of negatives.
     pub n_negative: f64,
     /// (false-alarm rate, hit rate) from the strongest threshold.
     pub points: Vec<(f64, f64)>,
@@ -32,27 +36,41 @@ pub struct Roc {
     pub zroc: Option<Vec<(f64, f64)>>,
 }
 
+/// Calibration of scores read as probabilities.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Calibration {
+    /// Brier score.
     pub brier: f64,
+    /// Reliability diagram bins.
     pub bins: Vec<Bin>,
 }
 
+/// Likelihood ratio of one feature.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FeatureRow {
+    /// Feature ID.
     pub feature_id: String,
     /// Weighted firings among positives and negatives, and the class sizes.
     pub fired_positive: f64,
+    /// Weighted number of positives.
     pub n_positive: f64,
+    /// Weighted firings among negatives.
     pub fired_negative: f64,
+    /// Weighted number of negatives.
     pub n_negative: f64,
+    /// Likelihood ratio; 1 means uninformative.
     pub lr: f64,
+    /// Interval of the likelihood ratio at the report level.
     pub ci: (f64, f64),
     /// The interval at the Benjamini-Hochberg adjusted level, which decides the class.
     pub adjusted_ci: (f64, f64),
+    /// Two-sided p-value of the hypothesis that the likelihood ratio is 1.
     pub p_value: f64,
+    /// True when a zero count made the estimate add ½ to each cell (Haldane-Anscombe).
     pub corrected: bool,
+    /// Class of the feature by its adjusted interval.
     pub class: Class,
+    /// Posterior probability of a positive given the feature, at the stated prevalence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posterior: Option<f64>,
 }
@@ -283,13 +301,19 @@ impl Prepared<'_> {
 pub struct ProxyEstimate {
     /// `accuracy` for decision runs, `mean_label` (the human labels' mean) otherwise.
     pub metric: &'static str,
+    /// Model rater whose labels fill in.
     pub proxy: String,
+    /// Corrected estimate.
     pub estimate: f64,
+    /// Interval of the estimate.
     pub ci: (f64, f64),
+    /// Standard error of the estimate.
     pub se: f64,
+    /// Weight on the proxy correction; 0 uses the human labels alone.
     pub lambda: f64,
     /// Items with a human label (and the proxy's), and items with the proxy's only.
     pub labelled: usize,
+    /// Items with the proxy's label only.
     pub unlabelled: usize,
     /// False when the human-labelled items are not known to be a random sample, so
     /// the estimate uses the human labels alone (λ = 0).

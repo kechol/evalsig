@@ -8,7 +8,9 @@ use crate::replicates::{Rule, at_k};
 /// replicates, so the item stays the counting unit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Scored {
+    /// The item's score.
     pub score: f64,
+    /// The item's weight.
     pub weight: f64,
 }
 

@@ -10,19 +10,27 @@ use serde::Serialize;
 
 use crate::agreement;
 
+/// Agreement between a grader and the reference labels (meta-evaluation).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub struct MetaEvaluation {
+    /// Number of (grader, reference) pairs.
     pub n: usize,
+    /// Cohen's κ; for nominal values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cohen_kappa: Option<f64>,
+    /// Gwet's AC1; for nominal values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gwet_ac1: Option<f64>,
+    /// Positive agreement 2a/(2a + b + c); for two classes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive_agreement: Option<f64>,
+    /// Negative agreement 2d/(2d + b + c); for two classes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_agreement: Option<f64>,
+    /// Quadratic weighted κ; for ordered integer levels.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quadratic_weighted_kappa: Option<f64>,
+    /// Spearman's rank correlation ρ; for ordered values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spearman_rho: Option<f64>,
 }

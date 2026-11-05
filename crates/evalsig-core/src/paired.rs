@@ -103,9 +103,14 @@ pub fn mcnemar(only_a: u64, only_b: u64) -> (f64, f64) {
 /// reference contributes s and 1 − s.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
 pub struct Transition {
+    /// Weighted count of items that became positive in arm B and not in arm A, among
+    /// reference positives.
     pub new_hits: f64,
+    /// Weighted count of reference positives judged positive in arm A and not in arm B.
     pub lost_hits: f64,
+    /// Weighted count of reference negatives judged positive in arm B and not in arm A.
     pub new_false_alarms: f64,
+    /// Weighted count of reference negatives judged positive in arm A and not in arm B.
     pub cleared_false_alarms: f64,
 }
 
@@ -132,10 +137,15 @@ impl Transition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
+    /// The interval is above 0 and the difference reaches the minimum effect.
     Improved,
+    /// The difference is smaller than the minimum effect.
     Negligible,
+    /// The interval is below 0.
     Worsened,
+    /// The interval includes 0 and the difference is not negligible.
     Indistinguishable,
+    /// No interval could be formed.
     InsufficientData,
 }
 
@@ -183,8 +193,11 @@ pub fn holm(p: &[f64]) -> Option<Vec<f64>> {
 /// the number of paired observations in the unit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PairedUnit {
+    /// Sum of the outcome in arm A.
     pub a: f64,
+    /// Sum of the outcome in arm B.
     pub b: f64,
+    /// Number of paired observations in the unit.
     pub n: f64,
 }
 

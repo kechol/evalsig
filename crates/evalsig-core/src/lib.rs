@@ -1,5 +1,8 @@
 //! Data types, metrics and validity checks for evalsig (pure computation, no I/O).
 
+// Published on crates.io: every public item states what it means.
+#![warn(missing_docs)]
+
 pub mod agreement;
 pub mod bootstrap;
 pub mod capabilities;

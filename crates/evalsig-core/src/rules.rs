@@ -40,11 +40,14 @@ impl Rule {
 /// A project-level rule with optional per-task overrides.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct RuleSet {
+    /// The rule for tasks without an override.
     pub default: Option<Rule>,
+    /// The rule per task name.
     pub per_task: BTreeMap<String, Rule>,
 }
 
 impl RuleSet {
+    /// A rule set with this default and no overrides.
     pub fn new(default: Rule) -> Self {
         RuleSet {
             default: Some(default),
@@ -52,6 +55,7 @@ impl RuleSet {
         }
     }
 
+    /// Set the rule for one task.
     pub fn with_task(mut self, task: &str, rule: Rule) -> Self {
         self.per_task.insert(task.to_owned(), rule);
         self

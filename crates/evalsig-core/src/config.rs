@@ -13,66 +13,94 @@ use crate::missing::{MissingPolicy, Policy};
 use crate::records::{MissingReason, OutputType, Source, Value, ValueSemantics};
 use crate::rules::{Rule, RuleSet};
 
+/// The whole project configuration; every table is optional.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// Project name and the positive definition and decision rule.
     pub project: Project,
+    /// How content is stored.
     pub store: Store,
+    /// Interval level, resampling, estimand and interval method.
     pub stats: Stats,
+    /// Missing policy per missing reason; unlisted reasons keep their default.
     pub missing: BTreeMap<MissingReason, Policy>,
+    /// How several human labels become a reference.
     pub reference: Reference,
+    /// Settings for comparing two arms.
     pub compare: Compare,
+    /// Cost matrix for expected cost; absent when no costs are configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
+    /// Switches for the validity checks.
     pub checks: Checks,
+    /// The `[[import]]` blocks, in file order.
     #[serde(rename = "import", skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<Import>,
 }
 
+/// Project-wide name and the label-side and judgment-side rules.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Project {
+    /// Display name of the project.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Positive definition: which reference label values count as positive.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive: Option<Rule>,
+    /// Decision rule: from which judgment value the system says positive.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<Rule>,
+    /// Per-task overrides of `positive` and `decision`, keyed by task name.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub tasks: BTreeMap<String, TaskRules>,
 }
 
+/// Per-task overrides of the project's positive definition and decision rule.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TaskRules {
+    /// Positive definition for this task.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub positive: Option<Rule>,
+    /// Decision rule for this task.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<Rule>,
 }
 
+/// How the text of inputs, outputs and grader rationales is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContentMode {
+    /// Keep the text in full (default).
     #[default]
     Full,
+    /// Keep only the hash of the text.
     Hash,
+    /// Keep the text with `redact_patterns` matches replaced by `[redacted]`.
     Redact,
 }
 
+/// The working-store engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Engine {
+    /// SQLite (default).
     #[default]
     Sqlite,
 }
 
+/// Content storage settings.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Store {
+    /// How content is stored; default `full`.
     pub content: ContentMode,
+    /// Regular expressions whose matches are replaced by `[redacted]` in redact mode.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub redact_patterns: Vec<String>,
+    /// Working-store engine; default `sqlite`.
     pub engine: Engine,
 }
 
@@ -82,8 +110,11 @@ pub enum Estimand {
     /// One production run.
     #[default]
     SingleShot,
+    /// Majority of `k` generation replicates is positive; `k` is at least 1.
     Majority(u32),
+    /// Any of `k` generation replicates is positive; `k` is at least 1.
     Any(u32),
+    /// All `k` generation replicates are positive; `k` is at least 1.
     All(u32),
 }
 
@@ -136,22 +167,33 @@ impl<'de> Deserialize<'de> for Estimand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IntervalMethod {
+    /// Choose a method from the data (default).
     #[default]
     Auto,
+    /// Wilson score interval.
     Wilson,
+    /// Clopper-Pearson exact interval.
     ClopperPearson,
+    /// Jeffreys interval.
     Jeffreys,
+    /// Bootstrap percentile interval.
     Bootstrap,
 }
 
+/// Interval and resampling settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Stats {
+    /// Confidence level of intervals, strictly between 0 and 1; default 0.95.
     pub level: f64,
+    /// Number of bootstrap resamples; default 2000.
     pub bootstrap: u32,
+    /// Seed for resampling; absent means the caller picks one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    /// Which performance is estimated; default `single_shot`.
     pub estimand: Estimand,
+    /// Interval method for rates; default `auto`.
     pub interval: IntervalMethod,
 }
 
@@ -167,37 +209,52 @@ impl Default for Stats {
     }
 }
 
+/// How several human labels of an item become one reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceMode {
+    /// One rater or an adjudicated label.
     Single,
+    /// The majority of the raters.
     Majority,
+    /// The share of raters saying positive (default).
     #[default]
     Soft,
+    /// A latent class model (Dawid-Skene); needs three or more raters per item.
     Latent,
 }
 
+/// Whether the same raters label many items or different raters label each item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RaterDesign {
+    /// Detect the design from the rater overlap (default).
     #[default]
     Auto,
+    /// Different raters label each item.
     Nested,
+    /// The same few raters label many items.
     Crossed,
 }
 
+/// Reference construction settings.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Reference {
+    /// Reference mode for items with two or more human raters; default `soft`.
     pub mode: ReferenceMode,
+    /// Rater design; default `auto`.
     pub rater_design: RaterDesign,
 }
 
+/// Settings for comparing two arms.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Compare {
+    /// Minimum effect per metric name; smaller differences are not called improvements.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub min_effect: BTreeMap<String, f64>,
+    /// Warn that the validation split is due for a rebuild after this many comparisons.
     pub validation_warn_after: u32,
 }
 
@@ -210,12 +267,15 @@ impl Default for Compare {
     }
 }
 
+/// Cost matrix and prevalence for expected cost.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cost {
     /// Rows: reference negative, positive. Columns: judgment levels.
     pub matrix: Vec<Vec<f64>>,
+    /// Production prevalence of positives, not the test-set share.
     pub prevalence: f64,
+    /// Range of C_FN / C_FP for the cost-ratio sensitivity analysis.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ratio_range: Option<[f64; 2]>,
 }
@@ -231,13 +291,19 @@ impl Cost {
     }
 }
 
+/// Switches for the validity checks; all default to true.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Checks {
+    /// Fail when the compared runs mix grader versions.
     pub fail_on_mixed_grader_versions: bool,
+    /// Fail when missing judgments have no explanation.
     pub fail_on_unexplained_missing: bool,
+    /// Warn when the missing rate differs between arms.
     pub warn_missing_rate_differs: bool,
+    /// Warn when all generation replicates of an item have the same output.
     pub warn_identical_replicates: bool,
+    /// Warn when run-to-run variance exceeds the difference being judged.
     pub warn_run_variance_exceeds_delta: bool,
 }
 
@@ -253,20 +319,28 @@ impl Default for Checks {
     }
 }
 
+/// The source format of an import block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Adapter {
+    /// One JSON object per line.
     Jsonl,
+    /// Comma-separated rows with a header.
     Csv,
+    /// Inspect logs (`.eval` or `.json`).
     Inspect,
+    /// promptfoo results.
     Promptfoo,
 }
 
+/// What each source row becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportAs {
+    /// One judgment per row (default).
     #[default]
     Judgment,
+    /// One reference label per row.
     Label,
 }
 
@@ -274,18 +348,25 @@ pub enum ImportAs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Import {
+    /// Name of the import block.
     pub name: String,
+    /// Source format.
     pub adapter: Adapter,
+    /// Path or glob of the source files.
     pub path: String,
+    /// Whether rows become judgments or reference labels; default judgment (`as`).
     #[serde(default, rename = "as")]
     pub import_as: ImportAs,
+    /// Value semantics of the imported judgments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_semantics: Option<ValueSemantics>,
     /// For harness adapters: which score becomes the judgment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<String>,
+    /// Where each record field comes from.
     #[serde(default)]
     pub map: FieldMap,
+    /// Maps source values to record values; unmappable values become missing.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub value_map: BTreeMap<String, Value>,
 }
@@ -310,50 +391,71 @@ impl Import {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FieldMap {
+    /// Source of the item ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
+    /// Source of the run ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    /// Source of the rater ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rater_id: Option<String>,
+    /// Source of the task name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
+    /// Source of the generation replicate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gen_replicate: Option<String>,
+    /// Source of the grading replicate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grade_replicate: Option<String>,
+    /// Source of the judged or labelled value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    /// Output type of the values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_type: Option<OutputType>,
+    /// Number of ordinal levels.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
+    /// Subtracted from source values before use, for sources whose levels start at 1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<i64>,
+    /// Stratum name to source, one entry per stratum.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub strata: BTreeMap<String, String>,
+    /// Source of the system-independent input reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_ref: Option<String>,
+    /// Who produced the labels.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<Source>,
+    /// Source of the labelling timestamp.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labeled_at: Option<String>,
+    /// Version of the label.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
 }
 
+/// Why a configuration text was rejected.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    /// The TOML could not be parsed or has an unknown key or a bad value.
     #[error("{0}")]
     Parse(String),
+    /// A value parses but violates a constraint.
     #[error("{field}: {message}")]
     Invalid {
+        /// The offending configuration key.
         field: &'static str,
+        /// What is wrong with it.
         message: String,
     },
 }
 
 impl Config {
+    /// Parses and validates a configuration file's text.
     pub fn from_toml(text: &str) -> Result<Config, ConfigError> {
         let config: Config = toml::from_str(text).map_err(|e| ConfigError::Parse(hint(e)))?;
         config.validate()?;
@@ -472,6 +574,7 @@ impl Config {
         }
     }
 
+    /// The missing policy with this configuration's per-reason overrides applied.
     pub fn missing_policy(&self) -> MissingPolicy {
         self.missing
             .iter()

@@ -23,10 +23,14 @@ pub enum Action {
     Forbidden,
 }
 
+/// A validity check: its code, summary and default action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct CheckSpec {
+    /// Stable code of the check.
     pub code: &'static str,
+    /// One-line description of the condition the check detects.
     pub summary: &'static str,
+    /// What the check does when it fires and no override is given.
     pub default: Action,
     /// The command-line flag that changes the default: it turns a stop or an exclusion
     /// into a warning, or a warning into a stop. `gate` never accepts it.
@@ -245,6 +249,7 @@ pub const CHECKS: [CheckSpec; 23] = [
     ),
 ];
 
+/// The specification of the check with this code, if there is one.
 pub fn by_code(code: &str) -> Option<&'static CheckSpec> {
     CHECKS.iter().find(|c| c.code == code)
 }
@@ -252,8 +257,11 @@ pub fn by_code(code: &str) -> Option<&'static CheckSpec> {
 /// A check that fired.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Finding {
+    /// Code of the check that fired.
     pub code: &'static str,
+    /// What was done about it.
     pub action: Action,
+    /// Human-readable description of what was found.
     pub message: String,
     /// How to lift the check, when it can be lifted.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -291,11 +299,13 @@ impl Finding {
         }
     }
 
+    /// Attach the number of affected items or records.
     pub fn with_count(mut self, n: u64) -> Self {
         self.count = Some(n);
         self
     }
 
+    /// Whether the finding stops the command.
     pub fn stops(&self) -> bool {
         self.action == Action::Stop
     }
@@ -304,9 +314,13 @@ impl Finding {
 /// Override flags the user passed. `gate` uses the default, which passes none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Overrides {
+    /// Turns the stop for a missing value of unexplained cause into a warning.
     pub allow_unexplained_missing: bool,
+    /// Turns the stop for arms graded by different grader versions into a warning.
     pub allow_mixed_grader: bool,
+    /// Compares items whose input changed between arms instead of excluding them.
     pub allow_input_change: bool,
+    /// Turns the secret-in-content warning into a stop.
     pub fail_on_secret: bool,
 }
 

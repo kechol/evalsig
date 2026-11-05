@@ -12,7 +12,7 @@ fn shares(counts: &[f64]) -> Option<Vec<f64>> {
     (total > 0.0).then(|| counts.iter().map(|c| c / total).collect())
 }
 
-/// EC = π Σ_j P(j|pos) C[1][j] + (1 − π) Σ_j P(j|neg) C[0][j].
+/// EC = π Σ_j P(j|pos) C\[1\]\[j\] + (1 − π) Σ_j P(j|neg) C\[0\]\[j\].
 pub fn expected_cost(
     pos_by_level: &[f64],
     neg_by_level: &[f64],
@@ -73,11 +73,16 @@ pub fn ratio_matrix(r: f64) -> [[f64; 2]; 2] {
 /// The optimal threshold at both ends of the cost-ratio range r = C_FN / C_FP.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct ThresholdSensitivity {
+    /// Optimal threshold level at the low end of the cost-ratio range.
     pub at_low: usize,
+    /// Optimal threshold level at the high end of the cost-ratio range.
     pub at_high: usize,
+    /// Whether the optimal threshold differs between the two ends.
     pub changes: bool,
 }
 
+/// The optimal threshold at both ends of the range `[lo, hi]` of r = C_FN / C_FP; `None` if
+/// undefined.
 pub fn threshold_sensitivity(
     pos_by_level: &[f64],
     neg_by_level: &[f64],
@@ -98,11 +103,16 @@ pub fn threshold_sensitivity(
 /// EC(a) − EC(b) for two arms' (H, F) at both ends of the cost-ratio range.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct DifferenceSensitivity {
+    /// EC(a) − EC(b) at the low end of the cost-ratio range.
     pub at_low: f64,
+    /// EC(a) − EC(b) at the high end of the cost-ratio range.
     pub at_high: f64,
+    /// Whether the difference changes sign between the two ends.
     pub sign_changes: bool,
 }
 
+/// The expected-cost difference of two arms at both ends of the range `[lo, hi]` of r =
+/// C_FN / C_FP.
 pub fn difference_sensitivity(
     a: (f64, f64),
     b: (f64, f64),

@@ -19,8 +19,11 @@ use crate::records::{Preference, PreferenceOutcome};
 /// One judgment of the pair (A, B), normalised to B's side.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Judged<'a> {
+    /// ID of the item the pair was judged on.
     pub item_id: &'a str,
+    /// ID of the rater (human or model) who judged.
     pub rater_id: &'a str,
+    /// Which re-grading of the same output pair this is; 0 when not recorded.
     pub grade_replicate: u32,
     /// Whether A was shown on the left.
     pub a_left: bool,
@@ -85,11 +88,17 @@ fn swapped(group: &[&Judged<'_>]) -> bool {
 /// B's win rate over A.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WinRate {
+    /// Mean score of B against A, from 0 to 1; ½ means no preference.
     pub value: f64,
+    /// Percentile bootstrap interval over items; `None` with too few items.
     pub ci: Option<(f64, f64)>,
+    /// Method of the interval: `bootstrap`, or `too_few_units` without one.
     pub interval: &'static str,
+    /// Number of items judged.
     pub items: usize,
+    /// Number of judgments.
     pub judgments: usize,
+    /// Number of (item, rater) groups judged in both presentation orders.
     pub swapped_pairs: usize,
 }
 
@@ -131,15 +140,19 @@ pub fn win_rate(judged: &[Judged<'_>], level: f64, b: u32, seed: u64) -> Option<
 /// Position effects, from the groups that hold both presentation orders.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PositionBias {
+    /// Number of (item, rater) groups judged in both presentation orders.
     pub swapped_pairs: usize,
     /// Share of swapped pairs whose first judgment in each order agree.
     pub order_consistency: Option<f64>,
     /// Share of the decided (not tied) judgments in swapped pairs won by the left side.
     pub left_win_rate: Option<f64>,
+    /// Interval of `left_win_rate`.
     pub ci: Option<(f64, f64)>,
+    /// Number of decided (not tied) judgments in swapped pairs.
     pub decided: usize,
 }
 
+/// The position effects among the judgments, with an interval at `level`.
 pub fn position_bias(judged: &[Judged<'_>], level: f64) -> PositionBias {
     let groups = groups(judged);
     let pairs: Vec<&Vec<&Judged<'_>>> = groups.values().filter(|g| swapped(g)).collect();
@@ -193,9 +206,13 @@ pub fn checks(bias: &PositionBias, overrides: &Overrides) -> Vec<Finding> {
 /// Agreement of two raters on the items both judged, on the three values A, B, tie.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RaterPair {
+    /// The two raters, in sorted order.
     pub raters: (String, String),
+    /// Number of items both judged.
     pub items: usize,
+    /// Cohen's κ over the values A, B and tie.
     pub cohen_kappa: Option<f64>,
+    /// Gwet's AC1 over the values A, B and tie.
     pub gwet_ac1: Option<f64>,
 }
 
@@ -243,17 +260,24 @@ pub fn rater_agreement(judged: &[Judged<'_>]) -> Vec<RaterPair> {
 /// One comparison of arms `i` and `j`, scored for `j` (1 win, 0 loss, ½ tie).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Comparison {
+    /// Index of the first arm.
     pub i: usize,
+    /// Index of the second arm, for which the comparison is scored.
     pub j: usize,
+    /// Score for arm `j`: 1 win, 0 loss, ½ tie.
     pub score: f64,
 }
 
+/// Why arms cannot be ranked.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RankingError {
+    /// Fewer than two arms were compared.
     #[error("a ranking needs preferences between at least two arms")]
     TooFewArms,
+    /// The arms split into groups that were never compared with each other.
     #[error("the comparison graph of the arms is not connected")]
     Disconnected,
+    /// An arm wins or loses every comparison, so its strength has no finite estimate.
     #[error("the strengths have no finite estimate (an arm wins or loses every comparison)")]
     NotEstimable,
 }
@@ -262,7 +286,9 @@ pub enum RankingError {
 /// Davidson tie parameter ν.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Fit {
+    /// Log-strength of each arm, centred to mean 0.
     pub log_strength: Vec<f64>,
+    /// Davidson tie parameter ν; present when ties occur.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tie: Option<f64>,
 }
@@ -448,17 +474,26 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
 /// An arm's place in the ranking.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Ranked {
+    /// Name of the arm.
     pub arm: String,
+    /// Position in the ranking, 1 for the strongest.
     pub rank: usize,
+    /// Bradley-Terry log-strength, centred to mean 0.
     pub log_strength: f64,
+    /// Percentile bootstrap interval of the log-strength; `None` without enough valid
+    /// resamples.
     pub ci: Option<(f64, f64)>,
 }
 
+/// A Bradley-Terry ranking of arms with bootstrap intervals.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Ranking {
+    /// The arms, strongest first.
     pub arms: Vec<Ranked>,
+    /// Davidson tie parameter ν; present when ties occur.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tie: Option<f64>,
+    /// Method of the intervals: `bootstrap`, or `too_few_units` without one.
     pub interval: &'static str,
     /// Resamples whose refit failed (an arm dropped out or won everything); the
     /// intervals come from the others.

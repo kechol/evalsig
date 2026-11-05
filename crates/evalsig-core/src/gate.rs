@@ -6,12 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::interval::{clopper_pearson, clopper_pearson_upper};
 
+/// A condition rule of a gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Rule {
+    /// The candidate value's interval has a lower bound of at least `value`.
     LowerBoundAtLeast,
+    /// The candidate value's interval has an upper bound of at most `value`.
     UpperBoundAtMost,
+    /// The delta's interval has a lower bound of at least `value`.
     DeltaLowerBoundAtLeast,
+    /// The delta's interval has an upper bound of at most `value`.
     DeltaUpperBoundAtMost,
     /// Non-inferiority: the delta's lower bound is at least `value` (a negative margin).
     NotWorseThan,
@@ -19,10 +24,13 @@ pub enum Rule {
     Pass,
 }
 
+/// Whether the interval is one-sided or two-sided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sided {
+    /// One-sided interval.
     One,
+    /// Two-sided interval.
     Two,
 }
 
@@ -30,11 +38,29 @@ pub enum Sided {
 /// interval, or a verdict.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Evidence {
-    Value { point: f64, lo: f64, hi: f64 },
-    Delta { point: f64, lo: f64, hi: f64 },
+    /// The candidate's value with its confidence interval.
+    Value {
+        /// Point estimate.
+        point: f64,
+        /// Lower end of the interval.
+        lo: f64,
+        /// Upper end of the interval.
+        hi: f64,
+    },
+    /// The difference between the arms with its confidence interval.
+    Delta {
+        /// Point estimate.
+        point: f64,
+        /// Lower end of the interval.
+        lo: f64,
+        /// Upper end of the interval.
+        hi: f64,
+    },
+    /// A verdict metric's pass or fail.
     Verdict(bool),
 }
 
+/// The result of evaluating a rule on its evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Outcome {
     /// `None` when the evidence does not fit the rule or is missing.
@@ -44,6 +70,7 @@ pub struct Outcome {
 }
 
 impl Rule {
+    /// Whether the rule reads the delta rather than the candidate's value.
     pub fn on_delta(self) -> bool {
         matches!(
             self,

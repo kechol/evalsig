@@ -14,13 +14,20 @@ use serde::Serialize;
 
 use crate::numeric::{mean, norm_ppf, variance};
 
+/// The PPI++ estimate of a mean with its normal interval.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Ppi {
+    /// The prediction-powered point estimate θ̂.
     pub estimate: f64,
+    /// Standard error of the estimate.
     pub se: f64,
+    /// Normal confidence interval of the estimate.
     pub interval: (f64, f64),
+    /// The weight λ on the proxy, in [0, 1].
     pub lambda: f64,
+    /// Number of items with a human label.
     pub labelled: usize,
+    /// Number of items without a human label.
     pub unlabelled: usize,
 }
 

@@ -14,6 +14,7 @@ pub struct Rng {
 }
 
 impl Rng {
+    /// Seed a generator; the same seed gives the same sequence on every platform.
     pub fn new(seed: u64) -> Self {
         Rng {
             inner: ChaCha20Rng::seed_from_u64(seed),
@@ -26,6 +27,7 @@ impl Rng {
         self.seed
     }
 
+    /// The next 64 random bits.
     pub fn next_u64(&mut self) -> u64 {
         self.inner.next_u64()
     }

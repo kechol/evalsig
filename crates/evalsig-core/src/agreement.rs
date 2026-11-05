@@ -110,8 +110,12 @@ pub fn specific_agreement(t: &[Vec<f64>]) -> Option<(Option<f64>, Option<f64>)> 
 /// The difference function δ² of Krippendorff's α.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
+    /// Nominal: 0 for equal values, 1 otherwise.
     Nominal,
+    /// Ordinal: squared distance between the categories, measured through their marginal
+    /// counts.
     Ordinal,
+    /// Interval: squared difference of the numeric values.
     Interval,
 }
 
@@ -201,12 +205,16 @@ pub fn spearman(x: &[f64], y: &[f64]) -> Option<f64> {
 /// Pairs of labels on the same item, and how many of them differ.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct LabelDisagreement {
+    /// Items with at least two labels.
     pub items: usize,
+    /// Pairs of labels compared, summed over items.
     pub pairs: usize,
+    /// Pairs whose two values differ.
     pub disagreeing: usize,
 }
 
 impl LabelDisagreement {
+    /// Share of compared pairs that differ; `None` without a pair.
     pub fn rate(&self) -> Option<f64> {
         (self.pairs > 0).then(|| self.disagreeing as f64 / self.pairs as f64)
     }
