@@ -358,3 +358,49 @@ fn unpaired_and_sequential_comparisons() {
         .assert()
         .failure();
 }
+
+#[test]
+fn a_rerun_that_moves_more_than_the_difference_is_flagged() {
+    let dir = project();
+    let codes = |v: &Value| -> Vec<String> {
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| w["code"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let v = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    assert!(!codes(&v).contains(&"run_variance_exceeds_delta".to_owned()));
+    // A second run of prompt-v1 that disagrees with the first on every other item.
+    let mut rerun = vec![
+        r#"{"record":"run","run_id":"triage-v1-again","system":{"id":"triage","version":"prompt-v1"},"value_semantics":"decision","output_type":"binary","grader":{"id":"rule-check","version":"1","kind":"rule"}}"#.to_owned(),
+    ];
+    let mut n = 0;
+    for line in std::fs::read_to_string(SYNTHETIC).unwrap().lines() {
+        let mut r: Value = serde_json::from_str(line).unwrap();
+        if r["record"] == "judgment" && r["run_id"] == "triage-v1" {
+            r["run_id"] = "triage-v1-again".into();
+            if n % 2 == 0
+                && let Some(b) = r["value"].as_bool()
+            {
+                r["value"] = (!b).into();
+            }
+            n += 1;
+            rerun.push(r.to_string());
+        }
+    }
+    let file = dir.path().join("rerun.jsonl");
+    std::fs::write(&file, rerun.join("\n") + "\n").unwrap();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(&file)
+        .assert()
+        .success();
+    let v = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
+    assert!(
+        codes(&v).contains(&"run_variance_exceeds_delta".to_owned()),
+        "{}",
+        v["warnings"]
+    );
+}

@@ -10,7 +10,8 @@ use evalsig_core::config::Config;
 use evalsig_core::paired::Verdict;
 use evalsig_core::preference;
 use evalsig_core::records::{Item, Label, Preference, Record, Run};
-use evalsig_core::report::{self, Prepared};
+use evalsig_core::replicates;
+use evalsig_core::report::{self, Fill, Prepared};
 use evalsig_core::split::Part;
 use evalsig_core::validity;
 use evalsig_store::ledger::{self, Entry, Kind};
@@ -464,6 +465,41 @@ pub fn compute(
             .find(|m| m.metric == primary)
             .cloned()
     });
+    // Runs repeated for one system version give the run-to-run spread of the primary
+    // metric: a diagnostic beside the interval, never part of it (metrics spec §6.3).
+    if let Some(delta) = verdict.as_ref().and_then(|m| m.delta) {
+        let chosen_run = chosen.and_then(|i| d.run(&comparisons[i].0).ok());
+        let systems: BTreeSet<(&str, &str)> = [Some(base_run), chosen_run]
+            .into_iter()
+            .flatten()
+            .map(|r| (r.system.id.as_str(), r.system.version.as_str()))
+            .collect();
+        let mut spread: Option<f64> = None;
+        for (system, version) in systems {
+            let mut values = Vec::new();
+            for r in &d.records {
+                let Record::Run(run) = r else { continue };
+                if (run.system.id.as_str(), run.system.version.as_str()) != (system, version) {
+                    continue;
+                }
+                let (_, p) = prepare(&run.run_id)?;
+                let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == primary) else {
+                    continue;
+                };
+                let parts = p.item_values(id, Fill::Policy);
+                let den: f64 = parts.values().map(|v| v.denominator).sum();
+                if den > 0.0 {
+                    values.push(parts.values().map(|v| v.numerator).sum::<f64>() / den);
+                }
+            }
+            if let Some(sd) = replicates::run_to_run_sd(&values) {
+                spread = Some(spread.map_or(sd, |s| s.max(sd)));
+            }
+        }
+        if let Some(sd) = spread {
+            findings.extend(validity::run_variance_exceeds_delta(sd, delta, &overrides));
+        }
+    }
     let mut warnings = Vec::new();
     if comparisons.len() > 1 {
         warnings.push(Warning {
