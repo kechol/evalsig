@@ -92,7 +92,9 @@ pub const CHECKS: [CheckSpec; 23] = [
         "compared arms cover different item sets; compared on the intersection, n_unpaired reported",
         Action::Report,
         None,
-        Some("absent holdout items are filled with the worst judgment"),
+        Some(
+            "a candidate that leaves holdout items out is refused (exit 3) before any budget is spent",
+        ),
         "T-039",
     ),
     spec(
