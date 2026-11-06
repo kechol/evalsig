@@ -504,8 +504,8 @@ after the entry is `Accepted`.
 
 ## D-016 Whether the `latent` reference ships in v1
 
-- Status: Proposed
-- Date: 2026-11-03
+- Status: Accepted
+- Date: 2026-11-06
 - Context: `latent` replaces the raters' positive share with a Dawid-Skene
   posterior, estimating each rater's sensitivity and specificity by EM
   (metrics spec §9.2). The spec recommends shipping it with three or more
@@ -531,7 +531,7 @@ after the entry is `Accepted`.
   `soft` estimates performance against one rater drawn at random, a
   different estimand, so its gap to the true class is expected; the question
   is whether `latent` delivers the true-class value it claims.
-- Decision (proposed): `latent` does not ship in v1. `--reference latent`
+- Decision: `latent` does not ship in v1. `--reference latent`
   and `reference.mode = "latent"` stay recognised and are refused with the
   existing "not available in this version" error, and `soft` remains the
   default with its estimand stated in the output. With three raters per
