@@ -954,14 +954,15 @@ the zip and decompressed with `ruzstd`.
 - **Platforms.** macOS and Linux. The code builds `gate serve` without Unix sockets on
   other targets, where it serves token HTTP only; no Windows binaries are released.
 
-## 15. Pending decisions
+## 15. Decisions that needed a study first
 
-Three decisions are `Proposed`; code that depends on them has not landed.
+Three decisions waited on a simulation or on the source paper before code could depend on
+them.
 
 | Decision | What happens now |
 |---|---|
 | D-015 Reuse guard defaults (step factor, budget) | The budget (default 5) and the α/B level apply. A gate returns the verdict, each condition's pass or fail and the budget left, never a value; approval fixes no step and no first best, and `reuse_guard`, `ladder_k` and `ladder_step` are accepted in `gate.toml` but unused |
-| D-016 Whether the `latent` reference (Dawid-Skene) ships | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
+| D-016 Whether the `latent` reference (Dawid-Skene) ships (Accepted: not in v1) | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
 | D-017 Parameters of the alternative annotator test | `agree` has no parity test, the verdicts `human_parity` and `below_human` are reserved, and a condition on the metric `human_parity` is refused when drafted |
 
 ## 16. Security

@@ -10,9 +10,9 @@ Reference values for most formulas are in `tests/fixtures/reference-values.json`
 Rust implementation matches them within an absolute error of 1e-9. Each section names its
 case, or says "reference case: none".
 
-Three parts are not implemented and wait on a pending decision: the `latent` reference
-(D-016, §9.2), the alternative annotator test (D-017, §9.4) and the Ladder (D-015, §11.3).
-Each section says what happens now.
+The `latent` reference is left out of v1 (D-016, §9.2). Two parts wait on a decision that
+is now accepted and are not implemented yet: the alternative annotator test (D-017, §9.4)
+and the Ladder (D-015, §11.3). Each section says what happens now.
 
 ## 0. Conventions
 
@@ -530,7 +530,8 @@ votes.
 - **`latent`.** The reference would be the posterior of a latent class model fitted with
   EM (Dawid-Skene). It is not available: `--reference latent` and `reference.mode =
   "latent"` are recognised and refused with "not available in this version", and `soft`
-  stays the default. Whether it ships awaits D-016. The check
+  stays the default. It does not ship in v1 (D-016): at three raters per item its
+  intervals cover the true-class hit rate in fewer than half of simulated datasets. The check
   `latent_reference_unidentified` is registered but never fires, and per-rater sensitivity
   and specificity are not reported.
 
