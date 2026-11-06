@@ -377,6 +377,7 @@ canonicalized, so equivalent files hash the same. Tables:
 | `[missing]` | `worst`, `best` or `drop` per missing reason |
 | `[reference]` | `mode` (`single`, `majority`, `soft`), `rater_design` (`auto`, `nested`, `crossed`) |
 | `[compare]` | `min_effect` per metric, `validation_warn_after` (20) |
+| `[agree]` | `parity_epsilon` (0.1), the margin of the alternative annotator test |
 | `[cost]` | `matrix`, production `prevalence`, `ratio_range` |
 | `[checks]` | Switches for the configurable validity checks |
 | `[[import]]` | Named import blocks for flat tables and harness logs (②) |
@@ -397,7 +398,7 @@ first and the signal-detection tier after it.
 | Default | Accuracy, hit rate, false-alarm rate and precision (precision converted to a stated prevalence), or for `score` runs mean score, share at or above a threshold and pass rate, each with an interval; the range when system-side missing values are filled with best and worst; replicate disagreement (generation and grading separately) with a one-sided upper bound; the reference mode, rater design and estimand; for crossed designs the range of values with each rater alone as the reference; results per stratum |
 | Detail | Empirical ROC and AUC (DeLong interval; cluster-aware variance with clusters; bootstrap for soft or weighted references), z-ROC points, calibration (Brier score and reliability bins), feature likelihood ratios, performance and expected cost over k generations, prediction-powered inference with a proxy rater |
 | `compare` | Paired difference with interval, exact McNemar p-value, verdict, transition table; unpaired comparison; confidence sequence; pairwise win rate and position bias |
-| `agree` | Pairwise rater agreement (Cohen's κ, quadratic-weighted κ for ordered levels, Gwet's AC1, positive and negative agreement, Spearman's ρ), rater variability, system and grader agreement with humans under the same rule, ceiling of a soft reference, pairwise-preference agreement and Bradley-Terry ranking |
+| `agree` | Pairwise rater agreement (Cohen's κ, quadratic-weighted κ for ordered levels, Gwet's AC1, positive and negative agreement, Spearman's ρ), rater variability, system and grader agreement with humans under the same rule, ceiling of a soft reference, pairwise-preference agreement and Bradley-Terry ranking, and the alternative annotator test (`--parity`) |
 | `threshold`, `power`, `trend` | Cost-optimal threshold with cost-ratio sensitivity; required items, minimum detectable difference, pass probability; per-period metrics |
 
 `report` prints d′ and the criterion c in its detail tier, under the
@@ -769,7 +770,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `report` | The metrics of one run (§6) |
 | `compare` | Paired comparison of a baseline with one or more candidates, or unpaired; confidence sequence; per-item rows; pairwise win rate and position bias when preference records exist |
 | `trend` | Metrics per day, week or month against a baseline period; `drifted` or `stable` |
-| `agree` | Rater agreement and variability, system and grader agreement with humans, pairwise-preference agreement |
+| `agree` | Rater agreement and variability, system and grader agreement with humans, pairwise-preference agreement, the alternative annotator test |
 | `power` | Required items, minimum detectable difference, pass probability of a gate |
 | `threshold` | Cost-optimal decision threshold and cost-ratio sensitivity |
 | `check` | Absolute criteria with intervals, not preregistered (D-021) |
@@ -963,7 +964,7 @@ them.
 |---|---|
 | D-015 Reuse guard defaults (step factor, budget) | The budget (default 5) and the α/B level apply. A gate returns the verdict, each condition's pass or fail and the budget left, never a value; approval fixes no step and no first best, and `reuse_guard`, `ladder_k` and `ladder_step` are accepted in `gate.toml` but unused |
 | D-016 Whether the `latent` reference (Dawid-Skene) ships (Accepted: not in v1) | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
-| D-017 Parameters of the alternative annotator test | `agree` has no parity test, the verdicts `human_parity` and `below_human` are reserved, and a condition on the metric `human_parity` is refused when drafted |
+| D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human` ([metrics](metrics.md) §9.4); a gate condition on the metric `human_parity` is refused when drafted |
 
 ## 16. Security
 

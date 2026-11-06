@@ -11,8 +11,8 @@ Rust implementation matches them within an absolute error of 1e-9. Each section 
 case, or says "reference case: none".
 
 The `latent` reference is left out of v1 (D-016, §9.2). The Ladder (D-015, §11.3) is not
-implemented yet, and no command runs the alternative annotator test (§9.4) yet. Each
-section says what happens now.
+implemented yet, and a gate condition on the alternative annotator test (§9.4) is refused
+when drafted. Each section says what happens now.
 
 ## 0. Conventions
 
@@ -580,8 +580,12 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
   the verdict is `insufficient_data`. Three or more raters are recommended; with two, each
   is tested against the other.
 - Reference case: `alt_test`, from scipy's `ttest_1samp` and `false_discovery_control`.
-- No command runs the test yet, and a gate condition on `human_parity` is refused when
-  drafted.
+- **Where it runs.** `agree --parity --run <run>` tests that run against the human raters;
+  the verdict is the envelope's, and the setting `agree.parity_epsilon` changes ε. A run
+  with a decision rule is compared on decisions (positive when most of its replicates
+  are), with the labels' positive definition; a run without one, on its values. With two
+  tested raters the output warns `two_human_raters`. A gate condition on `human_parity`
+  is refused when drafted.
 
 ### 9.5 Human reproducibility
 

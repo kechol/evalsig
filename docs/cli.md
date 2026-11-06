@@ -34,6 +34,7 @@ Agreement between raters, of graders and a run with people, and on preferences
 | `--reference <REFERENCE>` | How several raters' labels become the reference (default from the configuration) | `single`, `majority`, `soft`, `latent`, `human` |  |
 | `--run <RUN>` | Also compare this run's decisions with each human rater, under the same rule as the raters among themselves |  |  |
 | `--preference` | Agreement of raters on pairwise preferences, their position bias, and the Bradley-Terry ranking of the arms |  |  |
+| `--parity` | The alternative annotator test: could the --run system replace one of the human raters (D-017)? |  |  |
 
 ### `evalsig check`
 

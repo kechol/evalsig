@@ -218,3 +218,86 @@ fn the_latent_reference_is_refused() {
         .assert()
         .failure();
 }
+
+/// Three humans agreeing on 40 items, and two runs: one that says what they say and one
+/// that always says the opposite.
+fn parity_records() -> String {
+    let mut l = Vec::new();
+    for (run, flip) in [("same", false), ("opposite", true)] {
+        l.push(format!(
+            r#"{{"record":"run","run_id":"{run}","system":{{"id":"{run}","version":"1"}},"output_type":"binary"}}"#
+        ));
+        for i in 0..40 {
+            l.push(format!(
+                r#"{{"record":"judgment","item_id":"i{i:02}","run_id":"{run}","gen_replicate":0,"output_type":"binary","value":{}}}"#,
+                (i % 3 == 0) != flip
+            ));
+        }
+    }
+    for i in 0..40 {
+        l.push(format!(r#"{{"record":"item","item_id":"i{i:02}"}}"#));
+        for rater in ["ana", "ben", "cy"] {
+            l.push(format!(
+                r#"{{"record":"label","item_id":"i{i:02}","rater_id":"{rater}","source":"human","value":{},"version":1}}"#,
+                i % 3 == 0
+            ));
+        }
+    }
+    l.join("\n") + "\n"
+}
+
+#[test]
+fn the_parity_test_sets_a_run_against_each_human() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let f = dir.path().join("records.jsonl");
+    std::fs::write(&f, parity_records()).unwrap();
+    evalsig(dir.path()).arg("import").arg(&f).assert().success();
+    let parity = |run: &str| -> Value {
+        let out = evalsig(dir.path())
+            .args(["--format", "json", "agree", "--parity", "--run", run])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        serde_json::from_slice(&out).unwrap()
+    };
+    // Agreeing with everyone, the system is never worse on an item: d = 0 throughout,
+    // so it wins against every rater.
+    let v = parity("same");
+    assert_eq!(v["verdict"]["code"], "human_parity", "{v}");
+    let p = &v["results"]["parity"];
+    assert_eq!(p["epsilon"], 0.1);
+    assert_eq!(p["winning_rate"], 1.0);
+    assert_eq!(p["advantage_probability"], 1.0);
+    let tested = p["tested"].as_array().unwrap();
+    assert_eq!(tested.len(), 3);
+    for t in tested {
+        assert_eq!(t["items"], 40);
+        assert_eq!(t["mean_difference"], 0.0);
+        assert_eq!(t["system_wins"], true);
+    }
+    // Disagreeing with everyone, every human beats it on every item.
+    let v = parity("opposite");
+    assert_eq!(v["verdict"]["code"], "below_human", "{v}");
+    let p = &v["results"]["parity"];
+    assert_eq!(p["winning_rate"], 0.0);
+    assert_eq!(p["advantage_probability"], 0.0);
+    assert!(
+        p["tested"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["mean_difference"] == 1.0)
+    );
+    // The configuration sets epsilon, and --parity needs the run it tests.
+    let config = dir.path().join(".evalsig/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("{text}\n[agree]\nparity_epsilon = 0.2\n")).unwrap();
+    assert_eq!(parity("same")["results"]["parity"]["epsilon"], 0.2);
+    evalsig(dir.path())
+        .args(["--format", "json", "agree", "--parity"])
+        .assert()
+        .code(64);
+}

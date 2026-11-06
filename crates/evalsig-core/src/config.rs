@@ -29,6 +29,8 @@ pub struct Config {
     pub reference: Reference,
     /// Settings for comparing two arms.
     pub compare: Compare,
+    /// Settings for agreement with people.
+    pub agree: Agree,
     /// Cost matrix for expected cost; absent when no costs are configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
@@ -267,6 +269,23 @@ impl Default for Compare {
     }
 }
 
+/// Settings for agreement with people.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Agree {
+    /// How far the system may trail a human rater in the alternative annotator test
+    /// (D-017).
+    pub parity_epsilon: f64,
+}
+
+impl Default for Agree {
+    fn default() -> Self {
+        Agree {
+            parity_epsilon: crate::parity::EPSILON,
+        }
+    }
+}
+
 /// Cost matrix and prevalence for expected cost.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -501,6 +520,9 @@ impl Config {
                 "compare.min_effect",
                 "values must be finite and non-negative",
             );
+        }
+        if !(self.agree.parity_epsilon > 0.0 && self.agree.parity_epsilon < 1.0) {
+            return invalid("agree.parity_epsilon", "must lie strictly between 0 and 1");
         }
         if let Some(cost) = &self.cost {
             if cost.matrix.len() != 2 {

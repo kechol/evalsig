@@ -141,7 +141,7 @@
     "snapshots": [
       "blake3:7a025a46d8b0d31297e952413814ebdf88065dd63db290146d3324b7738055e9"
     ],
-    "config": "blake3:35df6c9b1761f59e71df1f15c21fd15d0ccfff20f8edc7aa9de2dac17c5837d1",
+    "config": "blake3:24ea66b62a2d313a6656f4647f99ad530f916d6a2d28ab3a9aec7ee868d87095",
     "seed": 20261103,
     "tool": "evalsig <VERSION>",
     "spec_version": "metrics/1",

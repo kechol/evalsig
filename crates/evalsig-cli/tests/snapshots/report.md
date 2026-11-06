@@ -21,4 +21,4 @@ Rater design: crossed (detected); the intervals estimate performance against the
 | precision | 0.5982 to 0.6296 |
 
 
-<sub>evalsig <VERSION> · 1 snapshot(s) · config blake3:35df6c9b1761 · seed 20261103</sub>
+<sub>evalsig <VERSION> · 1 snapshot(s) · config blake3:24ea66b62a2d · seed 20261103</sub>

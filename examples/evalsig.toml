@@ -34,6 +34,9 @@ rater_design = "auto"                 # auto / nested / crossed, detected from t
 min_effect = { accuracy = 0.02, false_alarm_rate = 0.02 }   # Minimum effect of practical importance
 validation_warn_after = 20            # Warn that the validation split is due for a rebuild after this many comparisons
 
+[agree]
+parity_epsilon = 0.1                  # How far the system may trail a human rater in agree --parity (D-017)
+
 [cost]
 # Rows: reference label (negative, positive). Columns: judgment levels 0..3
 matrix = [[0, 1, 3, 5], [9, 6, 1, 0]]

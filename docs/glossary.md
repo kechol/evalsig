@@ -83,7 +83,8 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | rater variability | `within_rater`, `between_raters` | Disagreement among one rater's own label replicates of an item, and among different raters' labels of it |
 | label kind | `label.kind` | `independent` (made without seeing others), `revision` (a rater correcting their earlier label) or `adjudication` (resolving a split; not independent) |
 | label replicate | `label_replicate` | A blind re-label of the same item by the same rater. Measures human variability |
-| alternative annotator test | `alt_test` | Tests whether replacing one human rater with the system keeps agreement with the remaining raters |
+| alternative annotator test | `alt_test`, `agree --parity` | Tests whether replacing one human rater with the system keeps agreement with the remaining raters |
+| winning rate / advantage probability | `winning_rate`, `advantage_probability` | In the alternative annotator test: the share of human raters the system wins against (ω; `human_parity` at 0.5 or more), and how often the system agrees with the other humans at least as well as the rater it replaces (ρ) |
 | Gwet's AC1 | `gwet_ac1` | An agreement coefficient that does not collapse under skewed prevalence |
 | positive / negative agreement | `positive_agreement` / `negative_agreement` | How well raters agree on positive judgments and on negative judgments separately |
 | k-run rules | `majority@k`, `any@k`, `all@k` | Performance when k generations are combined by majority, any or all. `any@k` is pass@k for generation tasks |

@@ -8,6 +8,7 @@ use std::path::Path;
 use evalsig_core::agreement;
 use evalsig_core::checks::{Finding, Overrides};
 use evalsig_core::meta::{self, MetaEvaluation};
+use evalsig_core::parity::{self, ParityVerdict, Scale};
 use evalsig_core::preference::{self, RankingError};
 use evalsig_core::records::{Label, LabelKind, Preference, Record, Source, Value as RecordValue};
 use evalsig_core::reference;
@@ -20,7 +21,9 @@ use crate::checks;
 use crate::data;
 use crate::error::CliError;
 use crate::exit::Exit;
-use crate::output::{Envelope, Output, round_numbers};
+use crate::output::{
+    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
+};
 use crate::project::Project;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -35,6 +38,10 @@ pub struct Args {
     /// Bradley-Terry ranking of the arms.
     #[arg(long)]
     pub preference: bool,
+    /// The alternative annotator test: could the --run system replace one of the human
+    /// raters (D-017)?
+    #[arg(long, requires = "run")]
+    pub parity: bool,
 }
 
 /// Each rater's value per item: the latest revision of their first label replicate;
@@ -164,7 +171,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             json!({"who": r, "kind": source.get(r), "mean_kappa": k, "humans_compared": n})
         })
         .collect();
+    let mut parity_block = None;
     if let Some(run_id) = &args.run {
+        if args.parity {
+            parity_block = Some(parity(
+                &d,
+                &config,
+                &args.analysis,
+                &labels,
+                run_id,
+                &humans,
+                (&raw, decided.as_ref()),
+            )?);
+        }
         let votes: BTreeMap<&str, BTreeMap<&str, bool>> = decided
             .as_ref()
             .map(|r| {
@@ -222,7 +241,48 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             .collect();
         results["preference"] = preference_block(&prefs, &config, &mut findings)?;
     }
+    let mut verdict = None;
+    let mut warnings = Vec::new();
+    if let Some(p) = parity_block {
+        let (code, text) = match p.verdict {
+            ParityVerdict::HumanParity => (
+                VerdictCode::HumanParity,
+                format!(
+                    "the system agrees with people as well as people do: it wins against {} of {} human raters (epsilon {})",
+                    p.tested.iter().filter(|t| t.system_wins).count(),
+                    p.tested.len(),
+                    p.epsilon
+                ),
+            ),
+            ParityVerdict::BelowHuman => (
+                VerdictCode::BelowHuman,
+                format!(
+                    "the system wins against {} of {} human raters, fewer than half (epsilon {})",
+                    p.tested.iter().filter(|t| t.system_wins).count(),
+                    p.tested.len(),
+                    p.epsilon
+                ),
+            ),
+            ParityVerdict::InsufficientData => (
+                VerdictCode::InsufficientData,
+                format!(
+                    "fewer than two human raters share {} items with the others",
+                    parity::MIN_ITEMS
+                ),
+            ),
+        };
+        if p.tested.len() == 2 {
+            warnings.push(Warning {
+                code: "two_human_raters".into(),
+                message: "only two human raters were tested; parity is less reliable than with three or more".into(),
+            });
+        }
+        results["parity"] = json!(p);
+        verdict = Some(EnvelopeVerdict { code, text });
+    }
     let mut envelope = Envelope::new("evalsig.agree/1", round_numbers(results));
+    envelope.verdict = verdict;
+    envelope.warnings.extend(warnings);
     envelope.provenance.snapshots = d.snapshot_ids();
     Ok(checks::apply(envelope, &findings))
 }
@@ -259,6 +319,60 @@ fn system_row(
         "mean_kappa": mean,
         "humans_compared": each.map_or(0, |e| e.len()),
     }))
+}
+
+/// The alternative annotator test of a run against the human raters (metrics spec §9.4):
+/// a run with a decision rule is compared on decisions, nominally; one without, on its
+/// values, by their squared distance.
+fn parity(
+    d: &data::Data,
+    config: &evalsig_core::config::Config,
+    analysis_args: &AnalysisArgs,
+    labels: &[&Label],
+    run_id: &str,
+    humans: &[&str],
+    (raw, decided): (&Ratings<'_>, Option<&Ratings<'_>>),
+) -> Result<parity::Parity, CliError> {
+    let settings = analysis::settings(config, analysis_args);
+    let prepared = report::prepare(
+        d.run(run_id)?,
+        &d.judgments(run_id),
+        &d.items(),
+        labels,
+        &settings,
+    )
+    .map_err(CliError::report)?;
+    let (scale, ratings) = match (prepared.rule(), decided) {
+        (Some(_), Some(decided)) => (Scale::Nominal, decided),
+        _ => (Scale::Graded, raw),
+    };
+    let system = prepared
+        .judged()
+        .into_iter()
+        .map(|(item, (v, _))| {
+            let v = match scale {
+                // Positive when most of its replicates are, as the same-rule row reads it.
+                Scale::Nominal => f64::from(u8::from(v >= 0.5)),
+                Scale::Graded => v,
+            };
+            (item, v)
+        })
+        .collect();
+    let people = humans
+        .iter()
+        .filter_map(|h| {
+            ratings.get(h).map(|m| {
+                let values = m.iter().map(|(i, v)| ((*i).to_owned(), *v)).collect();
+                ((*h).to_owned(), values)
+            })
+        })
+        .collect();
+    Ok(parity::test(
+        &people,
+        &system,
+        scale,
+        config.agree.parity_epsilon,
+    ))
 }
 
 /// Each item's soft reference from its human raters, for the ceiling, which is
