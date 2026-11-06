@@ -13,6 +13,7 @@ use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
 use evalsig_core::gate::{self, Evidence, Outcome, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
+use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
 use evalsig_core::report::{self, Settings};
 use evalsig_core::rules::Rule;
@@ -589,18 +590,36 @@ fn judge(
             ..settings.clone()
         };
         let metric = c["metric"].as_str().unwrap_or_default();
-        let evidence = evidence(
-            metric,
-            rule,
-            sided,
-            &at,
-            run,
-            judgments,
-            base_run,
-            &base_judgments,
-            &items,
-            &labels,
-        )?;
+        let evidence = if metric == "human_parity" {
+            // The raters are tested together at the submission's level α/B, so the
+            // budget keeps its error rate (metrics spec §9.4, §11.1).
+            let cand_j: Vec<&Judgment> = judgments
+                .iter()
+                .copied()
+                .filter(|j| items.contains_key(j.item_id.as_str()))
+                .collect();
+            let p =
+                report::prepare(run, &cand_j, &items, &labels, &at).map_err(CliError::report)?;
+            let epsilon = c["value"].as_f64().unwrap_or(parity::EPSILON);
+            match parity::of_run(&p, &labels, epsilon, (1.0 - level) / f64::from(budget)).verdict {
+                ParityVerdict::HumanParity => Some(Evidence::Verdict(true)),
+                ParityVerdict::BelowHuman => Some(Evidence::Verdict(false)),
+                ParityVerdict::InsufficientData => None,
+            }
+        } else {
+            evidence(
+                metric,
+                rule,
+                sided,
+                &at,
+                run,
+                judgments,
+                base_run,
+                &base_judgments,
+                &items,
+                &labels,
+            )?
+        };
         let o = gate::judge(
             rule,
             c["value"].as_f64().unwrap_or(0.0),

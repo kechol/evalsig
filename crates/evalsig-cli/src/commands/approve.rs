@@ -138,6 +138,12 @@ pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
             .count()
     );
     doc["resolved"] = r;
+    // The gate reads no configuration, so human_parity's epsilon is fixed here.
+    for c in doc["conditions"].as_array_mut().into_iter().flatten() {
+        if c["metric"] == "human_parity" && c["value"].is_null() {
+            c["value"] = json!(config.agree.parity_epsilon);
+        }
+    }
     // TOML has no null: unset values are left out, before hashing, so the approved
     // file reads back to the same document.
     strip_nulls(&mut doc);

@@ -10,9 +10,8 @@ Reference values for most formulas are in `tests/fixtures/reference-values.json`
 Rust implementation matches them within an absolute error of 1e-9. Each section names its
 case, or says "reference case: none".
 
-The `latent` reference is left out of v1 (D-016, §9.2). The Ladder (D-015, §11.3) is not
-implemented yet, and a gate condition on the alternative annotator test (§9.4) is refused
-when drafted. Each section says what happens now.
+The `latent` reference is left out of v1 (D-016, §9.2), and the Ladder (D-015, §11.3) is
+not implemented yet; §11.3 says what happens now.
 
 ## 0. Conventions
 
@@ -584,8 +583,12 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
   the verdict is the envelope's, and the setting `agree.parity_epsilon` changes ε. A run
   with a decision rule is compared on decisions (positive when most of its replicates
   are), with the labels' positive definition; a run without one, on its values. With two
-  tested raters the output warns `two_human_raters`. A gate condition on `human_parity`
-  is refused when drafted.
+  tested raters the output warns `two_human_raters`. In a gate, a `human_parity` condition
+  with the rule `pass` runs the test on the holdout's items against the sealed human
+  labels, with its `value` as ε (fixed at approval from `agree.parity_epsilon` when left
+  out) and the raters adjusted together at the submission's level α/B instead of q =
+  0.05, so the budget keeps its error rate; `insufficient_data` leaves the condition
+  undecided.
 
 ### 9.5 Human reproducibility
 
@@ -684,7 +687,8 @@ A `preference` record compares two arms' outputs on one item and says which is b
 - **Rules.** A condition reads an interval or a verdict, never a point alone: `lower_bound_at_least`
   and `upper_bound_at_most` read the candidate's interval; `delta_lower_bound_at_least`,
   `delta_upper_bound_at_most` and `not_worse_than` (non-inferiority, a negative margin) read
-  the interval of the difference, candidate minus baseline; `pass` reads a verdict. The two
+  the interval of the difference, candidate minus baseline; `pass` reads a verdict, which only
+  `human_parity` gives (§9.4). The two
   delta rules also need the point difference to reach `min_effect` in their direction. A
   condition whose evidence is missing or of the wrong kind is undecided.
 - **Several conditions.** All must hold: an intersection-union test (Berger 1982) keeps the

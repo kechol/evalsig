@@ -12,10 +12,12 @@ use serde::Serialize;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 use crate::numeric::{mean, sum, variance};
+use crate::records::{Label, LabelKind, Source};
+use crate::report::Prepared;
 
 /// The default ε, the paper's value for crowd raters and the strictest of its three.
 pub const EPSILON: f64 = 0.1;
-/// The false discovery rate over the raters tested.
+/// The false discovery rate over the raters tested, outside a gate.
 pub const Q: f64 = 0.05;
 /// Raters sharing fewer items with the other humans are not tested.
 pub const MIN_ITEMS: usize = 30;
@@ -80,12 +82,54 @@ pub struct Parity {
     pub verdict: ParityVerdict,
 }
 
+/// A run against the human raters among `labels` (their latest first label replicate;
+/// adjudications are not raters). A run with a decision rule is compared on decisions,
+/// nominally, positive when most of its replicates are, with the labels read by the
+/// positive definition; one without, on its values, graded.
+pub fn of_run(prepared: &Prepared<'_>, labels: &[&Label], epsilon: f64, q: f64) -> Parity {
+    let scale = match (prepared.rule(), prepared.positive()) {
+        (Some(_), Some(_)) => Scale::Nominal,
+        _ => Scale::Graded,
+    };
+    let positive = prepared.positive();
+    let mut humans: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
+    for l in labels {
+        if l.source != Source::Human
+            || l.kind() == LabelKind::Adjudication
+            || l.label_replicate() != 0
+        {
+            continue;
+        }
+        let value = match (scale, positive, l.value) {
+            (Scale::Nominal, Some(p), Some(v)) => p.is_positive(v).map(|b| f64::from(u8::from(b))),
+            (Scale::Graded, _, Some(v)) => Some(v.as_f64()),
+            _ => None,
+        };
+        if let Some(v) = value {
+            humans
+                .entry(l.rater_id.clone())
+                .or_default()
+                .insert(l.item_id.clone(), v);
+        }
+    }
+    let system = prepared
+        .judged()
+        .into_iter()
+        .map(|(item, (v, _))| match scale {
+            Scale::Nominal => (item, f64::from(u8::from(v >= 0.5))),
+            Scale::Graded => (item, v),
+        })
+        .collect();
+    test(&humans, &system, scale, epsilon, q)
+}
+
 /// Each labeller's values by item: `humans[rater][item]`, `system[item]`.
 pub fn test(
     humans: &BTreeMap<String, BTreeMap<String, f64>>,
     system: &BTreeMap<String, f64>,
     scale: Scale,
     epsilon: f64,
+    q: f64,
 ) -> Parity {
     let score = |x: f64, others: &[f64]| -> f64 {
         match scale {
@@ -141,7 +185,7 @@ pub fn test(
     let adjusted = benjamini_yekutieli(&tested.iter().map(|t| t.p_value).collect::<Vec<_>>());
     for (t, a) in tested.iter_mut().zip(adjusted) {
         t.adjusted_p_value = a;
-        t.system_wins = a <= Q;
+        t.system_wins = a <= q;
     }
     let (winning_rate, advantage_probability) = if tested.is_empty() {
         (None, None)
@@ -159,7 +203,7 @@ pub fn test(
     };
     Parity {
         epsilon,
-        q: Q,
+        q,
         tested,
         skipped,
         winning_rate,
@@ -223,7 +267,7 @@ mod tests {
         short.get_mut("h2").unwrap().retain(|k, _| k.len() < 3);
         let system = (0..40).map(|i| (format!("i{i}"), 1.0)).collect();
         // h2 labelled 10 items, so neither rater shares 30 with another human.
-        let p = test(&short, &system, Scale::Nominal, EPSILON);
+        let p = test(&short, &system, Scale::Nominal, EPSILON, Q);
         assert_eq!(p.verdict, ParityVerdict::InsufficientData);
         assert!(p.tested.is_empty());
         assert_eq!((p.skipped["h1"], p.skipped["h2"]), (10, 10));

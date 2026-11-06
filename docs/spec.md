@@ -610,8 +610,8 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   `delta_upper_bound_at_most` on the candidate-minus-baseline difference;
   `not_worse_than` (non-inferiority: the difference's lower bound is at least a negative
   margin); and `pass` for a verdict metric. For the two difference rules with a
-  `min_effect`, a point difference smaller than it does not pass. No gate can use `pass`
-  yet (§15).
+  `min_effect`, a point difference smaller than it does not pass. `pass` reads the
+  alternative annotator test on the holdout ([metrics](metrics.md) §9.4).
 - **Several conditions.** All must hold. This is an intersection-union test, so the
   overall error rate does not exceed any condition's level and no further correction is
   needed.
@@ -964,7 +964,7 @@ them.
 |---|---|
 | D-015 Reuse guard defaults (step factor, budget) | The budget (default 5) and the α/B level apply. A gate returns the verdict, each condition's pass or fail and the budget left, never a value; approval fixes no step and no first best, and `reuse_guard`, `ladder_k` and `ladder_step` are accepted in `gate.toml` but unused |
 | D-016 Whether the `latent` reference (Dawid-Skene) ships (Accepted: not in v1) | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
-| D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human` ([metrics](metrics.md) §9.4); a gate condition on the metric `human_parity` is refused when drafted |
+| D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human`, and a gate condition `human_parity` with the rule `pass` runs the same test on the holdout ([metrics](metrics.md) §9.4) |
 
 ## 16. Security
 

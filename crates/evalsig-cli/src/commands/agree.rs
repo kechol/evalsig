@@ -8,7 +8,7 @@ use std::path::Path;
 use evalsig_core::agreement;
 use evalsig_core::checks::{Finding, Overrides};
 use evalsig_core::meta::{self, MetaEvaluation};
-use evalsig_core::parity::{self, ParityVerdict, Scale};
+use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::preference::{self, RankingError};
 use evalsig_core::records::{Label, LabelKind, Preference, Record, Source, Value as RecordValue};
 use evalsig_core::reference;
@@ -174,15 +174,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut parity_block = None;
     if let Some(run_id) = &args.run {
         if args.parity {
-            parity_block = Some(parity(
-                &d,
-                &config,
-                &args.analysis,
-                &labels,
-                run_id,
-                &humans,
-                (&raw, decided.as_ref()),
-            )?);
+            parity_block = Some(parity(&d, &config, &args.analysis, &labels, run_id)?);
         }
         let votes: BTreeMap<&str, BTreeMap<&str, bool>> = decided
             .as_ref()
@@ -321,17 +313,13 @@ fn system_row(
     }))
 }
 
-/// The alternative annotator test of a run against the human raters (metrics spec §9.4):
-/// a run with a decision rule is compared on decisions, nominally; one without, on its
-/// values, by their squared distance.
+/// The alternative annotator test of a run against the human raters (metrics spec §9.4).
 fn parity(
     d: &data::Data,
     config: &evalsig_core::config::Config,
     analysis_args: &AnalysisArgs,
     labels: &[&Label],
     run_id: &str,
-    humans: &[&str],
-    (raw, decided): (&Ratings<'_>, Option<&Ratings<'_>>),
 ) -> Result<parity::Parity, CliError> {
     let settings = analysis::settings(config, analysis_args);
     let prepared = report::prepare(
@@ -342,36 +330,11 @@ fn parity(
         &settings,
     )
     .map_err(CliError::report)?;
-    let (scale, ratings) = match (prepared.rule(), decided) {
-        (Some(_), Some(decided)) => (Scale::Nominal, decided),
-        _ => (Scale::Graded, raw),
-    };
-    let system = prepared
-        .judged()
-        .into_iter()
-        .map(|(item, (v, _))| {
-            let v = match scale {
-                // Positive when most of its replicates are, as the same-rule row reads it.
-                Scale::Nominal => f64::from(u8::from(v >= 0.5)),
-                Scale::Graded => v,
-            };
-            (item, v)
-        })
-        .collect();
-    let people = humans
-        .iter()
-        .filter_map(|h| {
-            ratings.get(h).map(|m| {
-                let values = m.iter().map(|(i, v)| ((*i).to_owned(), *v)).collect();
-                ((*h).to_owned(), values)
-            })
-        })
-        .collect();
-    Ok(parity::test(
-        &people,
-        &system,
-        scale,
+    Ok(parity::of_run(
+        &prepared,
+        labels,
         config.agree.parity_epsilon,
+        parity::Q,
     ))
 }
 

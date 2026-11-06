@@ -39,6 +39,7 @@ fn alt_test_cases_match() {
             &values(&i["system"]),
             scale,
             i["epsilon"].as_f64().unwrap(),
+            parity::Q,
         );
         let e = &c["expected"];
         let verdict = match p.verdict {

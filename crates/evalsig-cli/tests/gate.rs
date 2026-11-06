@@ -1,7 +1,7 @@
 //! `evalsig gate` (SPEC §8.3, §8.4; metrics spec §11.2): each submission check, the
 //! budget, and resubmission of the same candidate.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -356,29 +356,41 @@ fn a_condition_without_a_threshold_is_not_a_draft() {
 }
 
 #[test]
-fn verdict_and_uncomputed_metrics_are_refused_rather_than_left_undecided() {
+fn parity_drafts_and_uncomputed_metrics_are_checked_up_front() {
     let w = world(&gate_toml(10, 3), None);
-    // human_parity, the only verdict metric, waits for D-017.
-    let g = w.agent.path().join("parity.toml");
-    std::fs::write(
-        &g,
-        gate_toml(10, 3).replace(
-            "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
-            "metric = \"human_parity\"\nrule = \"pass\"",
-        ),
-    )
-    .unwrap();
-    let out = evalsig(w.agent.path())
-        .args(["--format", "json", "preregister", "--draft"])
-        .arg(&g)
-        .output()
+    // human_parity drafts without a value; an epsilon outside (0, 1) is refused.
+    let draft = |name: &str, condition: &str| {
+        let g = w.agent.path().join(name);
+        std::fs::write(
+            &g,
+            gate_toml(10, 3).replace(
+                "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+                condition,
+            ),
+        )
         .unwrap();
+        evalsig(w.agent.path())
+            .args(["--format", "json", "preregister", "--draft"])
+            .arg(&g)
+            .output()
+            .unwrap()
+    };
+    let out = draft("parity.toml", "metric = \"human_parity\"\nrule = \"pass\"");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = draft(
+        "wide.toml",
+        "metric = \"human_parity\"\nrule = \"pass\"\nvalue = 1.5",
+    );
     assert!(!out.status.success());
     assert!(
         json(&out)["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("D-017")
+            .contains("strictly between 0 and 1")
     );
     // A metric the gate does not compute for this run is an error, not undecided.
     let w = world(
@@ -587,4 +599,73 @@ fn approval_warns_of_low_power_and_counts_earlier_queries() {
     );
     assert!(v["results"]["power_at_hypothesis"].as_f64().unwrap() < 0.5);
     assert_eq!(v["results"]["holdout_access_so_far"], 1);
+}
+
+/// The synthetic data with three human raters who agree on every item.
+fn three_raters() -> (Vec<Value>, BTreeMap<String, bool>) {
+    let mut truth = BTreeMap::new();
+    let mut rows = Vec::new();
+    for r in lines() {
+        if r["record"] == "label" {
+            let item = r["item_id"].as_str().unwrap().to_owned();
+            if let std::collections::btree_map::Entry::Vacant(slot) = truth.entry(item) {
+                slot.insert(r["value"].as_bool().unwrap());
+                for rater in ["human:a", "human:b", "human:c"] {
+                    let mut l = r.clone();
+                    l["rater_id"] = rater.into();
+                    rows.push(l);
+                }
+            }
+        } else {
+            rows.push(r);
+        }
+    }
+    (rows, truth)
+}
+
+#[test]
+fn a_parity_condition_passes_a_candidate_that_says_what_people_say() {
+    let (referee_rows, truth) = three_raters();
+    let gate = gate_toml(10, 3).replace(
+        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+        "metric = \"human_parity\"\nrule = \"pass\"",
+    );
+    let w = world_from(&referee_rows, &gate, None);
+    // The approval fixes epsilon, since the gate reads no configuration.
+    let approved = std::fs::read_to_string(
+        w.home
+            .path()
+            .join("approved")
+            .join(format!("{}.toml", w.approved.trim_start_matches("blake3:"))),
+    )
+    .unwrap();
+    assert!(approved.contains("value = 0.1"), "{approved}");
+    let answering = |name: &str, agree: bool| {
+        let records = candidate(w.agent.path(), name, |rows| {
+            for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+                let t = truth[r["item_id"].as_str().unwrap()];
+                r.as_object_mut().unwrap().remove("missing");
+                r["value"] = (t == agree).into();
+            }
+        });
+        submit(&w, &records)
+    };
+    let out = answering("agrees.jsonl", true);
+    assert_eq!(
+        code(&out),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let v = json(&out);
+    assert_eq!(v["verdict"]["code"], "pass");
+    assert_eq!(v["results"]["conditions"][0]["passed"], true);
+    let out = answering("disagrees.jsonl", false);
+    assert_eq!(
+        code(&out),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["results"]["conditions"][0]["passed"], false);
 }

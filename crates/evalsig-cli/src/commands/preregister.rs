@@ -86,11 +86,12 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
                 c["rule"]
             ));
         }
-        // human_parity is the alternative annotator test, whose parameters wait for
-        // D-017; until then no gate can compute it.
-        if c["metric"] == "human_parity" {
+        // human_parity's value is the alternative annotator test's epsilon (D-017).
+        if c["metric"] == "human_parity"
+            && c["value"].as_f64().is_some_and(|e| !(e > 0.0 && e < 1.0))
+        {
             errors.push(format!(
-                "/conditions/{k}: human_parity is not available while D-017 is Proposed"
+                "/conditions/{k}: the epsilon of human_parity must lie strictly between 0 and 1"
             ));
         }
         // The gate computes intervals by metrics spec §1.1 only; a named method it would
