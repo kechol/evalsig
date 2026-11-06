@@ -761,7 +761,9 @@ give, there is no step and no value is ever returned.
 - **A new best.** A submission beats the best so far when the lower bound of its paired
   difference to the best on the primary metric, one-sided at α/B, is above 0 and the
   difference is at least η. The best is the baseline until a candidate beats it; the
-  referee then keeps that candidate's run and judgments, private to it, as the best.
+  referee then keeps that candidate's run and judgments, private to it, as the best of
+  these approved conditions, so other conditions or a re-approval start from the
+  baseline again.
 - **What comes back.** On a new best only, `results.ladder` holds the metric, η and the
   value rounded to a multiple of η toward the baseline: the candidate's value for an
   absolute rule, its difference to the baseline (rounded toward 0) for a difference rule.

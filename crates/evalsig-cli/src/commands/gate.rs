@@ -228,7 +228,13 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
     // The referee's own state must still be what was approved; a mismatch is the
     // referee's to fix, so it spends nothing either.
     let project = Project::open(root)?;
-    let state = referee_state(referee, &project, &approved, &entries, &held)?;
+    let state = referee_state(
+        referee,
+        &project,
+        (&args.approved, &approved),
+        &entries,
+        &held,
+    )?;
 
     let used = entries
         .iter()
@@ -306,7 +312,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
     };
     if let Some(best) = answer.best.take() {
         let text: String = best.iter().map(|r| format!("{r}\n")).collect();
-        crate::referee::replace_private(&best_path(referee, &holdout), text.as_bytes())?;
+        crate::referee::replace_private(&best_path(referee, &args.approved), text.as_bytes())?;
     }
     let ladder_value = answer
         .ladder
@@ -353,7 +359,7 @@ struct RefereeState {
 fn referee_state(
     referee: &Referee,
     project: &Project,
-    approved: &Value,
+    (approved_hash, approved): (&str, &Value),
     entries: &[evalsig_store::ledger::Entry],
     held: &BTreeSet<String>,
 ) -> Result<RefereeState, CliError> {
@@ -404,7 +410,7 @@ fn referee_state(
         .filter(|l| held.contains(&l.item_id))
         .cloned()
         .collect();
-    let best = match std::fs::read_to_string(best_path(referee, holdout)) {
+    let best = match std::fs::read_to_string(best_path(referee, approved_hash)) {
         Ok(text) => {
             let mut run = None;
             let mut judgments = Vec::new();
@@ -418,7 +424,7 @@ fn referee_state(
             run.map(|r| (r, judgments))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(io_error(&best_path(referee, holdout), &e)),
+        Err(e) => return Err(io_error(&best_path(referee, approved_hash), &e)),
     };
     Ok(RefereeState {
         d,
@@ -436,9 +442,10 @@ fn on_holdout<'a>(js: &[&'a Judgment], items: &BTreeMap<&str, &Item>) -> Vec<&'a
         .collect()
 }
 
-/// Where the Ladder keeps the best candidate of a holdout, in the referee's state.
-fn best_path(referee: &Referee, holdout: &str) -> std::path::PathBuf {
-    referee.file("state", holdout, "best.jsonl")
+/// Where the Ladder keeps the best candidate, in the referee's state: per approval, so
+/// conditions on another metric or a re-approval start again from the baseline.
+fn best_path(referee: &Referee, approved: &str) -> std::path::PathBuf {
+    referee.file("state", approved, "best.jsonl")
 }
 
 fn exit_for(code: Option<VerdictCode>) -> Exit {

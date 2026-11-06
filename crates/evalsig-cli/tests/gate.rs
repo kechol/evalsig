@@ -713,12 +713,13 @@ fn the_ladder_returns_a_rounded_value_on_a_new_best_only() {
         ((shown / step) - (shown / step).round()).abs() < 1e-9,
         "{shown} {step}"
     );
-    // The best is kept, private to the referee, and the value is in the referee ledger.
-    let best = std::fs::read_dir(w.home.path().join("state"))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| p.to_string_lossy().ends_with(".best.jsonl"))
-        .expect("the best candidate is kept");
+    // The best is kept for these approved conditions, private to the referee, and the
+    // value is in the referee ledger.
+    let best = w.home.path().join("state").join(format!(
+        "{}.best.jsonl",
+        w.approved.trim_start_matches("blake3:")
+    ));
+    assert!(best.exists(), "the best candidate is kept per approval");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
