@@ -33,6 +33,7 @@
   },
   "compare": {
    "type": "object",
+   "additionalProperties": false,
    "required": [
     "candidate"
    ],
@@ -49,6 +50,7 @@
   },
   "grader": {
    "type": "object",
+   "additionalProperties": false,
    "required": [
     "id",
     "version"
@@ -363,6 +365,7 @@
   },
   "holdout": {
    "type": "object",
+   "additionalProperties": false,
    "properties": {
     "budget": {
      "type": "integer",
