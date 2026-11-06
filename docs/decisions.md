@@ -759,8 +759,8 @@ after the entry is `Accepted`.
 
 ## D-015 Ladder defaults: step factor k and budget
 
-- Status: Proposed
-- Date: 2026-11-03
+- Status: Accepted
+- Date: 2026-11-06
 - Context: `gate` returns a value only when the candidate sets a new best,
   rounded to a step η = max(k·√(ψ̂/n), 1/n) toward the baseline (the Ladder,
   metrics spec §11.3). The spec proposes k = 2 and a budget B = 5 but asks
@@ -791,7 +791,7 @@ after the entry is `Accepted`.
   improvement learns its value. k = 1 and k = 2 return the value of every
   real improvement that passes; k = 3 withholds it from about two thirds at
   n = 300.
-- Decision (proposed):
+- Decision:
   - `reuse_guard = "ladder"` is the default and `ladder_k` defaults to 2
     (at least 1). At approval the referee fixes η from k, the primary
     condition's denominator n and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)),
