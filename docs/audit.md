@@ -265,7 +265,9 @@ and warns with `secret_in_content`; `--fail-on-secret` makes it stop.
    names the replacements before anything is deleted, so an interrupted purge
    leaves text behind and not data that cannot be loaded.
 3. It deletes the body, its redacted copy if no other record names it, the
-   superseded snapshots and the saved reports that name them.
+   superseded snapshots and the saved reports that name them. A `cache/`
+   directory, the SQLite copy that versions before D-028 kept, is deleted too
+   (`stale_working_copy_removed`).
 
 Data loading follows `purge` lines, and importing records that were purged is
 refused. Superseded snapshots remain only as hashes in the ledger. Two

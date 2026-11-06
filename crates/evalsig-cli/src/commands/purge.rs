@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::data;
 use crate::error::CliError;
-use crate::output::{Envelope, Output};
+use crate::output::{Envelope, Output, Warning};
 use crate::project::{Project, io_error};
 
 #[derive(Debug, clap::Args)]
@@ -145,6 +145,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     for p in &reports {
         std::fs::remove_file(p).map_err(|e| io_error(p, &e))?;
+    }
+    // Projects made before D-028 may still hold a SQLite copy of the data, which
+    // nothing updates any more; it would keep the purged text.
+    let stale = project.dir.join("cache");
+    if stale.is_dir() {
+        std::fs::remove_dir_all(&stale).map_err(|e| io_error(&stale, &e))?;
+        envelope.warnings.push(Warning {
+            code: "stale_working_copy_removed".into(),
+            message: format!(
+                "removed {}, a working copy left by an earlier evalsig that could hold the purged text",
+                stale.display()
+            ),
+        });
     }
     Ok(Output::success(envelope))
 }

@@ -119,6 +119,9 @@ fn purge_removes_the_text_and_keeps_the_ledger_valid() {
         .success();
     std::fs::remove_file(&file).unwrap();
     let before = json(evalsig(dir.path()).args(["report", "r", "--by", "channel"]));
+    // A working copy left by an evalsig from before D-028.
+    std::fs::create_dir(root.join("cache")).unwrap();
+    std::fs::write(root.join("cache/evalsig.db"), SECRET).unwrap();
     assert!(!holding(&root, SECRET).is_empty());
 
     evalsig(dir.path())
@@ -135,6 +138,8 @@ fn purge_removes_the_text_and_keeps_the_ledger_valid() {
     assert_eq!(v["results"]["items"], serde_json::json!(["t-0"]));
     assert_eq!(v["results"]["records_changed"], 4);
     assert_eq!(v["results"]["deleted_reports"].as_array().unwrap().len(), 1);
+    assert_eq!(v["warnings"][0]["code"], "stale_working_copy_removed");
+    assert!(!root.join("cache").exists());
 
     assert_eq!(holding(&root, SECRET), Vec::<String>::new());
     evalsig(dir.path())
