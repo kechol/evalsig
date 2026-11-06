@@ -420,20 +420,131 @@
   },
   "resolved": {
    "type": "object",
-   "description": "Written by the referee at approval, never in a draft; appears only in approved/<hash>.toml",
+   "description": "Written by the referee at approval, never in a draft; appears only in approved/<hash>.toml. Every setting the gate reads is here; a missing one is an error, never a default",
+   "required": [
+    "task",
+    "estimand",
+    "missing_on_holdout",
+    "missing",
+    "level",
+    "per_submission_level",
+    "bootstrap",
+    "reference_mode",
+    "rater_design",
+    "seed_derivation",
+    "split_entry",
+    "seal_entry",
+    "holdout",
+    "holdout_items_hash",
+    "holdout_access_so_far"
+   ],
+   "additionalProperties": false,
    "properties": {
-    "baseline_snapshot": {
+    "task": {
      "type": "string"
     },
-    "split_entry": {
-     "type": "string"
+    "positive": {
+     "type": "object",
+     "maxProperties": 1,
+     "minProperties": 1,
+     "description": "The positive definition the gate reads"
     },
-    "seal_entry": {
-     "type": "string"
+    "decision": {
+     "type": "object",
+     "maxProperties": 1,
+     "minProperties": 1,
+     "description": "The decision rule the gate reads"
     },
-    "holdout_items_hash": {
+    "estimand": {
      "type": "string",
-     "description": "Hash of the holdout items' IDs and attributes (weight, cluster, strata, label_inclusion_prob, input_ref)"
+     "pattern": "^(single_shot|(majority|any|all)@[1-9][0-9]*)$"
+    },
+    "missing_on_holdout": {
+     "enum": [
+      "worst",
+      "best",
+      "drop"
+     ],
+     "description": "Always worst: on the holdout every missing value is the worst"
+    },
+    "missing": {
+     "type": "object",
+     "additionalProperties": {
+      "enum": [
+       "worst",
+       "best",
+       "drop"
+      ]
+     },
+     "description": "The referee configuration's handling per missing reason, for validation"
+    },
+    "level": {
+     "type": "number"
+    },
+    "per_submission_level": {
+     "type": "number",
+     "description": "1 - (1 - level)/B, two-sided"
+    },
+    "bootstrap": {
+     "type": "integer",
+     "description": "Resamples; at least 50/(alpha/B) for the strictest condition"
+    },
+    "reference_mode": {
+     "enum": [
+      "single",
+      "majority",
+      "soft",
+      "latent"
+     ]
+    },
+    "rater_design": {
+     "enum": [
+      "auto",
+      "nested",
+      "crossed"
+     ]
+    },
+    "seed_derivation": {
+     "type": "string"
+    },
+    "ladder": {
+     "type": "object",
+     "required": [
+      "reuse_guard",
+      "metric",
+      "k",
+      "step",
+      "denominator",
+      "psi_hat",
+      "first_best"
+     ],
+     "additionalProperties": false,
+     "description": "The Ladder fixed at approval (metrics spec §11.3, D-015); absent without a baseline",
+     "properties": {
+      "reuse_guard": {
+       "enum": [
+        "ladder"
+       ]
+      },
+      "metric": {
+       "type": "string"
+      },
+      "k": {
+       "type": "number"
+      },
+      "step": {
+       "type": "number"
+      },
+      "denominator": {
+       "type": "number"
+      },
+      "psi_hat": {
+       "type": "number"
+      },
+      "first_best": {
+       "type": "number"
+      }
+     }
     },
     "output_type": {
      "enum": [
@@ -451,30 +562,37 @@
       "score"
      ]
     },
-    "ladder_step": {
-     "type": "number"
+    "baseline_snapshot": {
+     "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
+     "description": "Hash of the baseline's run and judgments"
     },
-    "per_submission_level": {
-     "type": "number"
+    "split_entry": {
+     "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
+     "description": "The referee ledger line that cut the holdout"
     },
-    "initial_best": {
-     "type": "number"
+    "seal_entry": {
+     "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
+     "description": "The referee ledger line that sealed it"
     },
-    "bootstrap": {
-     "type": "integer"
+    "holdout": {
+     "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$"
     },
-    "seed_derivation": {
-     "type": "string"
-    },
-    "power_at_hypothesis": {
-     "type": "number"
-    },
-    "holdout_access_so_far": {
-     "type": "integer"
+    "holdout_items_hash": {
+     "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
+     "description": "Hash of the holdout items' IDs and attributes (weight, cluster, strata, label_inclusion_prob, input_ref)"
     },
     "mapping_hash": {
      "type": "string",
+     "pattern": "^(blake3|sha256):[0-9a-f]{64}$",
      "description": "The hash of the mapping or converter, pinned at approval"
+    },
+    "holdout_access_so_far": {
+     "type": "integer"
     }
    }
   },

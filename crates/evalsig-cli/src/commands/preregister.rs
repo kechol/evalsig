@@ -79,7 +79,7 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
             let doc = approve::load(&r, approved)?;
             Ok(Output::success(Envelope::new(
                 "evalsig.preregister/1",
-                json!({ "approved": approved, "conditions": doc }),
+                json!({ "approved": approved, "conditions": doc.conditions }),
             )))
         }
         (Some(_), None) if agent && !args.yes => Err(Error::usage(
@@ -94,24 +94,24 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
 fn draft(root: &Path, file: &Path) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let doc = parse(file)?;
-    let canonical = to_canonical_bytes(&doc).map_err(Error::store)?;
+    let canonical = to_canonical_bytes(&doc.to_json()).map_err(Error::store)?;
     let hash = ContentHash::blake3(&canonical);
     let dir = project.dir.join("drafts");
     std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;
     let path = dir.join(format!("{}.json", hash.hex()));
     std::fs::write(&path, &canonical).map_err(|e| io_error(&path, &e))?;
     let summary = json!({
-        "name": doc["name"],
+        "name": doc.name,
         "draft": hash.to_string(),
-        "split": doc["split"],
-        "conditions": doc["conditions"].as_array().map_or(0, Vec::len),
+        "split": doc.split,
+        "conditions": doc.conditions.len(),
     });
     let mut envelope = Envelope::new(
         "evalsig.preregister/1",
         json!({
             "draft": hash.to_string(),
-            "name": doc["name"],
-            "conditions": doc["conditions"],
+            "name": doc.name,
+            "conditions": doc.conditions,
             "file": format!(".evalsig/drafts/{}.json", hash.hex()),
             "approved": false,
         }),

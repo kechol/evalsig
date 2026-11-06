@@ -9,21 +9,20 @@ use std::path::Path;
 
 use evalsig_core::checks::Overrides;
 use evalsig_core::compare::{self, Baseline, Options};
-use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
 use evalsig_core::gate::{self, Evidence, Outcome, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
 use evalsig_core::report::{self, Fill, Settings};
-use evalsig_core::rules::Rule;
 use evalsig_core::validity;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use evalsig_store::seal;
 use serde_json::{Value, json};
 
-use crate::approve;
+use crate::approve::{self, Approved};
+use crate::conditions::Resolved;
 use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data;
@@ -70,9 +69,8 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
     // read, then written.
     let _lock = referee.lock()?;
     let approved = approve::load(referee, &args.approved)?;
-    let r = &approved["resolved"];
-    let holdout = r["holdout"].as_str().unwrap_or_default().to_owned();
-    let budget = approve::budget(&approved);
+    let holdout = approved.resolved.holdout.clone();
+    let budget = u64::from(approved.conditions.budget());
 
     // The candidate's records: checked like any import, named by their canonical hash.
     let validator = RecordValidator::new();
@@ -190,13 +188,15 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
     let mut recorded: Vec<String> = Vec::new();
     let answer = mix_ups(&approved, args, &run, &judgments).and_then(|()| {
         judge(
-            &approved,
-            args,
-            &candidate_hash,
-            &state,
-            &run,
-            &judgments,
-            &records,
+            &Judging {
+                approved: &approved,
+                request: args,
+                candidate_hash: &candidate_hash,
+                state: &state,
+                run: &run,
+                judgments: &judgments,
+                records: &records,
+            },
             &mut recorded,
         )
     });
@@ -282,11 +282,11 @@ struct RefereeState {
 fn referee_state(
     referee: &Referee,
     project: &Project,
-    (approved_hash, approved): (&str, &Value),
+    (approved_hash, approved): (&str, &Approved),
     entries: &[evalsig_store::ledger::Entry],
     held: &BTreeSet<String>,
 ) -> Result<RefereeState, Error> {
-    let r = &approved["resolved"];
+    let r = &approved.resolved;
     let stale = |what: &str| {
         Error::new(
             "approval_out_of_date",
@@ -295,21 +295,19 @@ fn referee_state(
         )
     };
     let d = data::load(project)?;
-    if approve::holdout_items_hash(&d, held)?
-        != r["holdout_items_hash"].as_str().unwrap_or_default()
-    {
+    if approve::holdout_items_hash(&d, held)? != r.holdout_items_hash {
         return Err(stale("the holdout's items or their attributes changed"));
     }
-    if let Some(b) = approved["compare"]["baseline"].as_str()
-        && approve::baseline_hash(&d, b)? != r["baseline_snapshot"].as_str().unwrap_or_default()
+    if let Some(b) = approved.conditions.compare.baseline.as_deref()
+        && Some(approve::baseline_hash(&d, b)?) != r.baseline_snapshot
     {
         return Err(stale("the baseline's records changed"));
     }
-    let holdout = r["holdout"].as_str().unwrap_or_default();
+    let holdout = r.holdout.as_str();
     let seal = entries.iter().rev().find(|e| {
         e.kind == Kind::Seal && e.summary.get("holdout").and_then(Value::as_str) == Some(holdout)
     });
-    if seal.map(|e| e.hash.as_str()) != r["seal_entry"].as_str() {
+    if seal.map(|e| e.hash.as_str()) != Some(r.seal_entry.as_str()) {
         return Err(stale("the holdout was sealed again"));
     }
     // The sealed labels, in memory only.
@@ -420,49 +418,46 @@ fn stopped(code: VerdictCode, text: String) -> Answer {
 /// The mix-up checks that need no data (exit 3): the candidate must be what was
 /// approved. They run after the submission is counted, before the project is loaded.
 fn mix_ups(
-    approved: &Value,
+    approved: &Approved,
     args: &Request,
     run: &Run,
     judgments: &[&Judgment],
 ) -> Result<(), Error> {
-    let r = &approved["resolved"];
+    let (c, r) = (&approved.conditions, &approved.resolved);
     let refuse = |what: &str| -> Result<(), Error> {
         Err(rejected("does_not_match_approval", what.to_owned()))
     };
     let grader = run.grader.as_ref();
-    if grader.and_then(|g| g.id.as_deref()) != approved["grader"]["id"].as_str()
-        || grader.and_then(|g| g.version.as_deref()) != approved["grader"]["version"].as_str()
+    if grader.and_then(|g| g.id.as_deref()) != Some(c.grader.id.as_str())
+        || grader.and_then(|g| g.version.as_deref()) != Some(c.grader.version.as_str())
     {
         return refuse("the candidate's run.grader differs from the approved grader");
     }
-    if approved["grader"]["config_hash"]
-        .as_str()
+    if c.grader
+        .config_hash
+        .as_deref()
         .is_some_and(|h| grader.and_then(|g| g.config_hash.as_deref()) != Some(h))
     {
         return refuse("the candidate's grader configuration differs from the approved one");
     }
     // Pinned from the baseline's run; an approval without a baseline pins none of them.
-    let levels_match = r["levels"].is_null() || r["levels"].as_u64() == run.levels.map(u64::from);
-    let type_match = r["output_type"].is_null() || json!(run.output_type) == r["output_type"];
-    let semantics_match =
-        r["value_semantics"].is_null() || json!(run.value_semantics()) == r["value_semantics"];
+    let levels_match = r.levels.is_none_or(|l| run.levels == Some(l));
+    let type_match = r.output_type.is_none_or(|t| run.output_type == Some(t));
+    let semantics_match = r.value_semantics.is_none_or(|v| run.value_semantics() == v);
     if !type_match || !levels_match || !semantics_match {
         return refuse(
             "the candidate's output type, levels or value semantics differ from the approval",
         );
     }
-    if let Some(m) = r["mapping_hash"].as_str()
+    if let Some(m) = r.mapping_hash.as_deref()
         && args.mapping_hash.as_deref() != Some(m)
     {
         return refuse("the candidate's records were not made with the approved mapping");
     }
-    let task = r["task"]
-        .as_str()
-        .unwrap_or(evalsig_core::records::DEFAULT_TASK);
-    if judgments.iter().any(|j| j.task() != task) {
+    if judgments.iter().any(|j| j.task() != r.task) {
         return refuse("the candidate's judgments are for another task");
     }
-    if let Some(want) = approved["replicates"].as_u64() {
+    if let Some(want) = c.replicates {
         let mut per_item: BTreeMap<&str, BTreeSet<u32>> = BTreeMap::new();
         for j in judgments {
             per_item
@@ -479,30 +474,33 @@ fn mix_ups(
     Ok(())
 }
 
+/// One submission being judged: the approval, the referee's state and the candidate.
+struct Judging<'a> {
+    approved: &'a Approved,
+    request: &'a Request,
+    candidate_hash: &'a str,
+    state: &'a RefereeState,
+    run: &'a Run,
+    judgments: &'a [&'a Judgment],
+    records: &'a [Record],
+}
+
+/// The holdout as the conditions read it: its items and labels, the pinned baseline's
+/// judgments on it, the settings every condition starts from and the budget.
+struct Holdout<'a> {
+    items: BTreeMap<&'a str, &'a Item>,
+    labels: Vec<&'a Label>,
+    base: Option<(&'a Run, Vec<&'a Judgment>)>,
+    settings: Settings,
+    budget: u32,
+}
+
 /// The checks after the submission counts, and the conditions themselves.
-#[allow(clippy::too_many_arguments)]
-fn judge(
-    approved: &Value,
-    args: &Request,
-    candidate_hash: &str,
-    state: &RefereeState,
-    run: &Run,
-    judgments: &[&Judgment],
-    records: &[Record],
-    recorded: &mut Vec<String>,
-) -> Result<Answer, Error> {
-    let r = &approved["resolved"];
-    let (d, held) = (&state.d, &state.held);
-    let task = r["task"]
-        .as_str()
-        .unwrap_or(evalsig_core::records::DEFAULT_TASK);
-    let items: BTreeMap<&str, &Item> = d
-        .items()
-        .into_iter()
-        .filter(|(id, _)| held.contains(*id))
-        .collect();
+fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
+    let (approved, r) = (&j.approved.conditions, &j.approved.resolved);
+    let (d, held) = (&j.state.d, &j.state.held);
     // Replicates that are all the same stop the gate (no override).
-    let findings = validity::dataset(records, &Overrides::default());
+    let findings = validity::dataset(j.records, &Overrides::default());
     if findings.iter().any(|f| f.code == "identical_replicates") {
         return Ok(stopped(
             VerdictCode::Blocked,
@@ -515,7 +513,12 @@ fn judge(
             .filter(|f| f.code != "identical_replicates")
             .map(|f| f.code.to_owned()),
     );
-    let labels: Vec<&Label> = state.labels.iter().filter(|l| l.task() == task).collect();
+    let labels: Vec<&Label> = j
+        .state
+        .labels
+        .iter()
+        .filter(|l| l.task() == r.task)
+        .collect();
     // Items whose references come only from models cannot be protected: stop.
     let mut model_only: BTreeMap<&str, bool> = BTreeMap::new();
     for l in &labels {
@@ -529,88 +532,86 @@ fn judge(
     }
 
     // The baseline from the referee's own records, as pinned.
-    let baseline = approved["compare"]["baseline"].as_str();
-    let base_run = baseline.map(|b| d.run(b)).transpose()?;
-    let base_judgments: Vec<&Judgment> = baseline
-        .map(|b| {
-            d.judgments(b)
+    let base = approved
+        .compare
+        .baseline
+        .as_deref()
+        .map(|b| -> Result<_, Error> {
+            let judgments = d
+                .judgments(b)
                 .into_iter()
-                .filter(|j| held.contains(&j.item_id))
-                .collect()
+                .filter(|x| held.contains(&x.item_id))
+                .collect::<Vec<_>>();
+            Ok((d.run(b)?, judgments))
         })
-        .unwrap_or_default();
+        .transpose()?;
 
     // min_items counts paired items, independent of the labels.
-    let base_items: BTreeSet<&str> = base_judgments.iter().map(|j| j.item_id.as_str()).collect();
+    let base_items: Option<BTreeSet<&str>> = base
+        .as_ref()
+        .map(|(_, js)| js.iter().map(|x| x.item_id.as_str()).collect());
     let paired = held
         .iter()
-        .filter(|i| base_run.is_none() || base_items.contains(i.as_str()))
+        .filter(|i| base_items.as_ref().is_none_or(|b| b.contains(i.as_str())))
         .count() as u64;
-    if paired < approved["min_items"].as_u64().unwrap_or(1) {
+    if paired < approved.min_items {
         return Ok(stopped(
             VerdictCode::InsufficientData,
             format!("{paired} paired items, fewer than min_items"),
         ));
     }
 
-    let budget = approve::budget(approved) as u32;
-    let settings = settings(r, args, candidate_hash);
+    let h = Holdout {
+        items: d
+            .items()
+            .into_iter()
+            .filter(|(id, _)| held.contains(*id))
+            .collect(),
+        labels,
+        base,
+        settings: settings(r, j.request, j.candidate_hash),
+        budget: approved.budget(),
+    };
     let mut rows = Vec::new();
     let mut outcomes: Vec<Outcome> = Vec::new();
-    for c in approved["conditions"].as_array().into_iter().flatten() {
-        let rule: GateRule = serde_json::from_value(c["rule"].clone())
-            .map_err(|e| rejected("invalid_conditions", e.to_string()))?;
-        let sided: Sided = serde_json::from_value(c["sided"].clone())
-            .map_err(|e| rejected("invalid_conditions", e.to_string()))?;
-        let level = c["level"]
-            .as_f64()
-            .unwrap_or(r["level"].as_f64().unwrap_or(0.95));
+    for c in &approved.conditions {
+        let level = c.level.unwrap_or(r.level);
         let at = Settings {
-            level: gate::interval_level(level, budget, sided),
-            threshold: c["threshold"].as_f64(),
-            ..settings.clone()
+            level: gate::interval_level(level, h.budget, c.sided),
+            threshold: c.threshold,
+            ..h.settings.clone()
         };
-        let metric = c["metric"].as_str().unwrap_or_default();
-        let evidence = if metric == "human_parity" {
+        let evidence = if c.metric == "human_parity" {
             // The raters are tested together at the submission's level α/B, so the
             // budget keeps its error rate (metrics spec §9.4, §11.1).
-            let p = report::prepare(run, &on_holdout(judgments, &items), &items, &labels, &at)
-                .map_err(Error::report)?;
+            let p = report::prepare(
+                j.run,
+                &on_holdout(j.judgments, &h.items),
+                &h.items,
+                &h.labels,
+                &at,
+            )
+            .map_err(Error::report)?;
             // Approval fixes epsilon, since the gate reads no configuration.
-            let epsilon = c["value"].as_f64().ok_or_else(|| {
+            let epsilon = c.value.ok_or_else(|| {
                 rejected(
                     "invalid_conditions",
                     "human_parity has no epsilon; approve the conditions again",
                 )
             })?;
-            match parity::of_run(&p, &labels, epsilon, (1.0 - level) / f64::from(budget)).verdict {
+            let alpha = (1.0 - level) / f64::from(h.budget);
+            match parity::of_run(&p, &h.labels, epsilon, alpha).verdict {
                 ParityVerdict::HumanParity => Some(Evidence::Verdict(true)),
                 ParityVerdict::BelowHuman => Some(Evidence::Verdict(false)),
                 ParityVerdict::InsufficientData => None,
             }
         } else {
-            evidence(
-                metric,
-                rule,
-                sided,
-                &at,
-                run,
-                judgments,
-                base_run,
-                &base_judgments,
-                &items,
-                &labels,
-            )?
+            evidence(j, &h, &c.metric, c.rule, c.sided, &at)?
         };
-        let o = gate::judge(
-            rule,
-            c["value"].as_f64().unwrap_or(0.0),
-            c["min_effect"].as_f64(),
-            evidence,
-        );
+        let o = gate::judge(c.rule, c.value.unwrap_or(0.0), c.min_effect, evidence);
         outcomes.push(o);
         rows.push(
-            json!({ "metric": metric, "rule": c["rule"], "value": c["value"], "passed": o.passed }),
+            json!({ "metric": c.metric, "rule": c.rule, "value": c.value, "passed": o.passed }),
         );
     }
     let (code, text) = match gate::overall(&outcomes) {
@@ -627,24 +628,11 @@ fn judge(
             "a condition could not be decided on the holdout",
         ),
     };
-    let ladder = match base_run {
-        Some(base_run) => ladder(
-            approved,
-            state,
-            (run, judgments),
-            (base_run, &base_judgments),
-            (&items, &labels),
-            &settings,
-            budget,
-            records,
-        )?,
-        None => None,
-    };
     Ok(Answer {
         code,
         text: text.into(),
         conditions: rows,
-        ladder,
+        ladder: ladder(j, &h)?,
     })
 }
 
@@ -652,43 +640,31 @@ fn judge(
 /// bound of the candidate's paired difference to the best so far, one-sided at α/B, is
 /// above 0 and the difference reaches the approved step; the value is rounded to the
 /// step toward the baseline. The first best is the baseline.
-#[allow(clippy::too_many_arguments)]
-fn ladder(
-    approved: &Value,
-    state: &RefereeState,
-    (run, judgments): (&Run, &[&Judgment]),
-    (base_run, base_judgments): (&Run, &[&Judgment]),
-    (items, labels): (&BTreeMap<&str, &Item>, &[&Label]),
-    settings: &Settings,
-    budget: u32,
-    records: &[Record],
-) -> Result<Option<NewBest>, Error> {
-    let l = &approved["resolved"]["ladder"];
-    let (Some(metric), Some(step), Some(first_best)) = (
-        l["metric"].as_str(),
-        l["step"].as_f64(),
-        l["first_best"].as_f64(),
-    ) else {
+fn ladder(j: &Judging, h: &Holdout) -> Result<Option<NewBest>, Error> {
+    let (Some(l), Some((base_run, base_judgments))) = (&j.approved.resolved.ladder, &h.base) else {
         return Ok(None);
     };
-    let primary = &approved["conditions"][0];
-    let level = primary["level"]
-        .as_f64()
-        .unwrap_or(approved["resolved"]["level"].as_f64().unwrap_or(0.95));
+    let (items, labels) = (&h.items, h.labels.as_slice());
+    let primary = &j.approved.conditions.conditions[0];
+    let level = primary.level.unwrap_or(j.approved.resolved.level);
     let at = Settings {
-        level: gate::interval_level(level, budget, Sided::One),
-        ..settings.clone()
+        level: gate::interval_level(level, h.budget, Sided::One),
+        ..h.settings.clone()
     };
-    let cand = report::prepare(run, &on_holdout(judgments, items), items, labels, &at)
+    let cand = report::prepare(j.run, &on_holdout(j.judgments, items), items, labels, &at)
         .map_err(Error::report)?;
-    let Some(id) = cand.metric_ids().into_iter().find(|id| id.name() == metric) else {
+    let Some(id) = cand
+        .metric_ids()
+        .into_iter()
+        .find(|id| id.name() == l.metric)
+    else {
         return Ok(None);
     };
     let Some(value) = compare::total_ratio(&cand.item_values(id, Fill::Policy)) else {
         return Ok(None);
     };
     let stored: Vec<&Judgment>;
-    let best = match &state.best {
+    let best = match &j.state.best {
         Some((best_run, best_judgments)) => {
             stored = best_judgments.iter().collect();
             report::prepare(best_run, &on_holdout(&stored, items), items, labels, &at)
@@ -708,54 +684,43 @@ fn ladder(
     let beats = compare::compare(&Baseline::new(&best), &cand, &options)
         .metrics
         .iter()
-        .find(|m| m.metric == metric)
-        .and_then(|m| Some(m.ci?.0 > 0.0 && m.delta? >= step))
+        .find(|m| m.metric == l.metric)
+        .and_then(|m| Some(m.ci?.0 > 0.0 && m.delta? >= l.step))
         .unwrap_or(false);
     if !beats {
         return Ok(None);
     }
-    let rule: GateRule = serde_json::from_value(primary["rule"].clone())
-        .map_err(|e| rejected("invalid_conditions", e.to_string()))?;
     // A difference rule returns the difference to the baseline, rounded toward 0.
-    let shown = if rule.on_delta() {
-        gate::round_toward(value - first_best, 0.0, step)
+    let shown = if primary.rule.on_delta() {
+        gate::round_toward(value - l.first_best, 0.0, l.step)
     } else {
-        gate::round_toward(value, first_best, step)
+        gate::round_toward(value, l.first_best, l.step)
     };
-    let records = approve::run_records(records, &run.run_id)
+    let records = approve::run_records(j.records, &j.run.run_id)
         .map(|r| format!("{}\n", serde_json::to_string(r).expect("records serialize")))
         .collect();
     Ok(Some(NewBest {
-        shown: json!({ "metric": metric, "value": shown, "step": step }),
+        shown: json!({ "metric": l.metric, "value": shown, "step": l.step }),
         records,
     }))
 }
 
 /// The resolved settings, every missing value the worst (SPEC §8.3), and a seed
 /// derived from the approval and the candidate.
-fn settings(r: &Value, args: &Request, candidate_hash: &str) -> Settings {
-    let rule = |k: &str| -> Option<Rule> { serde_json::from_value(r[k].clone()).ok() };
+fn settings(r: &Resolved, args: &Request, candidate_hash: &str) -> Settings {
     let seed_bytes =
         ContentHash::blake3(format!("{}{candidate_hash}", args.approved).as_bytes()).hex();
     Settings {
-        task: r["task"]
-            .as_str()
-            .unwrap_or(evalsig_core::records::DEFAULT_TASK)
-            .to_owned(),
-        positive: rule("positive"),
-        decision: rule("decision"),
+        task: r.task.clone(),
+        positive: r.positive,
+        decision: r.decision,
         threshold: None,
-        estimand: r["estimand"]
-            .as_str()
-            .and_then(|e| e.parse::<Estimand>().ok())
-            .unwrap_or(Estimand::SingleShot),
+        estimand: r.estimand,
         missing: MissingPolicy::holdout(),
-        reference: serde_json::from_value(r["reference_mode"].clone())
-            .unwrap_or(ReferenceMode::Soft),
-        rater_design: serde_json::from_value(r["rater_design"].clone())
-            .unwrap_or(RaterDesign::Auto),
-        level: r["level"].as_f64().unwrap_or(0.95),
-        bootstrap: r["bootstrap"].as_u64().unwrap_or(2000) as u32,
+        reference: r.reference_mode,
+        rater_design: r.rater_design,
+        level: r.level,
+        bootstrap: r.bootstrap,
         seed: u64::from_str_radix(&seed_bytes[..16], 16).unwrap_or(0),
         prevalence: None,
         by: None,
@@ -768,20 +733,16 @@ fn settings(r: &Value, args: &Request, candidate_hash: &str) -> Settings {
 }
 
 /// The evidence a condition reads, at the condition's interval level.
-#[allow(clippy::too_many_arguments)]
 fn evidence(
+    j: &Judging,
+    h: &Holdout,
     metric: &str,
     rule: GateRule,
     sided: Sided,
     s: &Settings,
-    run: &Run,
-    judgments: &[&Judgment],
-    base_run: Option<&Run>,
-    base_judgments: &[&Judgment],
-    items: &BTreeMap<&str, &Item>,
-    labels: &[&Label],
 ) -> Result<Option<Evidence>, Error> {
-    let cand_j = on_holdout(judgments, items);
+    let (run, items, labels) = (j.run, &h.items, h.labels.as_slice());
+    let cand_j = on_holdout(j.judgments, items);
     if metric == "missing_rate" {
         // Every missing judgment counts, whatever its reason (SPEC §8.3).
         let missing = cand_j.iter().filter(|j| j.missing.is_some()).count() as u64;
@@ -793,7 +754,7 @@ fn evidence(
         ));
     }
     if rule.on_delta() {
-        let Some(base_run) = base_run else {
+        let Some((base_run, base_judgments)) = &h.base else {
             return Ok(None);
         };
         let pa =
