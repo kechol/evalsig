@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_core::records::Item;
-use evalsig_core::split::{self, Assignment, Method, Part, SplitError};
+use evalsig_core::split::{self, Assignment, Method, Part};
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
@@ -16,8 +16,8 @@ use evalsig_project::data;
 use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::project::{Project, hex, io_error};
 use evalsig_project::provenance::item_set_hash;
-use evalsig_project::split::split_entries;
-use evalsig_referee::home::Referee;
+use evalsig_project::split::{split_entries, split_error};
+use evalsig_referee::holdout;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum MethodArg {
@@ -62,18 +62,6 @@ pub struct Args {
     /// The referee's home (default: EVALSIG_REFEREE).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
-}
-
-/// The same mistake gets the same code and exit on either side of the split.
-fn split_error(e: SplitError) -> Error {
-    match e {
-        SplitError::CrossesCluster { .. } => {
-            Error::rejected("split_crosses_cluster", e.to_string())
-        }
-        SplitError::NotAvailable(_) => Error::rejected("holdout_item", e.to_string()),
-        SplitError::Share => Error::usage(e.to_string()),
-        _ => Error::rejected("split", e.to_string()),
-    }
 }
 
 fn read_json(path: &Path) -> Result<Value, Error> {
@@ -127,7 +115,20 @@ fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, Error> {
 
 pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if args.holdout {
-        return holdout(root, args);
+        return holdout::cut(
+            root,
+            &holdout::Request {
+                method: args.method.map(|m| match m {
+                    MethodArg::Time => holdout::Method::Time,
+                    MethodArg::Random => holdout::Method::Random,
+                }),
+                share: args.share,
+                stratum: args.stratum.clone(),
+                seed: args.seed,
+                out: args.out.clone().expect("clap requires --out"),
+                referee: args.referee.clone(),
+            },
+        );
     }
     let project = Project::open(root)?;
     let config = project.config()?;
@@ -214,78 +215,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         vec![name_hash],
         summary,
     )?;
-    Ok(Output::success(envelope))
-}
-
-/// `split --holdout`, the referee's carve-out (SPEC §8.1, D-022): whole clusters to
-/// the holdout, recorded in the referee ledger by the holdout's item-set hash, which
-/// names the holdout and its budget; the agent gets the other item IDs only.
-fn holdout(root: &Path, args: &Args) -> Result<Output, Error> {
-    let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
-    let project = Project::open(root)?;
-    let config = project.config()?;
-    let d = data::load(&project)?;
-    let items: Vec<&Item> = d.items().into_values().collect();
-    let use_time = match args.method {
-        Some(MethodArg::Time) => true,
-        Some(MethodArg::Random) => false,
-        None => items.iter().all(|i| i.occurred_at.is_some()),
-    };
-    let seed = args.seed.or(config.stats.seed).unwrap_or(0);
-    let (method, name) = if use_time {
-        (Method::Time, "time")
-    } else {
-        (
-            Method::Random {
-                seed,
-                stratum: args.stratum.clone(),
-            },
-            "random",
-        )
-    };
-    let a = split::split(&items, None, &method, args.share).map_err(split_error)?;
-    let (remaining, held) = (a.dev, a.validation);
-    let hash = item_set_hash(held.iter())?;
-    let file = referee.file("holdouts", &hash, "json");
-    let mut text = serde_json::to_string_pretty(&json!({
-        "schema": Schema::Holdout.name(),
-        "holdout": hash,
-        "method": name,
-        "seed": (name == "random").then_some(seed),
-        "share": args.share,
-        "items": held,
-    }))
-    .expect("holdouts serialize");
-    text.push('\n');
-    std::fs::write(&file, text).map_err(|e| io_error(&file, &e))?;
-    let out = args.out.as_ref().expect("clap requires --out");
-    evalsig_project::project::outside_store(out)?;
-    let mut text = serde_json::to_string_pretty(&json!({
-        "schema": Schema::Remaining.name(),
-        "holdout": hash,
-        "items": remaining,
-    }))
-    .expect("item IDs serialize");
-    text.push('\n');
-    std::fs::write(out, text).map_err(|e| io_error(out, &e))?;
-    let summary = json!({
-        "holdout": { "hash": hash, "items": held.len() },
-        "remaining": { "hash": item_set_hash(remaining.iter())?, "items": remaining.len() },
-        "method": name,
-        "seed": (name == "random").then_some(seed),
-        // Ledger summaries hold no floating-point numbers (D-007).
-        "share": args.share.to_string(),
-    });
-    let snapshots = d.snapshot_ids();
-    referee.record(
-        Kind::Split,
-        snapshots.clone(),
-        vec![hash.clone()],
-        summary.clone(),
-    )?;
-    let mut envelope = Envelope::new(Schema::Holdout, summary);
-    envelope.provenance.snapshots = snapshots;
-    envelope.provenance.ledger = Some("referee".into());
     Ok(Output::success(envelope))
 }
 

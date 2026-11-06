@@ -145,6 +145,12 @@ fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, Er
 impl Referee {
     /// The home, as `open` finds it, locked against every other writer while the
     /// returned guard lives.
+    /// Whether a command is run as the referee: a home was named on the command line
+    /// or in EVALSIG_REFEREE.
+    pub fn named(arg: Option<&Path>) -> bool {
+        arg.is_some() || std::env::var_os(ENV).is_some_and(|v| !v.is_empty())
+    }
+
     pub fn open_exclusive(arg: Option<&Path>) -> Result<(Referee, std::fs::File), Error> {
         let referee = Referee::open(arg)?;
         let lock = referee.lock()?;

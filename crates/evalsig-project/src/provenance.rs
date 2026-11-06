@@ -2,6 +2,8 @@
 //! configuration, the seed, the request and the output hash; the saved report file;
 //! and the ledger line that names it.
 
+use std::collections::BTreeSet;
+
 use evalsig_core::config::Config;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
@@ -94,4 +96,12 @@ pub fn finish(
         vec![out.to_string()],
         summary,
     )
+}
+
+/// The items and their set hash, the input of the `exclude` line.
+pub fn item_set(items: &[String]) -> Result<(BTreeSet<String>, Vec<u8>, String), Error> {
+    let set: BTreeSet<String> = items.iter().cloned().collect();
+    let bytes = item_set_bytes(set.iter())?;
+    let hash = ContentHash::blake3(&bytes).to_string();
+    Ok((set, bytes, hash))
 }

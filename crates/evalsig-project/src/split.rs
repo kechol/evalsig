@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use evalsig_core::split::Part;
+use evalsig_core::split::{Part, SplitError};
 use evalsig_store::ledger::{Entry, Kind};
 use serde_json::Value;
 
@@ -58,4 +58,16 @@ pub fn scope(project: &Project, part: Part, hash: Option<&str>) -> Result<Scope,
         hash: part_hash(&entry).unwrap_or_default(),
         items: str_set(&file[key]),
     })
+}
+
+/// The same mistake gets the same code and exit on either side of the split.
+pub fn split_error(e: SplitError) -> Error {
+    match e {
+        SplitError::CrossesCluster { .. } => {
+            Error::rejected("split_crosses_cluster", e.to_string())
+        }
+        SplitError::NotAvailable(_) => Error::rejected("holdout_item", e.to_string()),
+        SplitError::Share => Error::usage(e.to_string()),
+        _ => Error::rejected("split", e.to_string()),
+    }
 }

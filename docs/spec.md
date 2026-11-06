@@ -895,7 +895,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing | blake3, ruzstd, age |
 | `evalsig-adapters` | Ingestion adapters, probe, draft and test of mappings | zip (Deflate only), ruzstd, rusqlite (bundled, promptfoo databases) |
 | `evalsig-project` | The `.evalsig/` project: data in force, settings, the analyses, provenance and ledger lines, import, validation against the published schemas | jsonschema |
-| `evalsig-referee` | The referee's home, gate conditions and approval, sealing, the gate and the Ladder, `gate serve` | jsonschema |
+| `evalsig-referee` | The referee's home, the holdout cut and its exclusions, sealing, gate conditions and approval, the gate and the Ladder, `gate serve` | jsonschema |
 | `evalsig-dashboard` | Local web dashboard: screens, server, HTML and SVG rendering | standard library, serde_json |
 | `evalsig-cli` | The `evalsig` binary: argument parsing, rendering, agent output, generated help and Skill | clap, parquet |
 

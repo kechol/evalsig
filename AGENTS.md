@@ -13,7 +13,7 @@ contributors and to AI coding agents alike.
 | `crates/evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing |
 | `crates/evalsig-adapters` | Ingestion adapters (Inspect, promptfoo, declarative mapping) |
 | `crates/evalsig-project` | The `.evalsig/` project: data in force, analyses, provenance, import, published JSON Schemas |
-| `crates/evalsig-referee` | The referee: its home, gate conditions and approval, sealing, the gate and the Ladder, `gate serve` |
+| `crates/evalsig-referee` | The referee: its home, the holdout cut and its exclusions, sealing, gate conditions and approval, the gate and the Ladder, `gate serve` |
 | `crates/evalsig-dashboard` | Local web dashboard: screens, server, HTML and SVG rendering |
 | `crates/evalsig-cli` | The `evalsig` binary: argument parsing, rendering, agent output, generated help and Skill |
 | `docs/decisions.md` | Decision ledger (`D-NNN`). Read its header before adding an entry |

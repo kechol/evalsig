@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use evalsig_core::records::Record;
-use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
@@ -56,22 +55,17 @@ fn item_of(r: &Record) -> Option<&str> {
     }
 }
 
-/// The items and their set hash, the input of the `exclude` line.
-fn item_set(items: &[String]) -> Result<(BTreeSet<String>, Vec<u8>, String), Error> {
-    let set: BTreeSet<String> = items.iter().cloned().collect();
-    let bytes = provenance::item_set_bytes(set.iter())?;
-    let hash = ContentHash::blake3(&bytes).to_string();
-    Ok((set, bytes, hash))
-}
-
 pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if args.reason == Reason::Other && args.detail.as_deref().is_none_or(|d| d.trim().is_empty()) {
         return Err(Error::usage("--reason other needs --detail"));
     }
-    let referee_home = args.referee.is_some()
-        || std::env::var_os(evalsig_referee::home::ENV).is_some_and(|v| !v.is_empty());
-    if referee_home {
-        referee_side(args)
+    if Referee::named(args.referee.as_deref()) {
+        evalsig_referee::exclude::exclude(
+            args.referee.as_deref(),
+            &args.items,
+            &args.reason,
+            args.detail.as_deref(),
+        )
     } else {
         agent_side(root, args)
     }
@@ -100,7 +94,7 @@ fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, Error> {
 
 fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
     let project = Project::open(root)?;
-    let (items, bytes, set_hash) = item_set(&args.items)?;
+    let (items, bytes, set_hash) = provenance::item_set(&args.items)?;
     if let Some(mine) = remaining(&project)?
         && let Some(held) = items.iter().find(|i| !mine.contains(*i))
     {
@@ -164,36 +158,5 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
         Replacement::outputs(&replaced),
         summary,
     )?;
-    Ok(Output::success(envelope))
-}
-
-fn referee_side(args: &Args) -> Result<Output, Error> {
-    let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
-    let (items, bytes, set_hash) = item_set(&args.items)?;
-    let held = referee.all_holdout_items()?;
-    if let Some(other) = items.iter().find(|i| !held.contains(*i)) {
-        return Err(
-            Error::usage(format!("{other} is in no holdout of this referee"))
-                .with_hint("the agent excludes the items it may use, without --referee"),
-        );
-    }
-    let p = referee.file("exclusions", &set_hash, "json");
-    std::fs::write(&p, &bytes).map_err(|e| io_error(&p, &e))?;
-    let summary = json!({ "reason": args.reason, "detail": args.detail, "count": items.len() });
-    referee.record(Kind::Exclude, vec![set_hash], vec![], summary.clone())?;
-    let mut results = summary;
-    results["items"] = json!(items);
-    let mut envelope = Envelope::new(Schema::Exclude, results);
-    envelope.provenance.ledger = Some("referee".into());
-    if referee
-        .entries()?
-        .iter()
-        .any(|e| e.kind == Kind::PreregisterApprove)
-    {
-        envelope.warnings.push(Warning {
-            code: "reapproval_needed".into(),
-            message: "approvals pin the holdout's items; gate refuses them, without spending budget, until the conditions are approved again".into(),
-        });
-    }
     Ok(Output::success(envelope))
 }
