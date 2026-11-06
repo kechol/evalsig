@@ -1039,8 +1039,8 @@ after the entry is `Accepted`.
   taken: the referee crate is the boundary a security review reads); keeping
   the layers as modules of the binary (not taken: the dashboard and a later
   MCP server need a library API).
-- Consequences: the project and referee crates return `CliError`-shaped
-  errors through their own error type, which the binary renders; the
+- Consequences: the project and referee crates return `evalsig_project::Error`
+  (a stable code, a message, a hint and an exit code), which the binary renders; the
   dashboard depends on `evalsig-project` rather than on the CLI's JSON alone.
   The published JSON Schemas move with the validation that embeds them, to
   `crates/evalsig-project/schema/`; the paths D-003, D-007, D-011 and D-012
