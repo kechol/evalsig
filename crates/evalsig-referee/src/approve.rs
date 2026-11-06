@@ -24,7 +24,6 @@ use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data::{self, Data};
 use evalsig_project::envelope::{Envelope, Output, Schema, Warning, round_numbers};
-use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 
 /// What the referee approves: a draft, for a holdout, with a pinned mapping.
@@ -43,10 +42,6 @@ pub struct Request {
     pub referee: Option<PathBuf>,
 }
 
-fn rejected(message: impl Into<String>) -> Error {
-    Error::new("invalid_conditions", message, Exit::Rejected)
-}
-
 pub fn canonical_hash(v: &Value) -> Result<String, Error> {
     Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(Error::store)?).to_string())
 }
@@ -61,7 +56,7 @@ fn draft(dir: &Path, hash: &str) -> Result<Conditions, Error> {
         .map_err(|_| Error::usage(format!("no draft {hash} in {}", dir.display())))?;
     let doc: Value = serde_json::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
     if canonical_hash(&doc)? != hash {
-        return Err(rejected(format!(
+        return Err(Error::invalid_conditions(format!(
             "{} does not hash to {hash}",
             path.display()
         )));
@@ -89,7 +84,7 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
         .ok_or_else(|| Error::usage("seal the holdout before approving conditions on it"))?;
     let held = referee.holdout_items(&args.holdout)?;
     if (held.len() as u64) < doc.min_items {
-        return Err(rejected(format!(
+        return Err(Error::invalid_conditions(format!(
             "min_items is {} but the holdout has {} items; the gate could never decide",
             doc.min_items,
             held.len()
@@ -133,7 +128,7 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
     }
     let approved = canonical_hash(&doc.to_json())?;
     let path = referee.file("approved", &approved, "toml");
-    let toml = toml::to_string(&doc).map_err(|e| rejected(e.to_string()))?;
+    let toml = toml::to_string(&doc).map_err(|e| Error::invalid_conditions(e.to_string()))?;
     std::fs::write(&path, toml).map_err(|e| io_error(&path, &e))?;
     let resolved = doc.resolved.as_ref().expect("set above");
 
@@ -227,7 +222,7 @@ impl Approval<'_> {
                 r.value_semantics() == evalsig_core::records::ValueSemantics::Decision
             })
         {
-            return Err(rejected(
+            return Err(Error::invalid_conditions(
                 "the conditions need a positive definition (positive) for this decision run",
             ));
         }
@@ -406,13 +401,13 @@ pub fn load(referee: &Referee, approved: &str) -> Result<Approved, Error> {
         .map_err(|_| Error::usage(format!("no approved conditions {approved}")))?;
     let doc: Conditions = toml::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
     if canonical_hash(&doc.to_json())? != approved {
-        return Err(rejected(format!(
+        return Err(Error::invalid_conditions(format!(
             "{} was changed after approval",
             path.display()
         )));
     }
     let resolved = doc.resolved.clone().ok_or_else(|| {
-        rejected(format!(
+        Error::invalid_conditions(format!(
             "{} has no resolved settings; approve the conditions again",
             path.display()
         ))

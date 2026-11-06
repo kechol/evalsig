@@ -715,8 +715,7 @@ struct Calc<'a> {
 }
 
 /// A metric of the default tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MetricId {
     /// Share of items on which the judgment equals the reference.
     Accuracy,
@@ -732,6 +731,13 @@ pub enum MetricId {
     MeanScore,
     /// Share of score judgments at or above the threshold.
     RateAtLeast,
+}
+
+/// Serialized as [`MetricId::name`], the one place its identifier is written.
+impl Serialize for MetricId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
 }
 
 impl MetricId {

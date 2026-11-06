@@ -10,7 +10,6 @@ use evalsig_core::missing::Policy;
 use evalsig_core::records::{MissingReason, OutputType, ValueSemantics};
 use evalsig_core::rules::Rule;
 use evalsig_project::Error;
-use evalsig_project::exit::Exit;
 use evalsig_project::project::io_error;
 use evalsig_project::schemas;
 use serde::{Deserialize, Serialize};
@@ -199,16 +198,13 @@ impl Conditions {
     }
 }
 
-fn invalid(message: impl Into<String>) -> Error {
-    Error::new("invalid_conditions", message, Exit::Rejected)
-}
-
 /// The conditions as JSON, checked against `gate/1`; refuses the `resolved` section,
 /// which only approval writes.
 pub fn parse(path: &Path) -> Result<Conditions, Error> {
     let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
-    let toml: toml::Table = toml::from_str(&text)
-        .map_err(|e: toml::de::Error| invalid(format!("{}: {e}", path.display())))?;
+    let toml: toml::Table = toml::from_str(&text).map_err(|e: toml::de::Error| {
+        Error::invalid_conditions(format!("{}: {e}", path.display()))
+    })?;
     let doc = serde_json::to_value(toml).expect("TOML converts to JSON");
     checked(&doc, &path.display().to_string())
 }
@@ -216,7 +212,8 @@ pub fn parse(path: &Path) -> Result<Conditions, Error> {
 /// A document that passes `check`, as conditions.
 pub fn checked(doc: &Value, origin: &str) -> Result<Conditions, Error> {
     check(doc, origin)?;
-    serde_json::from_value(doc.clone()).map_err(|e| invalid(format!("{origin}: {e}")))
+    serde_json::from_value(doc.clone())
+        .map_err(|e| Error::invalid_conditions(format!("{origin}: {e}")))
 }
 
 /// The checks a draft passes when it is written and again when the referee approves
@@ -224,7 +221,7 @@ pub fn checked(doc: &Value, origin: &str) -> Result<Conditions, Error> {
 /// schema, and a threshold for every condition that compares against one.
 pub fn check(doc: &Value, origin: &str) -> Result<(), Error> {
     if doc.get("resolved").is_some() {
-        return Err(invalid(
+        return Err(Error::invalid_conditions(
             "a draft has no resolved section; approval writes it",
         ));
     }
@@ -266,7 +263,10 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), Error> {
         }
     }
     if !errors.is_empty() {
-        return Err(invalid(format!("{origin}: {}", errors.join("; "))));
+        return Err(Error::invalid_conditions(format!(
+            "{origin}: {}",
+            errors.join("; ")
+        )));
     }
     Ok(())
 }

@@ -34,6 +34,16 @@ impl Error {
         Error::new("report", e.to_string(), Exit::Rejected)
     }
 
+    /// Input this command refuses: exit 3 with the given code.
+    pub fn rejected(code: impl Into<Cow<'static, str>>, message: impl Into<String>) -> Self {
+        Error::new(code, message, Exit::Rejected)
+    }
+
+    /// Gate or check conditions that are malformed or cannot be judged.
+    pub fn invalid_conditions(message: impl Into<String>) -> Self {
+        Error::rejected("invalid_conditions", message)
+    }
+
     pub fn usage(message: impl Into<String>) -> Self {
         Error::new("usage", message, Exit::Usage)
     }

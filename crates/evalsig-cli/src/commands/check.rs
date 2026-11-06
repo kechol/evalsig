@@ -35,17 +35,13 @@ pub struct Args {
     pub checks: DatasetArgs,
 }
 
-fn rejected(message: impl Into<String>) -> Error {
-    Error::new("invalid_conditions", message, Exit::Rejected)
-}
-
 pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     Analysis::from(args.analysis.clone()).without_proxy("check")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let text = std::fs::read_to_string(&args.file).map_err(|e| io_error(&args.file, &e))?;
-    let file =
-        criteria::parse(&text).map_err(|e| rejected(format!("{}: {e}", args.file.display())))?;
+    let file = criteria::parse(&text)
+        .map_err(|e| Error::invalid_conditions(format!("{}: {e}", args.file.display())))?;
     let d = data::load(&project)?;
     let run = d.run(&args.run)?;
     if let Some(g) = &file.grader {
@@ -55,7 +51,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
                 .as_ref()
                 .is_none_or(|v| actual.and_then(|a| a.version.as_ref()) == Some(v));
         if !matches {
-            return Err(rejected(format!(
+            return Err(Error::invalid_conditions(format!(
                 "run {} was graded by {:?}, not {:?}",
                 args.run,
                 actual.and_then(|a| a.id.clone()),
@@ -194,7 +190,7 @@ fn condition_value(c: &Condition, r: &Report, level: f64) -> Result<Measured, Er
         .iter()
         .find(|m| m.metric == c.metric)
         .ok_or_else(|| {
-            rejected(format!(
+            Error::invalid_conditions(format!(
                 "metric {:?} is not available for this run; available: {}, missing_rate",
                 c.metric,
                 r.metrics

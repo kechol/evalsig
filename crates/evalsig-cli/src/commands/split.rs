@@ -14,7 +14,6 @@ use serde_json::{Value, json};
 use evalsig_project::Error;
 use evalsig_project::data;
 use evalsig_project::envelope::{Envelope, Output, Schema};
-use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 use evalsig_project::provenance::item_set_hash;
 use evalsig_project::split::split_entries;
@@ -68,15 +67,13 @@ pub struct Args {
 /// The same mistake gets the same code and exit on either side of the split.
 fn split_error(e: SplitError) -> Error {
     match e {
-        SplitError::CrossesCluster { .. } => rejected("split_crosses_cluster", e.to_string()),
-        SplitError::NotAvailable(_) => rejected("holdout_item", e.to_string()),
+        SplitError::CrossesCluster { .. } => {
+            Error::rejected("split_crosses_cluster", e.to_string())
+        }
+        SplitError::NotAvailable(_) => Error::rejected("holdout_item", e.to_string()),
         SplitError::Share => Error::usage(e.to_string()),
-        _ => rejected("split", e.to_string()),
+        _ => Error::rejected("split", e.to_string()),
     }
-}
-
-fn rejected(code: &'static str, message: impl Into<String>) -> Error {
-    Error::new(code, message, Exit::Rejected)
 }
 
 fn read_json(path: &Path) -> Result<Value, Error> {

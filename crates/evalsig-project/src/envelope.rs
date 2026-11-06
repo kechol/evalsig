@@ -196,9 +196,8 @@ impl Schema {
 }
 
 /// The conclusion of an output. The set is fixed within a schema version; agents
-/// quote unknown codes without interpreting them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// quote unknown codes without interpreting them. Serialized as [`VerdictCode::as_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerdictCode {
     Pass,
     Fail,
@@ -291,6 +290,22 @@ impl VerdictCode {
             VerdictCode::NeedsDecisions => "needs_decisions",
             VerdictCode::BudgetExhausted => "budget_exhausted",
         }
+    }
+}
+
+impl Serialize for VerdictCode {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VerdictCode {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(d)?;
+        VerdictCode::ALL
+            .into_iter()
+            .find(|c| c.as_str() == name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown verdict code {name:?}")))
     }
 }
 
@@ -461,6 +476,15 @@ mod tests {
     }
 
     #[test]
+    fn verdict_codes_read_back() {
+        for c in VerdictCode::ALL {
+            let v = serde_json::to_value(c).unwrap();
+            assert_eq!(serde_json::from_value::<VerdictCode>(v).unwrap(), c);
+        }
+        assert!(serde_json::from_value::<VerdictCode>("maybe".into()).is_err());
+    }
+
+    #[test]
     fn schema_names_are_distinct_and_read_back() {
         let mut names: Vec<&str> = Schema::ALL.iter().map(|s| s.name()).collect();
         for s in Schema::ALL {
@@ -470,12 +494,5 @@ mod tests {
         names.sort();
         names.dedup();
         assert_eq!(names.len(), Schema::ALL.len());
-    }
-
-    #[test]
-    fn verdict_names_match_their_serialization() {
-        for c in VerdictCode::ALL {
-            assert_eq!(serde_json::to_value(c).unwrap(), c.as_str());
-        }
     }
 }

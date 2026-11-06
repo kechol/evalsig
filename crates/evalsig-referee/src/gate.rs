@@ -42,10 +42,6 @@ pub struct Request {
     pub agent_ledger_head: Option<String>,
 }
 
-fn rejected(code: &'static str, message: impl Into<String>) -> Error {
-    Error::new(code, message, Exit::Rejected)
-}
-
 /// The answer the candidate's side receives.
 struct Answer {
     code: VerdictCode,
@@ -82,7 +78,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         .filter(|(_, l)| !l.trim().is_empty())
     {
         records.push(validator.check_line(n + 1, line).map_err(|issues| {
-            rejected(
+            Error::rejected(
                 "invalid_records",
                 format!("line {}: {}", n + 1, issues[0].message),
             )
@@ -116,7 +112,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
             _ => None,
         })
         .ok_or_else(|| {
-            rejected(
+            Error::rejected(
                 "invalid_records",
                 format!("the records hold no run {}", args.candidate),
             )
@@ -135,7 +131,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
     let judged: BTreeSet<&str> = judgments.iter().map(|j| j.item_id.as_str()).collect();
     let absent = held.iter().filter(|i| !judged.contains(i.as_str())).count();
     if absent > 0 {
-        return Err(rejected(
+        return Err(Error::rejected(
             "incomplete_coverage",
             format!(
                 "the candidate's records leave out {absent} holdout items; no budget was spent"
@@ -312,17 +308,18 @@ fn referee_state(
     }
     // The sealed labels, in memory only.
     let sealed = std::fs::read(referee.file("sealed", holdout, "age")).map_err(|e| {
-        rejected(
+        Error::rejected(
             "seal",
             format!("the holdout's sealed labels cannot be read: {e}"),
         )
     })?;
-    let plain =
-        seal::open(&referee.identity()?, &sealed).map_err(|e| rejected("seal", e.to_string()))?;
+    let plain = seal::open(&referee.identity()?, &sealed)
+        .map_err(|e| Error::rejected("seal", e.to_string()))?;
     let mut set = LabelSet::default();
     for line in String::from_utf8_lossy(&plain).lines() {
         if let Ok(Record::Label(l)) = Record::from_json(line) {
-            set.insert(l).map_err(|e| rejected("seal", e.to_string()))?;
+            set.insert(l)
+                .map_err(|e| Error::rejected("seal", e.to_string()))?;
         }
     }
     let labels = set
@@ -336,7 +333,9 @@ fn referee_state(
             let mut run = None;
             let mut judgments = Vec::new();
             for line in text.lines() {
-                match Record::from_json(line).map_err(|e| rejected("ladder", e.to_string()))? {
+                match Record::from_json(line)
+                    .map_err(|e| Error::rejected("ladder", e.to_string()))?
+                {
                     Record::Run(r) => run = Some(r),
                     Record::Judgment(j) => judgments.push(j),
                     _ => {}
@@ -425,7 +424,7 @@ fn mix_ups(
 ) -> Result<(), Error> {
     let (c, r) = (&approved.conditions, &approved.resolved);
     let refuse = |what: &str| -> Result<(), Error> {
-        Err(rejected("does_not_match_approval", what.to_owned()))
+        Err(Error::rejected("does_not_match_approval", what.to_owned()))
     };
     let grader = run.grader.as_ref();
     if grader.and_then(|g| g.id.as_deref()) != Some(c.grader.id.as_str())
@@ -594,7 +593,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
             .map_err(Error::report)?;
             // Approval fixes epsilon, since the gate reads no configuration.
             let epsilon = c.value.ok_or_else(|| {
-                rejected(
+                Error::rejected(
                     "invalid_conditions",
                     "human_parity has no epsilon; approve the conditions again",
                 )
@@ -803,7 +802,7 @@ fn evidence(
 /// A condition on a metric the gate does not compute for this run is an error in the
 /// approval, not too little data.
 fn not_computed(metric: &str) -> Error {
-    rejected(
+    Error::rejected(
         "metric_not_computed",
         format!("the gate computes no {metric} for this run; approve conditions on its metrics"),
     )
