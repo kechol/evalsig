@@ -1,8 +1,8 @@
 //! `evalsig gate`: judge a candidate on the sealed holdout under approved conditions
 //! (SPEC §8.3, §8.4; metrics spec §11.1, §11.2). Everything from the candidate's side
 //! is a claim the referee checks; only the approved copy, the referee ledger and the
-//! sealed labels are trusted. The answer carries verdicts only, no values (D-015 is
-//! Proposed).
+//! sealed labels are trusted. The answer carries verdicts only, and a Ladder value on
+//! a new best (D-015).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

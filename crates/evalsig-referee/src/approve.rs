@@ -1,7 +1,7 @@
 //! `evalsig preregister approve <draft>`: the referee resolves every setting the
 //! draft leaves open, pins what the gate will rely on by hash and writes
-//! `approved/<hash>.toml`, the only file `gate` reads (SPEC §8.3). It fixes no Ladder
-//! step or first best (D-015 is Proposed).
+//! `approved/<hash>.toml`, the only file `gate` reads (SPEC §8.3). It fixes the Ladder
+//! step and first best (D-015).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
