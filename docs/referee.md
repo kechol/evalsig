@@ -36,6 +36,7 @@ deploy it. The tests named below live in `crates/evalsig-cli/tests/referee_paths
 | Spending nothing by resubmitting a candidate | The same snapshot hash returns the earlier result without using budget | T-125 | `referee_same_candidate_resubmission` |
 | Inferring labels from "too few items" or from warnings | `min_items` counts label-independent paired items; label-dependent warnings are recorded in the referee ledger, not returned | T-125 | `referee_min_items_boundary`, `referee_warnings_withheld` |
 | Relaying a forged pass | The referee writes results to paths it owns and to its ledger; people read only those | T-089 | `referee_forged_pass_is_not_in_referee_ledger` |
+| Learning measured values from the answers | The answer holds verdicts, each condition's pass or fail and the budget; the Ladder adds a value only on a new best, rounded to the step fixed at approval | T-126 | `referee_values_withheld`; `gate.rs`: `the_ladder_returns_a_rounded_value_on_a_new_best_only` |
 
 The fine-grained information the referee returns is limited further by the
 Ladder (metrics spec §11.3, D-015): a value comes back only on a new best,

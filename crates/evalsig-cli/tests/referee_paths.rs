@@ -446,3 +446,49 @@ fn referee_forged_pass_is_not_in_referee_ledger() {
             .all(|r| r.contains("\"fail\"") && !r.contains("\"pass\""))
     );
 }
+
+#[test]
+fn referee_values_withheld() {
+    let w = world(&gate_toml(10, 3, NOT_WORSE), None);
+    // A candidate that answers as the baseline does is no new best: the answer carries
+    // the verdict, each condition's pass or fail and the budget, and nothing else.
+    let baseline: BTreeMap<String, Value> = lines()
+        .into_iter()
+        .filter(|v| v["record"] == "judgment" && v["run_id"] == "triage-v1")
+        .map(|v| (v["item_id"].as_str().unwrap().to_owned(), v))
+        .collect();
+    let records = candidate(w.referee.path(), "same.jsonl", |rows| {
+        for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+            let mut b = baseline[r["item_id"].as_str().unwrap()].clone();
+            b["run_id"] = "triage-v2".into();
+            *r = b;
+        }
+    });
+    let out = json(&submit(&w, &records));
+    assert_eq!(out["verdict"]["code"], "pass", "{out}");
+    let keys: BTreeSet<&str> = out["results"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "approved",
+            "budget",
+            "candidate",
+            "conditions",
+            "preregistered"
+        ])
+    );
+    for c in out["results"]["conditions"].as_array().unwrap() {
+        let keys: BTreeSet<&str> = c.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys, BTreeSet::from(["metric", "passed", "rule", "value"]));
+    }
+    let gate = referee_ledger(&w)
+        .into_iter()
+        .rfind(|e| e["kind"] == "gate")
+        .unwrap();
+    assert!(gate["summary"]["ladder_value"].is_null());
+}
