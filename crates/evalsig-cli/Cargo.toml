@@ -19,8 +19,8 @@ evalsig-adapters.workspace = true
 evalsig-core.workspace = true
 evalsig-dashboard.workspace = true
 evalsig-project.workspace = true
+evalsig-referee.workspace = true
 evalsig-store.workspace = true
-jsonschema.workspace = true
 parquet.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -28,6 +28,7 @@ thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+jsonschema.workspace = true
 evalsig-core.workspace = true
 evalsig-store.workspace = true
 assert_cmd.workspace = true

@@ -18,29 +18,26 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{Entry, Kind};
 use serde_json::{Value, json};
 
-use crate::referee::Referee;
+use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data::{self, Data};
 use evalsig_project::envelope::{Envelope, Output, Warning, round_numbers};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 
-#[derive(Debug, Clone, clap::Args)]
-pub struct ApproveArgs {
+/// What the referee approves: a draft, for a holdout, with a pinned mapping.
+#[derive(Debug, Clone)]
+pub struct Request {
     /// The draft's hash, as `preregister --draft` reported it.
     pub draft: String,
     /// The holdout the gate will use, by its hash.
-    #[arg(long, value_name = "HASH")]
     pub holdout: String,
     /// The project whose .evalsig/drafts/ holds the draft (default: --project).
-    #[arg(long, value_name = "DIR")]
     pub from: Option<PathBuf>,
     /// The mapping file or converter that makes the candidate's records; its hash is
     /// pinned.
-    #[arg(long, value_name = "FILE")]
     pub mapping: Option<PathBuf>,
     /// The referee's home (default: EVALSIG_REFEREE).
-    #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
 }
 
@@ -67,7 +64,7 @@ fn draft(dir: &Path, hash: &str) -> Result<Value, Error> {
             path.display()
         )));
     }
-    crate::commands::preregister::check(&doc, &path.display().to_string())?;
+    crate::conditions::check(&doc, &path.display().to_string())?;
     Ok(doc)
 }
 
@@ -89,7 +86,7 @@ fn rule(v: &Value, fallback: Option<Rule>) -> Result<Option<Rule>, Error> {
     }
 }
 
-pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, Error> {
+pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
     let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let project = Project::open(root)?;
     let config = project.config()?;

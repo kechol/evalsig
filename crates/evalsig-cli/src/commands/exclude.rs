@@ -11,13 +11,13 @@ use evalsig_store::ledger::{self, Kind};
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
 
-use crate::referee::Referee;
 use evalsig_project::Error;
 use evalsig_project::data;
 use evalsig_project::envelope::{Envelope, Output, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error, str_set};
 use evalsig_project::provenance;
+use evalsig_referee::home::Referee;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -69,7 +69,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         return Err(Error::usage("--reason other needs --detail"));
     }
     let referee_home = args.referee.is_some()
-        || std::env::var_os(crate::referee::ENV).is_some_and(|v| !v.is_empty());
+        || std::env::var_os(evalsig_referee::home::ENV).is_some_and(|v| !v.is_empty());
     if referee_home {
         referee_side(args)
     } else {

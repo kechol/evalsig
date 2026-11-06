@@ -6,7 +6,6 @@ mod commands;
 mod help;
 mod markdown;
 mod output;
-mod referee;
 
 use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
@@ -255,7 +254,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
             commands::preregister::run(&cli.project, args, agent.is_some())
         }
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
-        Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),
+        Command::Referee(RefereeCommand::Init { ref dir }) => evalsig_referee::home::init(dir),
         Command::Report(ref args) => evalsig_project::report::run(&cli.project, &args.into()),
         Command::Runs => evalsig_project::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),

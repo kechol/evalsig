@@ -11,7 +11,6 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
-use crate::referee::Referee;
 use evalsig_project::Error;
 use evalsig_project::data;
 use evalsig_project::envelope::{Envelope, Output};
@@ -19,6 +18,7 @@ use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 use evalsig_project::provenance::item_set_hash;
 use evalsig_project::split::split_entries;
+use evalsig_referee::home::Referee;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum MethodArg {

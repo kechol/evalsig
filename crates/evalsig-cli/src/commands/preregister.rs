@@ -7,13 +7,14 @@ use std::path::{Path, PathBuf};
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use evalsig_project::Error;
 use evalsig_project::envelope::{Envelope, Output};
-use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
-use evalsig_project::schemas;
+use evalsig_referee::approve;
+use evalsig_referee::conditions::parse;
+use evalsig_referee::home::Referee;
 
 #[derive(Debug, Clone, clap::Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -31,7 +32,7 @@ pub struct Args {
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum Action {
     /// As the referee: resolve and pin a draft into approved conditions.
-    Approve(crate::commands::approve::ApproveArgs),
+    Approve(ApproveArgs),
     /// As the referee: print approved conditions as gate reads them.
     Show {
         /// The approved conditions' hash.
@@ -42,79 +43,40 @@ pub enum Action {
     },
 }
 
-fn invalid(message: impl Into<String>) -> Error {
-    Error::new("invalid_conditions", message, Exit::Rejected)
-}
-
-/// The conditions as JSON, checked against `gate/1`; refuses the `resolved` section,
-/// which only approval writes.
-pub fn parse(path: &Path) -> Result<Value, Error> {
-    let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
-    let toml: toml::Table = toml::from_str(&text)
-        .map_err(|e: toml::de::Error| invalid(format!("{}: {e}", path.display())))?;
-    let doc = serde_json::to_value(toml).expect("TOML converts to JSON");
-    check(&doc, &path.display().to_string())?;
-    Ok(doc)
-}
-
-/// The checks a draft passes when it is written and again when the referee approves
-/// it, since the agent can write the stored copy: no resolved section, the gate.toml
-/// schema, and a threshold for every condition that compares against one.
-pub fn check(doc: &Value, origin: &str) -> Result<(), Error> {
-    if doc.get("resolved").is_some() {
-        return Err(invalid(
-            "a draft has no resolved section; approval writes it",
-        ));
-    }
-    let schema: Value = serde_json::from_str(schemas::GATE).expect("embedded schema is JSON");
-    let validator = jsonschema::options()
-        .build(&schema)
-        .expect("embedded schema compiles");
-    let mut errors: Vec<String> = validator
-        .iter_errors(doc)
-        .map(|e| format!("{}: {e}", e.instance_path()))
-        .collect();
-    for (k, c) in doc["conditions"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .enumerate()
-    {
-        if c["rule"] != "pass" && !c["value"].is_number() {
-            errors.push(format!(
-                "/conditions/{k}: rule {} needs a numeric value",
-                c["rule"]
-            ));
-        }
-        // human_parity's value is the alternative annotator test's epsilon (D-017).
-        if c["metric"] == "human_parity"
-            && c["value"].as_f64().is_some_and(|e| !(e > 0.0 && e < 1.0))
-        {
-            errors.push(format!(
-                "/conditions/{k}: the epsilon of human_parity must lie strictly between 0 and 1"
-            ));
-        }
-        // The gate computes intervals by metrics spec §1.1 only; a named method it would
-        // not use is refused rather than ignored.
-        if c["interval"].as_str().is_some_and(|m| m != "auto") {
-            errors.push(format!(
-                "/conditions/{k}: interval {} is not available; use auto",
-                c["interval"]
-            ));
-        }
-    }
-    if !errors.is_empty() {
-        return Err(invalid(format!("{origin}: {}", errors.join("; "))));
-    }
-    Ok(())
+#[derive(Debug, Clone, clap::Args)]
+pub struct ApproveArgs {
+    /// The draft's hash, as `preregister --draft` reported it.
+    pub draft: String,
+    /// The holdout the gate will use, by its hash.
+    #[arg(long, value_name = "HASH")]
+    pub holdout: String,
+    /// The project whose .evalsig/drafts/ holds the draft (default: --project).
+    #[arg(long, value_name = "DIR")]
+    pub from: Option<PathBuf>,
+    /// The mapping file or converter that makes the candidate's records; its hash is
+    /// pinned.
+    #[arg(long, value_name = "FILE")]
+    pub mapping: Option<PathBuf>,
+    /// The referee's home (default: EVALSIG_REFEREE).
+    #[arg(long, value_name = "DIR")]
+    pub referee: Option<PathBuf>,
 }
 
 pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
     match (&args.draft, &args.action) {
-        (_, Some(Action::Approve(a))) => crate::commands::approve::approve(root, a),
+        (_, Some(Action::Approve(a))) => approve::approve(
+            root,
+            &approve::Request {
+                draft: a.draft.clone(),
+                holdout: a.holdout.clone(),
+                from: a.from.clone(),
+                mapping: a.mapping.clone(),
+                referee: a.referee.clone(),
+            },
+        ),
         (_, Some(Action::Show { approved, referee })) => {
-            let r = crate::referee::Referee::open(referee.as_deref())?;
-            let doc = crate::commands::approve::load(&r, approved)?;
+            let r = Referee::open(referee.as_deref())?;
+            let doc = approve::load(&r, approved)?;
             Ok(Output::success(Envelope::new(
                 "evalsig.preregister/1",
                 json!({ "approved": approved, "conditions": doc }),

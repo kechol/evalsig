@@ -704,6 +704,7 @@ dependencies = [
  "evalsig-core",
  "evalsig-dashboard",
  "evalsig-project",
+ "evalsig-referee",
  "evalsig-store",
  "jsonschema",
  "parquet",
@@ -749,6 +750,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "evalsig-referee"
+version = "0.1.0"
+dependencies = [
+ "evalsig-core",
+ "evalsig-project",
+ "evalsig-store",
+ "jsonschema",
+ "serde",
+ "serde_json",
  "toml 0.9.12+spec-1.1.0",
 ]
 

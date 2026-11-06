@@ -14,52 +14,25 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::commands::gate::{Request, Submission, judge_request};
-use crate::referee::Referee;
+use crate::gate::{Request, judge_request};
+use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::envelope::Output;
 use evalsig_project::exit::Exit;
 use evalsig_project::http::{Deadline, Slot, same};
 use evalsig_project::project::io_error;
 
-#[derive(Debug, Clone, clap::Args)]
-pub struct ServeArgs {
-    /// The referee's home (default: EVALSIG_REFEREE).
-    #[arg(long, value_name = "DIR")]
-    pub referee: Option<PathBuf>,
-    /// Also answer token HTTP on 127.0.0.1 at this port (0 picks a free one).
-    #[arg(long, value_name = "PORT")]
-    pub http: Option<u16>,
-}
-
-#[derive(Debug, Clone, clap::Args)]
-pub struct SubmitArgs {
-    #[command(flatten)]
-    pub submission: Submission,
+/// Where `gate submit` sends a submission.
+#[derive(Debug, Clone)]
+pub enum Destination {
     /// The referee's Unix socket (`gate.sock` in its home).
-    #[arg(
-        long,
-        value_name = "PATH",
-        conflicts_with = "url",
-        required_unless_present = "url"
-    )]
-    pub socket: Option<PathBuf>,
-    /// The referee's HTTP address, `http://127.0.0.1:<port>`.
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-    /// A file holding the bearer token for --url (default: EVALSIG_GATE_TOKEN).
-    #[arg(long, value_name = "FILE", requires = "url")]
-    pub token_file: Option<PathBuf>,
-}
-
-/// A submission on the wire.
-#[derive(Debug, Serialize, Deserialize)]
-struct Wire {
-    approved: String,
-    candidate: String,
-    records: String,
-    mapping_hash: Option<String>,
-    agent_ledger_head: Option<String>,
+    Socket(PathBuf),
+    /// The referee's HTTP address, `http://127.0.0.1:<port>`, and a file holding the
+    /// bearer token (default: EVALSIG_GATE_TOKEN).
+    Http {
+        url: String,
+        token_file: Option<PathBuf>,
+    },
 }
 
 /// An answer on the wire: the exit code and the envelope or error object.
@@ -91,21 +64,9 @@ fn transport(message: impl Into<String>) -> Error {
 /// Answer one submission, serialized with every other by `lock`.
 fn answer(root: &Path, referee: &Referee, lock: &Mutex<()>, bytes: &[u8]) -> Answer {
     let _guard = lock.lock().unwrap_or_else(|p| p.into_inner());
-    let result = serde_json::from_slice::<Wire>(bytes)
+    let result = serde_json::from_slice::<Request>(bytes)
         .map_err(|e| transport(format!("not a submission: {e}")))
-        .and_then(|w| {
-            judge_request(
-                root,
-                referee,
-                &Request {
-                    approved: w.approved,
-                    candidate: w.candidate,
-                    records: w.records,
-                    mapping_hash: w.mapping_hash,
-                    agent_ledger_head: w.agent_ledger_head,
-                },
-            )
-        });
+        .and_then(|r| judge_request(root, referee, &r));
     match result {
         Ok(out) => Answer {
             exit: out.exit.code(),
@@ -200,7 +161,7 @@ fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, Error>
         std::fs::remove_file(path).map_err(|e| io_error(path, &e))?;
     }
     let l = std::os::unix::net::UnixListener::bind(path).map_err(|e| io_error(path, &e))?;
-    crate::referee::private(path)?;
+    crate::home::private(path)?;
     Ok(l)
 }
 
@@ -211,24 +172,24 @@ fn token(referee: &Referee) -> Result<String, Error> {
         return Ok(t.trim().to_owned());
     }
     let t = evalsig_store::seal::random_token();
-    crate::referee::write_private(&p, format!("{t}\n").as_bytes())?;
+    crate::home::write_private(&p, format!("{t}\n").as_bytes())?;
     Ok(t)
 }
 
 /// Serve until killed. The first line on stdout names where it listens.
-pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, Error> {
+pub fn serve(root: &Path, home: Option<&Path>, http: Option<u16>) -> Result<Output, Error> {
     // Without Unix sockets the only listener is token HTTP (SPEC §14).
     #[cfg(not(unix))]
-    if args.http.is_none() {
+    if http.is_none() {
         return Err(Error::usage(
             "gate serve needs --http <port> where Unix sockets are not available",
         ));
     }
-    let referee = Arc::new(Referee::open(args.referee.as_deref())?);
+    let referee = Arc::new(Referee::open(home)?);
     let root = Arc::new(root.to_path_buf());
     let lock = Arc::new(Mutex::new(()));
     let mut listening = json!({});
-    let http = match args.http {
+    let http = match http {
         Some(port) => {
             let t = token(&referee)?;
             let l = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
@@ -312,17 +273,8 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, Error> {
 }
 
 /// Send one submission and return the referee's answer as this process's output.
-pub fn submit(args: &SubmitArgs) -> Result<Output, Error> {
-    let s = &args.submission;
-    let (approved, candidate, records) = s.parts();
-    let wire = Wire {
-        approved: approved.to_owned(),
-        candidate: candidate.to_owned(),
-        records: std::fs::read_to_string(records).map_err(|e| io_error(records, &e))?,
-        mapping_hash: s.mapping_hash.clone(),
-        agent_ledger_head: s.agent_ledger_head()?,
-    };
-    let body = serde_json::to_vec(&wire).expect("submission serializes");
+pub fn submit(request: &Request, to: &Destination) -> Result<Output, Error> {
+    let body = serde_json::to_vec(request).expect("submission serializes");
     // The referee stops reading past the cap, which the client would see as a reset.
     if body.len() as u64 > SUBMISSION_BYTES {
         return Err(Error::usage(format!(
@@ -330,10 +282,11 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, Error> {
             SUBMISSION_BYTES >> 20
         )));
     }
-    let reply = match (&args.socket, &args.url) {
-        (Some(p), _) => send_socket(p, &body)?,
-        (None, Some(url)) => send_http(url, &token_for(args)?, &body)?,
-        (None, None) => unreachable!("clap requires --socket or --url"),
+    let reply = match to {
+        Destination::Socket(p) => send_socket(p, &body)?,
+        Destination::Http { url, token_file } => {
+            send_http(url, &token_for(token_file.as_deref())?, &body)?
+        }
     };
     let a: Answer = serde_json::from_slice(&reply)
         .map_err(|e| transport(format!("the referee's answer is not readable: {e}")))?;
@@ -352,8 +305,8 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, Error> {
     Ok(Output { envelope, exit })
 }
 
-fn token_for(args: &SubmitArgs) -> Result<String, Error> {
-    match &args.token_file {
+fn token_for(token_file: Option<&Path>) -> Result<String, Error> {
+    match token_file {
         Some(p) => Ok(std::fs::read_to_string(p)
             .map_err(|e| io_error(p, &e))?
             .trim()
