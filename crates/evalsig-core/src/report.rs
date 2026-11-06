@@ -50,6 +50,19 @@ pub struct Settings {
     pub seed: u64,
     /// Production prevalence for the converted precision.
     pub prevalence: Option<f64>,
+    /// What the report includes beside its metrics.
+    pub sections: Sections,
+    /// Bound rates with the exact (Clopper-Pearson) interval on the effective number
+    /// of items, as pass/fail decisions need (`gate`, `check`; metrics spec §1).
+    pub exact_rates: bool,
+    /// Correct the human-scale value with this model rater's labels (PPI++,
+    /// `report --reference human --proxy`).
+    pub proxy: Option<String>,
+}
+
+/// What a report includes beside its metrics. None of it changes a metric's value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Sections {
     /// Name of the stratum key to report separately.
     pub by: Option<String>,
     /// Include one row per item.
@@ -59,12 +72,6 @@ pub struct Settings {
     pub detail: bool,
     /// Add the feature likelihood ratios (`report --features`).
     pub features: bool,
-    /// Bound rates with the exact (Clopper-Pearson) interval on the effective number
-    /// of items, as pass/fail decisions need (`gate`, `check`; metrics spec §1).
-    pub exact_rates: bool,
-    /// Correct the human-scale value with this model rater's labels (PPI++,
-    /// `report --reference human --proxy`).
-    pub proxy: Option<String>,
 }
 
 /// Why a report could not be built.
@@ -460,7 +467,7 @@ pub fn prepare<'a>(
                 .into_iter()
                 .map(|(k, f)| (k, f / n_judgments))
                 .collect(),
-            stratum: s.by.as_ref().and_then(|name| {
+            stratum: s.sections.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
                         .as_ref()
@@ -575,7 +582,7 @@ pub fn from_prepared(
         });
     }
     let mut by = BTreeMap::new();
-    if s.by.is_some() {
+    if s.sections.by.is_some() {
         let strata: BTreeSet<&str> = units.iter().filter_map(|u| u.stratum.as_deref()).collect();
         for st in strata {
             let sub: Vec<&Unit> = units
@@ -630,7 +637,7 @@ pub fn from_prepared(
         design,
         by_rater,
     });
-    let item_rows = if s.items {
+    let item_rows = if s.sections.items {
         units
             .iter()
             .map(|u| ItemRow {
@@ -665,10 +672,11 @@ pub fn from_prepared(
         reproducibility,
         by,
         items: item_rows,
-        roc: s.detail.then(|| p.roc()).flatten(),
-        sdt: s.detail.then(|| p.sdt()).flatten(),
-        calibration: s.detail.then(|| p.calibration()).flatten(),
+        roc: s.sections.detail.then(|| p.roc()).flatten(),
+        sdt: s.sections.detail.then(|| p.sdt()).flatten(),
+        calibration: s.sections.detail.then(|| p.calibration()).flatten(),
         features: s
+            .sections
             .features
             .then(|| p.features(crate::features::Thresholds::default(), s.prevalence)),
         proxy: s

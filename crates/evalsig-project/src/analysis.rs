@@ -3,7 +3,7 @@
 
 use evalsig_core::config::{Config, Estimand, ReferenceMode};
 use evalsig_core::records::DEFAULT_TASK;
-use evalsig_core::report::Settings;
+use evalsig_core::report::{Sections, Settings};
 
 /// The options shared by the analyses. Their serde names are the recorded form of a
 /// request (D-030).
@@ -85,10 +85,7 @@ pub fn settings(config: &Config, a: &Analysis) -> Settings {
         bootstrap: config.stats.bootstrap,
         seed: config.stats.seed.unwrap_or(0),
         prevalence: None,
-        by: None,
-        items: false,
-        detail: false,
-        features: false,
+        sections: Sections::default(),
         exact_rates: false,
         proxy: None,
     }

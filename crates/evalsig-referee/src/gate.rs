@@ -14,7 +14,7 @@ use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
-use evalsig_core::report::{self, Fill, Settings};
+use evalsig_core::report::{self, Fill, Sections, Settings};
 use evalsig_core::validity;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
@@ -723,10 +723,7 @@ fn settings(r: &Resolved, args: &Request, candidate_hash: &str) -> Settings {
         bootstrap: r.bootstrap,
         seed: u64::from_str_radix(&seed_bytes[..16], 16).unwrap_or(0),
         prevalence: None,
-        by: None,
-        items: false,
-        detail: false,
-        features: false,
+        sections: Sections::default(),
         exact_rates: true,
         proxy: None,
     }

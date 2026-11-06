@@ -7,7 +7,7 @@ use evalsig_core::compare::{self, Options};
 use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Value};
-use evalsig_core::report::{self, Settings};
+use evalsig_core::report::{self, Sections, Settings};
 use evalsig_core::rules::Rule;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 mod common;
@@ -28,10 +28,7 @@ fn settings(positive: Option<Rule>) -> Settings {
         bootstrap: 200,
         seed: 1,
         prevalence: None,
-        by: None,
-        items: false,
-        detail: false,
-        features: false,
+        sections: Sections::default(),
         exact_rates: false,
         proxy: None,
     }

@@ -12,7 +12,7 @@ use evalsig_core::gate::{self, Sided, interval_level};
 use evalsig_core::missing::Policy;
 use evalsig_core::power;
 use evalsig_core::records::{Judgment, Label, Record, Run};
-use evalsig_core::report::{self, Fill};
+use evalsig_core::report::{self, Fill, Sections};
 use evalsig_core::rules::Rule;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
@@ -451,10 +451,7 @@ impl Approval<'_> {
             seed: config.stats.seed.unwrap_or(0),
             threshold: None,
             prevalence: None,
-            by: None,
-            items: false,
-            detail: false,
-            features: false,
+            sections: Sections::default(),
             exact_rates: false,
             proxy: None,
         }

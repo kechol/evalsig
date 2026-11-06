@@ -9,7 +9,7 @@ use evalsig_core::features::{self, Counts};
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Value};
 use evalsig_core::reference;
-use evalsig_core::report::{self, Metric, Settings};
+use evalsig_core::report::{self, Metric, Sections, Settings};
 use evalsig_core::roc::{self, SoftItem};
 use evalsig_core::rules::Rule;
 use evalsig_core::sdt::Confusion;
@@ -71,10 +71,7 @@ fn settings(mode: ReferenceMode) -> Settings {
         bootstrap: 200,
         seed: 1,
         prevalence: None,
-        by: None,
-        items: false,
-        detail: false,
-        features: false,
+        sections: Sections::default(),
         exact_rates: false,
         proxy: None,
     }
@@ -257,7 +254,10 @@ fn items_split_by_agreement_get_their_own_metrics() {
     let rs = records();
     let p = parts(&rs);
     let s = Settings {
-        by: Some("reference_agreement".into()),
+        sections: Sections {
+            by: Some("reference_agreement".into()),
+            ..Sections::default()
+        },
         ..settings(ReferenceMode::Soft)
     };
     let r = report::build(p.run, &p.judgments, &p.items, &p.labels, &s).unwrap();

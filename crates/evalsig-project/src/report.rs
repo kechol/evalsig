@@ -5,6 +5,7 @@ use std::path::Path;
 use evalsig_core::checks::Finding;
 use evalsig_core::config::Config;
 use evalsig_core::records::Label;
+use evalsig_core::report::Sections;
 use evalsig_core::validity;
 use evalsig_core::{kcurve, report};
 use serde_json::{Value, json};
@@ -55,10 +56,12 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Computed, Er
     let labels: Vec<&Label> = labels.iter().collect();
     let mut settings = analysis::settings(config, &args.analysis);
     settings.prevalence = config.cost.as_ref().map(|c| c.prevalence);
-    settings.by = args.by.clone();
-    settings.items = args.items;
-    settings.detail = true;
-    settings.features = args.features;
+    settings.sections = Sections {
+        by: args.by.clone(),
+        items: args.items,
+        detail: true,
+        features: args.features,
+    };
     let human = matches!(
         args.analysis.reference,
         Some(analysis::ReferenceChoice::Human)

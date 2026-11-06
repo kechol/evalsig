@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::config::Estimand;
 use crate::records::{Item, Judgment, Label, Run};
-use crate::report::{self, Metric, ReportError, Settings};
+use crate::report::{self, Metric, ReportError, Sections, Settings};
 
 /// The metrics of one k-run rule at one k.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -79,11 +79,8 @@ pub fn build(
         for (rule, estimand) in rules {
             let settings = Settings {
                 estimand,
-                by: None,
-                items: false,
                 // Each point is read for its metrics only.
-                detail: false,
-                features: false,
+                sections: Sections::default(),
                 proxy: None,
                 ..s.clone()
             };

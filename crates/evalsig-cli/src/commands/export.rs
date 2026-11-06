@@ -275,7 +275,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
         let labels: Vec<&Label> = all.iter().collect();
         let mut settings = analysis::settings(&config, &args.analysis.clone().into());
-        settings.items = true;
+        settings.sections.items = true;
         let r = report::build(
             d.run(run_id)?,
             &d.judgments(run_id),
