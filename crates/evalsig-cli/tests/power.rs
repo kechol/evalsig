@@ -1,5 +1,5 @@
-//! `evalsig power` and `evalsig threshold` against the T-060 sample-size table and the
-//! T-049 cost references, through the CLI.
+//! `evalsig power` and `evalsig threshold` against the sample-size table in
+//! docs/sample-size.md and the cost references, through the CLI.
 
 use std::path::Path;
 

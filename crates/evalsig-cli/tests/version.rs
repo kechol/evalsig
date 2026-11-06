@@ -11,7 +11,7 @@ fn version_prints_package_version() {
         .stdout(contains(concat!("evalsig ", env!("CARGO_PKG_VERSION"))));
 }
 
-/// The release workflow refuses a tag without a CHANGELOG section (T-114).
+/// The release workflow refuses a tag without a CHANGELOG section.
 #[cfg(unix)]
 #[test]
 fn a_tag_needs_a_changelog_section() {

@@ -484,7 +484,7 @@ fn a_mapping_draft_is_never_written_into_the_store() {
     assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
 }
 
-/// The Langfuse example (T-122): judge and annotation scores on the same traces become a
+/// The Langfuse example: judge and annotation scores on the same traces become a
 /// run's judgments and human labels, and the expectations beside the mapping hold.
 #[test]
 fn the_langfuse_example_maps_judge_and_annotation_scores() {

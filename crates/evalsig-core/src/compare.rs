@@ -197,6 +197,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
         .len();
     let n_unpaired = (union - in_both.len()) as u64;
     let independent = a.independent() && b.independent() && a.rule().is_some();
+    let system_missing = a.system_missing().0 + b.system_missing().0 > 0;
     let metrics = ids
         .iter()
         .map(|&id| {
@@ -206,8 +207,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
                 &values_of(b, id),
                 &paired,
                 independent,
-                a,
-                b,
+                system_missing,
                 o,
             )
         })
@@ -230,15 +230,15 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// `system_missing`: either arm has missing system judgments, so the difference gets
+/// bounds from the worst and best fillings.
 fn metric_delta(
     id: MetricId,
     va: &Filled,
     vb: &Filled,
     paired: &BTreeSet<&str>,
     independent: bool,
-    a: &Prepared<'_>,
-    b: &Prepared<'_>,
+    system_missing: bool,
     o: &Options,
 ) -> MetricDelta {
     let sign = id.sign();
@@ -263,8 +263,7 @@ fn metric_delta(
             .zip(ratio(y, &both))
             .map(|(x, y)| sign * (y - x))
     };
-    let has_system_missing = a.system_missing().0 + b.system_missing().0 > 0;
-    let missing_bounds = if has_system_missing && id != MetricId::Precision {
+    let missing_bounds = if system_missing && id != MetricId::Precision {
         bounds(oriented(ba, wb), oriented(wa, bb))
     } else {
         None

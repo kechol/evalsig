@@ -1,4 +1,4 @@
-//! The quick start (T-121): both language versions give the same commands, and those
+//! The quick start: both language versions give the same commands, and those
 //! commands run as written against the synthetic example.
 
 use std::path::Path;
