@@ -29,7 +29,7 @@ use crate::exit::Exit;
 use crate::output::{Envelope, Format, Output};
 
 #[derive(Debug, Parser)]
-#[command(name = "evalsig", version, about)]
+#[command(name = "evalsig", version, about, disable_help_subcommand = true)]
 struct Cli {
     /// Output format.
     #[arg(long, global = true, value_enum, default_value_t = Format::Text)]
@@ -172,6 +172,21 @@ enum Command {
     Verify(commands::verify::Args),
     /// Show the tool, record-format and output-schema versions.
     Version,
+    /// Print the help of a command, or with --json describe every command.
+    Help {
+        /// The command to describe, such as `compare` or `map probe`.
+        path: Vec<String>,
+        /// Every command, argument, exit code and verdict code as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// What a command prints: an envelope in the requested format, or a document of its
+/// own (help, a JSON Schema, a writer module, an agent guide) printed as it is.
+enum Printed {
+    Result(Box<Output>),
+    Raw(String),
 }
 
 #[derive(Debug, Subcommand)]
@@ -184,13 +199,49 @@ pub(crate) fn tool_version() -> String {
     format!("evalsig {}", env!("CARGO_PKG_VERSION"))
 }
 
-fn run(cli: &Cli) -> Result<Output, CliError> {
+fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
     if cli.format == Format::Jsonl && !matches!(&cli.command, Command::Compare(a) if a.items) {
         return Err(CliError::usage(
             "--format jsonl prints per-item rows and needs `compare --items`",
         ));
     }
-    match cli.command {
+    match &cli.command {
+        Command::Help { path, json: true } => {
+            use clap::CommandFactory as _;
+            let out = Output::success(help::envelope(&Cli::command(), path)?);
+            return Ok(Printed::Raw(output::render(&out, Format::Json)));
+        }
+        Command::Help { path, json: false } => {
+            use clap::CommandFactory as _;
+            let mut cmd = Cli::command();
+            cmd.build();
+            let mut at = &mut cmd;
+            for name in path {
+                at = at.find_subcommand_mut(name).ok_or_else(|| {
+                    CliError::usage(format!("no command {:?}", path.join(" ")))
+                        .with_hint("run `evalsig --help` for usage")
+                })?;
+            }
+            return Ok(Printed::Raw(at.render_long_help().to_string()));
+        }
+        Command::Schema {
+            name,
+            emit: Some(lang),
+            ..
+        } => return commands::schema::emit(name, lang).map(Printed::Raw),
+        Command::Schema {
+            name, raw: true, ..
+        } => return commands::schema::raw(name).map(Printed::Raw),
+        Command::AgentGuide { snippet, .. } => {
+            return Ok(Printed::Raw(if *snippet {
+                commands::skill::snippet()
+            } else {
+                commands::skill::settings()
+            }));
+        }
+        _ => {}
+    }
+    let out = match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Agree(ref args) => commands::agree::run(&cli.project, args),
         Command::Check(ref args) => commands::check::run(&cli.project, args),
@@ -202,7 +253,7 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Explain { ref name } => commands::explain::run(name),
         Command::Dashboard(ref args) => commands::dashboard::run(&cli.project, args),
         Command::Skill(ref cmd) => commands::skill::run(&cli.project, cmd),
-        Command::AgentGuide { .. } => unreachable!("printed before run"),
+        Command::AgentGuide { .. } | Command::Help { .. } => unreachable!("printed above"),
         Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
@@ -211,7 +262,9 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Map(ref cmd) => commands::map::run(&cli.project, cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
         Command::Power(ref args) => commands::power::power(args),
-        Command::Preregister(ref args) => commands::preregister::run(&cli.project, args),
+        Command::Preregister(ref args) => {
+            commands::preregister::run(&cli.project, args, agent.is_some())
+        }
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
@@ -250,7 +303,8 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
                 "verdict_codes": output::VerdictCode::ALL.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
             }),
         ))),
-    }
+    }?;
+    Ok(Printed::Result(Box::new(out)))
 }
 
 /// Whether `--format` appears on the command line at all.
@@ -290,36 +344,6 @@ fn report_error(err: &CliError, format: Format) -> ExitCode {
 fn main() -> ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let format = requested_format(&args);
-    // `help --json` describes the parser itself, so it is answered before parsing.
-    // The first word that is neither a global flag nor its value.
-    let mut words = args.iter().skip(1).map(|a| a.to_string_lossy());
-    let mut first_word = None;
-    while let Some(w) = words.next() {
-        if matches!(w.as_ref(), "--format" | "--project" | "--cursor") {
-            words.next();
-        } else if !w.starts_with('-') {
-            first_word = Some(w);
-            break;
-        }
-    }
-    if first_word.as_deref() == Some("help") && args.iter().any(|a| a == "--json") {
-        use clap::CommandFactory as _;
-        let path: Vec<String> = args
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned())
-            .skip_while(|a| a != "help")
-            .skip(1)
-            .filter(|a| !a.starts_with('-'))
-            .collect();
-        return match help::envelope(&Cli::command(), &path) {
-            Ok(e) => {
-                let out = output::Output::success(e);
-                let _ = std::io::stdout().write_all(output::render(&out, Format::Json).as_bytes());
-                ExitCode::SUCCESS
-            }
-            Err(err) => report_error(&err, Format::Json),
-        };
-    }
     let cli = match Cli::try_parse_from(&args) {
         Ok(cli) => cli,
         Err(e) => {
@@ -355,41 +379,6 @@ fn main() -> ExitCode {
             return ExitCode::from(Exit::Usage.code());
         }
     };
-    if let Command::Schema {
-        name,
-        emit: Some(lang),
-        ..
-    } = &cli.command
-    {
-        return match commands::schema::emit(name, lang) {
-            Ok(text) => {
-                let _ = std::io::stdout().write_all(text.as_bytes());
-                ExitCode::SUCCESS
-            }
-            Err(err) => report_error(&err, cli.format),
-        };
-    }
-    if let Command::AgentGuide { snippet, .. } = &cli.command {
-        let text = if *snippet {
-            commands::skill::snippet()
-        } else {
-            commands::skill::settings()
-        };
-        let _ = std::io::stdout().write_all(text.as_bytes());
-        return ExitCode::SUCCESS;
-    }
-    if let Command::Schema {
-        name, raw: true, ..
-    } = &cli.command
-    {
-        return match commands::schema::raw(name) {
-            Ok(text) => {
-                let _ = std::io::stdout().write_all(text.as_bytes());
-                ExitCode::SUCCESS
-            }
-            Err(err) => report_error(&err, cli.format),
-        };
-    }
     let format_given = requested_format_given(&args);
     if cli.agent && format_given {
         return report_error(
@@ -407,13 +396,18 @@ fn main() -> ExitCode {
         cursor: cli.cursor,
         include_content: cli.include_content,
     });
-    // Commands deep in the call tree (preregister --draft) read the mode as well.
-    if let Some(m) = mode {
-        agent::enable(m);
-    }
-    let format = if agent_mode { Format::Json } else { cli.format };
-    match run(&cli) {
-        Ok(mut out) => {
+    // `help --json` describes the parser for programs, so its errors are JSON too.
+    let format = if agent_mode || matches!(cli.command, Command::Help { json: true, .. }) {
+        Format::Json
+    } else {
+        cli.format
+    };
+    match run(&cli, mode) {
+        Ok(Printed::Raw(text)) => {
+            let _ = std::io::stdout().write_all(text.as_bytes());
+            ExitCode::SUCCESS
+        }
+        Ok(Printed::Result(mut out)) => {
             let text = match mode {
                 // Compact JSON: the size limit is measured on what is printed.
                 Some(m) => {

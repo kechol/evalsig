@@ -109,7 +109,7 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, CliError> {
     match (&args.draft, &args.action) {
         (_, Some(Action::Approve(a))) => crate::commands::approve::approve(root, a),
         (_, Some(Action::Show { approved, referee })) => {
@@ -120,7 +120,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
                 json!({ "approved": approved, "conditions": doc }),
             )))
         }
-        (Some(_), None) if crate::agent::active().is_some() && !args.yes => Err(CliError::usage(
+        (Some(_), None) if agent && !args.yes => Err(CliError::usage(
             "in agent mode a draft changes the procedure and needs confirming",
         )
         .with_hint("pass --yes; a person still approves the draft as the referee")),
