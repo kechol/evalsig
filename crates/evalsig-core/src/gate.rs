@@ -174,8 +174,8 @@ pub fn ladder_psi(e_val: f64, n: f64) -> f64 {
 }
 
 /// The Ladder's step η = max(k·√(ψ̂/n), 1/n), n the primary condition's denominator.
-pub fn ladder_step(k: f64, e_val: f64, n: f64) -> f64 {
-    (k * (ladder_psi(e_val, n) / n).sqrt()).max(1.0 / n)
+pub fn ladder_step(k: f64, psi: f64, n: f64) -> f64 {
+    (k * (psi / n).sqrt()).max(1.0 / n)
 }
 
 /// A value rounded to a multiple of `step` toward `baseline`, so that rounding never
@@ -197,13 +197,13 @@ mod tests {
     #[test]
     fn the_ladder_step_reproduces_the_spec_example() {
         // e_val = 0.1 and 300 items in the denominator give η ≈ 0.05.
-        let eta = ladder_step(2.0, 0.1, 300.0);
+        let eta = ladder_step(2.0, ladder_psi(0.1, 300.0), 300.0);
         assert!((eta - 2.0 * (0.2_f64 / 300.0).sqrt()).abs() < 1e-12);
         assert!((eta - 0.0516).abs() < 1e-4, "{eta}");
         // Few items: the floors of ψ̂ and η apply.
         assert_eq!(ladder_psi(0.0, 300.0), 0.05);
         // n = 4: ψ̂ = 4/n = 1, so η = √(1/4) = 0.5.
-        assert_eq!(ladder_step(1.0, 0.0, 4.0), 0.5);
+        assert_eq!(ladder_step(1.0, ladder_psi(0.0, 4.0), 4.0), 0.5);
     }
 
     #[test]

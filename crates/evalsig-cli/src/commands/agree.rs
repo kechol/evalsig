@@ -233,25 +233,20 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             .collect();
         results["preference"] = preference_block(&prefs, &config, &mut findings)?;
     }
-    let mut verdict = None;
-    let mut warnings = Vec::new();
-    if let Some(p) = parity_block {
+    let parity = parity_block.map(|p| {
+        let (wins, n) = (p.tested.iter().filter(|t| t.system_wins).count(), p.tested.len());
         let (code, text) = match p.verdict {
             ParityVerdict::HumanParity => (
                 VerdictCode::HumanParity,
                 format!(
-                    "the system agrees with people as well as people do: it wins against {} of {} human raters (epsilon {})",
-                    p.tested.iter().filter(|t| t.system_wins).count(),
-                    p.tested.len(),
+                    "the system agrees with people as well as people do: it wins against {wins} of {n} human raters (epsilon {})",
                     p.epsilon
                 ),
             ),
             ParityVerdict::BelowHuman => (
                 VerdictCode::BelowHuman,
                 format!(
-                    "the system wins against {} of {} human raters, fewer than half (epsilon {})",
-                    p.tested.iter().filter(|t| t.system_wins).count(),
-                    p.tested.len(),
+                    "the system wins against {wins} of {n} human raters, fewer than half (epsilon {})",
                     p.epsilon
                 ),
             ),
@@ -263,18 +258,19 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
                 ),
             ),
         };
-        if p.tested.len() == 2 {
-            warnings.push(Warning {
+        results["parity"] = json!(p);
+        (EnvelopeVerdict { code, text }, n == 2)
+    });
+    let mut envelope = Envelope::new("evalsig.agree/1", round_numbers(results));
+    if let Some((verdict, two_raters)) = parity {
+        envelope.verdict = Some(verdict);
+        if two_raters {
+            envelope.warnings.push(Warning {
                 code: "two_human_raters".into(),
                 message: "only two human raters were tested; parity is less reliable than with three or more".into(),
             });
         }
-        results["parity"] = json!(p);
-        verdict = Some(EnvelopeVerdict { code, text });
     }
-    let mut envelope = Envelope::new("evalsig.agree/1", round_numbers(results));
-    envelope.verdict = verdict;
-    envelope.warnings.extend(warnings);
     envelope.provenance.snapshots = d.snapshot_ids();
     Ok(checks::apply(envelope, &findings))
 }

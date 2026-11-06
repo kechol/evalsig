@@ -11,7 +11,7 @@ use evalsig_core::config::Config;
 use evalsig_core::gate::{self, Sided, interval_level};
 use evalsig_core::power;
 use evalsig_core::records::{Judgment, Label, Record};
-use evalsig_core::report;
+use evalsig_core::report::{self, Fill};
 use evalsig_core::rules::Rule;
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
@@ -288,11 +288,19 @@ fn resolve(
 
 /// The baseline's records, canonical and sorted, by hash.
 pub fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
-    crate::data::records_hash(d.records.iter().filter(|r| match r {
+    crate::data::records_hash(run_records(&d.records, run))
+}
+
+/// The records of one run: the run and its judgments.
+pub fn run_records<'a>(
+    records: &'a [Record],
+    run: &'a str,
+) -> impl Iterator<Item = &'a Record> + 'a {
+    records.iter().filter(move |r| match r {
         Record::Run(x) => x.run_id == run,
         Record::Judgment(j) => j.run_id == run,
         _ => false,
-    }))
+    })
 }
 
 /// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
@@ -479,24 +487,22 @@ fn ladder(
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().collect();
     let settings = baseline_settings(doc, config, positive, decision);
+    let items = d.items();
+    // The metric's value, its denominator and its direction, on or off the holdout.
     let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, CliError> {
         let judgments: Vec<&Judgment> = d
             .judgments(&run.run_id)
             .into_iter()
             .filter(|j| held.contains(&j.item_id) == inside)
             .collect();
-        let r = report::build(run, &judgments, &d.items(), &labels, &settings)
+        let p = report::prepare(run, &judgments, &items, &labels, &settings)
             .map_err(CliError::report)?;
-        let higher = report::prepare(run, &judgments, &d.items(), &labels, &settings)
-            .map_err(CliError::report)?
-            .metric_ids()
-            .into_iter()
-            .find(|id| id.name() == metric)
-            .map(|id| id.higher_is_better());
-        Ok(r.metrics
-            .iter()
-            .find(|m| m.metric == metric)
-            .and_then(|m| Some((m.value?, m.n, higher?))))
+        let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == metric) else {
+            return Ok(None);
+        };
+        let values = p.item_values(id, Fill::Policy);
+        let n: f64 = values.values().map(|v| v.denominator).sum();
+        Ok(evalsig_core::compare::total_ratio(&values).map(|v| (v, n, id.higher_is_better())))
     };
     let (Some((outside, _, higher)), Some((first_best, n, _))) = (on(false)?, on(true)?) else {
         return Ok(None);
@@ -504,7 +510,7 @@ fn ladder(
     let e_val = if higher { 1.0 - outside } else { outside };
     let psi = gate::ladder_psi(e_val, n);
     let k = doc["holdout"]["ladder_k"].as_f64().unwrap_or(2.0);
-    let automatic = gate::ladder_step(k, e_val, n);
+    let automatic = gate::ladder_step(k, psi, n);
     let step = match doc["holdout"]["ladder_step"].as_f64() {
         Some(s) if s < automatic => {
             return Err(rejected(format!(

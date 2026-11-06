@@ -142,7 +142,7 @@ pub fn test(
             }
         }
     };
-    let mut tested = Vec::new();
+    let mut unadjusted = Vec::new();
     let mut skipped = BTreeMap::new();
     for (j, mine) in humans {
         let mut d = Vec::new();
@@ -172,21 +172,30 @@ pub fn test(
             continue;
         }
         let m = mean(d.iter().copied()).expect("items exist");
-        tested.push(RaterTest {
-            rater: j.clone(),
-            items: d.len(),
-            mean_difference: m,
-            p_value: one_sided_p(&d, m, epsilon),
-            adjusted_p_value: f64::NAN,
-            system_wins: false,
-            advantage: mean(w_sys.iter().copied()).expect("items exist"),
-        });
+        unadjusted.push((
+            j.clone(),
+            d.len(),
+            m,
+            one_sided_p(&d, m, epsilon),
+            mean(w_sys.iter().copied()).expect("items exist"),
+        ));
     }
-    let adjusted = benjamini_yekutieli(&tested.iter().map(|t| t.p_value).collect::<Vec<_>>());
-    for (t, a) in tested.iter_mut().zip(adjusted) {
-        t.adjusted_p_value = a;
-        t.system_wins = a <= q;
-    }
+    let adjusted = benjamini_yekutieli(&unadjusted.iter().map(|t| t.3).collect::<Vec<_>>());
+    let tested: Vec<RaterTest> = unadjusted
+        .into_iter()
+        .zip(adjusted)
+        .map(
+            |((rater, items, mean_difference, p_value, advantage), a)| RaterTest {
+                rater,
+                items,
+                mean_difference,
+                p_value,
+                adjusted_p_value: a,
+                system_wins: a <= q,
+                advantage,
+            },
+        )
+        .collect();
     let (winning_rate, advantage_probability) = if tested.is_empty() {
         (None, None)
     } else {

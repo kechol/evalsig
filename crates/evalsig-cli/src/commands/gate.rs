@@ -138,10 +138,15 @@ struct Answer {
     code: VerdictCode,
     text: String,
     conditions: Vec<Value>,
-    /// The Ladder's rounded value, on a new best only.
-    ladder: Option<Value>,
-    /// The candidate's run and judgments, kept as the new best.
-    best: Option<Vec<Value>>,
+    /// The Ladder's new best, if the candidate set one.
+    ladder: Option<NewBest>,
+}
+
+/// A new best for the Ladder: what the answer shows, and the candidate's run and
+/// judgments (JSON lines) that the referee keeps as the best.
+struct NewBest {
+    shown: Value,
+    records: String,
 }
 
 /// Judge one submission: the checks, the budget, the conditions, the ledger lines and
@@ -252,7 +257,6 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
                 text: format!("the holdout's budget of {budget} submissions is spent"),
                 conditions: Vec::new(),
                 ladder: None,
-                best: None,
             },
             (budget, used),
         );
@@ -310,16 +314,18 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
             return Err(e);
         }
     };
-    if let Some(best) = answer.best.take() {
-        let text: String = best.iter().map(|r| format!("{r}\n")).collect();
-        crate::referee::replace_private(&best_path(referee, &args.approved), text.as_bytes())?;
+    let new_best = answer.ladder.take();
+    if let Some(b) = &new_best {
+        crate::referee::replace_private(&best_path(referee, &args.approved), b.records.as_bytes())?;
     }
-    let ladder_value = answer
-        .ladder
+    let ladder_value = new_best
         .as_ref()
-        .and_then(|l| l["value"].as_f64())
+        .and_then(|b| b.shown["value"].as_f64())
         .map(|v| format!("{v:.6}"));
     let mut envelope = answer_envelope(&args.approved, &args.candidate, answer, (budget, used));
+    if let Some(b) = new_best {
+        envelope.results["ladder"] = b.shown;
+    }
     gate_line(
         json!(envelope.verdict.as_ref().map(|v| v.code)),
         json!(
@@ -477,9 +483,6 @@ fn answer_envelope(
             "budget": { "total": budget, "used": used, "remaining": budget.saturating_sub(used) },
         }),
     );
-    if let Some(l) = a.ladder {
-        e.results["ladder"] = l;
-    }
     e.verdict = Some(Verdict {
         code: a.code,
         text: a.text,
@@ -494,7 +497,6 @@ fn stopped(code: VerdictCode, text: String) -> Answer {
         text,
         conditions: Vec::new(),
         ladder: None,
-        best: None,
     }
 }
 
@@ -655,14 +657,15 @@ fn judge(
         let evidence = if metric == "human_parity" {
             // The raters are tested together at the submission's level α/B, so the
             // budget keeps its error rate (metrics spec §9.4, §11.1).
-            let cand_j: Vec<&Judgment> = judgments
-                .iter()
-                .copied()
-                .filter(|j| items.contains_key(j.item_id.as_str()))
-                .collect();
-            let p =
-                report::prepare(run, &cand_j, &items, &labels, &at).map_err(CliError::report)?;
-            let epsilon = c["value"].as_f64().unwrap_or(parity::EPSILON);
+            let p = report::prepare(run, &on_holdout(judgments, &items), &items, &labels, &at)
+                .map_err(CliError::report)?;
+            // Approval fixes epsilon, since the gate reads no configuration.
+            let epsilon = c["value"].as_f64().ok_or_else(|| {
+                rejected(
+                    "invalid_conditions",
+                    "human_parity has no epsilon; approve the conditions again",
+                )
+            })?;
             match parity::of_run(&p, &labels, epsilon, (1.0 - level) / f64::from(budget)).verdict {
                 ParityVerdict::HumanParity => Some(Evidence::Verdict(true)),
                 ParityVerdict::BelowHuman => Some(Evidence::Verdict(false)),
@@ -707,7 +710,7 @@ fn judge(
             "a condition could not be decided on the holdout",
         ),
     };
-    let (ladder, best) = match base_run {
+    let ladder = match base_run {
         Some(base_run) => ladder(
             approved,
             state,
@@ -718,14 +721,13 @@ fn judge(
             budget,
             records,
         )?,
-        None => (None, None),
+        None => None,
     };
     Ok(Answer {
         code,
         text: text.into(),
         conditions: rows,
         ladder,
-        best,
     })
 }
 
@@ -743,14 +745,14 @@ fn ladder(
     settings: &Settings,
     budget: u32,
     records: &[Record],
-) -> Result<(Option<Value>, Option<Vec<Value>>), CliError> {
+) -> Result<Option<NewBest>, CliError> {
     let l = &approved["resolved"]["ladder"];
     let (Some(metric), Some(step), Some(first_best)) = (
         l["metric"].as_str(),
         l["step"].as_f64(),
         l["first_best"].as_f64(),
     ) else {
-        return Ok((None, None));
+        return Ok(None);
     };
     let primary = &approved["conditions"][0];
     let level = primary["level"]
@@ -762,6 +764,12 @@ fn ladder(
     };
     let cand = report::prepare(run, &on_holdout(judgments, items), items, labels, &at)
         .map_err(CliError::report)?;
+    let Some(id) = cand.metric_ids().into_iter().find(|id| id.name() == metric) else {
+        return Ok(None);
+    };
+    let Some(value) = compare::total_ratio(&cand.item_values(id, Fill::Policy)) else {
+        return Ok(None);
+    };
     let stored: Vec<&Judgment>;
     let best = match &state.best {
         Some((best_run, best_judgments)) => {
@@ -786,14 +794,8 @@ fn ladder(
         .find(|m| m.metric == metric)
         .and_then(|m| Some(m.ci?.0 > 0.0 && m.delta? >= step))
         .unwrap_or(false);
-    let Some(id) = cand.metric_ids().into_iter().find(|id| id.name() == metric) else {
-        return Ok((None, None));
-    };
-    let Some(value) = compare::total_ratio(&cand.item_values(id, Fill::Policy)) else {
-        return Ok((None, None));
-    };
     if !beats {
-        return Ok((None, None));
+        return Ok(None);
     }
     let rule: GateRule = serde_json::from_value(primary["rule"].clone())
         .map_err(|e| rejected("invalid_conditions", e.to_string()))?;
@@ -803,19 +805,13 @@ fn ladder(
     } else {
         gate::round_toward(value, first_best, step)
     };
-    let kept = records
-        .iter()
-        .filter(|r| match r {
-            Record::Run(x) => x.run_id == run.run_id,
-            Record::Judgment(j) => j.run_id == run.run_id,
-            _ => false,
-        })
-        .map(|r| serde_json::to_value(r).expect("records serialize"))
+    let records = approve::run_records(records, &run.run_id)
+        .map(|r| format!("{}\n", serde_json::to_string(r).expect("records serialize")))
         .collect();
-    Ok((
-        Some(json!({ "metric": metric, "value": shown, "step": step })),
-        Some(kept),
-    ))
+    Ok(Some(NewBest {
+        shown: json!({ "metric": metric, "value": shown, "step": step }),
+        records,
+    }))
 }
 
 /// The resolved settings, every missing value the worst (SPEC §8.3), and a seed

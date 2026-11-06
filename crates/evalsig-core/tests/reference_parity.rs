@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use evalsig_core::parity::{self, ParityVerdict, Scale};
+use evalsig_core::parity::{self, Scale};
 use serde_json::Value;
 
 mod common;
@@ -42,12 +42,11 @@ fn alt_test_cases_match() {
             parity::Q,
         );
         let e = &c["expected"];
-        let verdict = match p.verdict {
-            ParityVerdict::HumanParity => "human_parity",
-            ParityVerdict::BelowHuman => "below_human",
-            ParityVerdict::InsufficientData => "insufficient_data",
-        };
-        assert_eq!(verdict, e["verdict"], "{name}");
+        assert_eq!(
+            serde_json::to_value(p.verdict).unwrap(),
+            e["verdict"],
+            "{name}"
+        );
         let want = e["tested"].as_array().unwrap();
         assert_eq!(p.tested.len(), want.len(), "{name}");
         for (got, want) in p.tested.iter().zip(want) {
