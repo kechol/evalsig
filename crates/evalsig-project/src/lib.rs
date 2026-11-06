@@ -12,6 +12,7 @@ pub mod envelope;
 pub mod error;
 pub mod exit;
 pub mod explain;
+pub mod http;
 pub mod list;
 pub mod mapped;
 pub mod project;

@@ -732,6 +732,7 @@ dependencies = [
 name = "evalsig-dashboard"
 version = "0.1.0"
 dependencies = [
+ "evalsig-project",
  "serde_json",
 ]
 

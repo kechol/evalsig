@@ -6,8 +6,10 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
+
+use evalsig_project::http::{Deadline, Slot, same};
 
 const HEAD_LIMIT: u64 = 16 * 1024;
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -56,10 +58,6 @@ pub fn bind(port: u16, token: String) -> std::io::Result<Server> {
     })
 }
 
-fn same(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
 /// Why a request gets no page.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refusal {
@@ -105,14 +103,6 @@ pub fn check<'a>(
     Ok(path)
 }
 
-struct Slot(Arc<AtomicUsize>);
-
-impl Drop for Slot {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
@@ -134,24 +124,6 @@ fn reply(out: &mut TcpStream, status: u16, content_type: &str, body: &str) {
     let _ = out.write_all(message.as_bytes());
 }
 
-/// A stream whose every read gets only the time left before one deadline, so a client
-/// trickling bytes cannot hold a connection past it.
-struct Deadline {
-    stream: TcpStream,
-    until: Instant,
-}
-
-impl Read for Deadline {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let left = self.until.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(std::io::ErrorKind::TimedOut.into());
-        }
-        self.stream.set_read_timeout(Some(left))?;
-        self.stream.read(buf)
-    }
-}
-
 fn exchange(
     mut stream: TcpStream,
     port: u16,
@@ -159,16 +131,14 @@ fn exchange(
     handler: &(dyn Fn(&str) -> Page + Sync),
 ) {
     let _ = stream.set_write_timeout(Some(DEADLINE));
-    let Ok(clone) = stream.try_clone() else {
+    let Some(reader) = stream
+        .try_clone()
+        .and_then(|s| Deadline::new(s, DEADLINE))
+        .ok()
+    else {
         return;
     };
-    let mut reader = BufReader::new(
-        Deadline {
-            stream: clone,
-            until: Instant::now() + DEADLINE,
-        }
-        .take(HEAD_LIMIT),
-    );
+    let mut reader = BufReader::new(reader.take(HEAD_LIMIT));
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() {
         return;
@@ -222,11 +192,9 @@ impl Server {
                 std::thread::sleep(Duration::from_millis(100));
                 continue;
             };
-            if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-                active.fetch_sub(1, Ordering::SeqCst);
+            let Some(slot) = Slot::take(&active, MAX_CONNECTIONS) else {
                 continue;
-            }
-            let slot = Slot(active.clone());
+            };
             let (handler, token, port) = (handler.clone(), token.clone(), self.port);
             // A thread that cannot start drops this connection, not the server.
             let _ = std::thread::Builder::new().spawn(move || {

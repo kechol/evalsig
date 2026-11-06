@@ -7,9 +7,9 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use crate::commands::gate::{Request, Submission, judge_request};
 use crate::referee::Referee;
 use evalsig_project::Error;
+use evalsig_project::http::{Deadline, Slot, same};
 use evalsig_project::envelope::Output;
 use evalsig_project::exit::Exit;
 use evalsig_project::project::io_error;
@@ -73,8 +74,6 @@ const SOCKET: &str = "gate.sock";
 const HEAD_LIMIT: u64 = 16 * 1024;
 /// How long a connection may take, in all, to send its submission.
 const SEND_DEADLINE: Duration = Duration::from_secs(60);
-/// The longest one read waits before the deadline is looked at again.
-const READ_SLICE: Duration = Duration::from_secs(1);
 /// Connections read at once; more are closed on arrival.
 const MAX_CONNECTIONS: usize = 32;
 /// The largest submission read. Each of MAX_CONNECTIONS may buffer this much before
@@ -83,81 +82,6 @@ const SUBMISSION_BYTES: u64 = 64 << 20;
 /// How long `gate submit` waits for the referee's answer, judging included.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// A stream that fails once its deadline passes, however the bytes trickle in.
-struct Deadline<S> {
-    stream: S,
-    until: Instant,
-}
-
-trait Timed {
-    fn set_timeout(&self, d: Duration) -> std::io::Result<()>;
-}
-
-impl Timed for TcpStream {
-    fn set_timeout(&self, d: Duration) -> std::io::Result<()> {
-        self.set_read_timeout(Some(d))
-    }
-}
-
-#[cfg(unix)]
-impl Timed for std::os::unix::net::UnixStream {
-    fn set_timeout(&self, d: Duration) -> std::io::Result<()> {
-        self.set_read_timeout(Some(d))
-    }
-}
-
-impl<S: Read + Timed> Deadline<S> {
-    /// Reads time out in short slices set once: setting the timeout again after the
-    /// peer has shut down its side makes macOS answer EAGAIN where EOF is due.
-    fn new(stream: S, deadline: Duration) -> std::io::Result<Self> {
-        stream.set_timeout(READ_SLICE.min(deadline))?;
-        Ok(Deadline {
-            stream,
-            until: Instant::now() + deadline,
-        })
-    }
-}
-
-impl<S: Read + Timed> Read for Deadline<S> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        loop {
-            if Instant::now() >= self.until {
-                return Err(std::io::ErrorKind::TimedOut.into());
-            }
-            match self.stream.read(buf) {
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    continue;
-                }
-                r => return r,
-            }
-        }
-    }
-}
-
-/// A connection slot, given back when the connection ends.
-struct Slot(Arc<AtomicUsize>);
-
-impl Slot {
-    fn take(active: &Arc<AtomicUsize>) -> Option<Slot> {
-        (active.fetch_add(1, Ordering::SeqCst) < MAX_CONNECTIONS)
-            .then(|| Slot(active.clone()))
-            .or_else(|| {
-                active.fetch_sub(1, Ordering::SeqCst);
-                None
-            })
-    }
-}
-
-impl Drop for Slot {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
 const TOKEN: &str = "token";
 
 fn transport(message: impl Into<String>) -> Error {
@@ -196,11 +120,6 @@ fn failed(e: &Error) -> Answer {
         exit: e.exit.code(),
         body: json!({ "error": e }),
     }
-}
-
-/// Bytes compared in time that does not depend on where they differ.
-fn same(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// One HTTP exchange: `POST /submit` with a bearer token and a JSON body.
@@ -341,7 +260,7 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, Error> {
         let t = Arc::new(t);
         threads.push(std::thread::spawn(move || {
             for stream in l.incoming().flatten() {
-                let Some(slot) = Slot::take(&active) else {
+                let Some(slot) = Slot::take(&active, MAX_CONNECTIONS) else {
                     continue;
                 };
                 let (referee, root, lock, t) =
@@ -357,7 +276,7 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, Error> {
     #[cfg(unix)]
     threads.push(std::thread::spawn(move || {
         for stream in socket.incoming().flatten() {
-            let Some(slot) = Slot::take(&active) else {
+            let Some(slot) = Slot::take(&active, MAX_CONNECTIONS) else {
                 continue;
             };
             let (referee, root, lock) = (referee.clone(), root.clone(), lock.clone());
