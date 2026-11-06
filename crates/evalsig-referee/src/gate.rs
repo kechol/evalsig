@@ -593,8 +593,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
             .map_err(Error::report)?;
             // Approval fixes epsilon, since the gate reads no configuration.
             let epsilon = c.value.ok_or_else(|| {
-                Error::rejected(
-                    "invalid_conditions",
+                Error::invalid_conditions(
                     "human_parity has no epsilon; approve the conditions again",
                 )
             })?;

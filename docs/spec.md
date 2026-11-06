@@ -781,7 +781,6 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `preregister`, `gate` | Draft, approve and show conditions; judge a candidate; `gate serve` and `gate submit` (§8.3, §8.5) |
 | `ledger` | Show, verify or anchor a ledger |
 | `verify` | Recompute a saved result |
-
 | `migrate` | Raise the record format of snapshots |
 | `export` | Write Parquet, CSV or canonical JSONL |
 | `purge` | Remove a body and the free-text fields that name it |

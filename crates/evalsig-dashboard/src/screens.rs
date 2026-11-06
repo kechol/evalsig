@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use evalsig_core::config::Config;
+use evalsig_core::records::Record;
 use evalsig_store::ledger;
 use serde_json::{Value, json};
 
@@ -71,7 +72,7 @@ fn get<'a>(q: &'a [(String, String)], k: &str) -> Option<&'a str> {
 }
 
 /// The run a query names, if it is one of the project's runs; otherwise `default`.
-/// Only known run IDs reach a command's parser, so a value cannot pose as a flag.
+/// Only known run IDs are used, so a query cannot name anything else.
 fn chosen<'a>(q: &[(String, String)], k: &str, runs: &'a [String], default: &'a str) -> &'a str {
     get(q, k)
         .and_then(|v| runs.iter().find(|r| r.as_str() == v))
@@ -88,11 +89,12 @@ fn cell(v: &Value) -> String {
 
 /// The runs, in import order.
 fn run_ids(d: &Data) -> Vec<String> {
-    list::runs_of(d).envelope.results["runs"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|r| r["run_id"].as_str().map(str::to_owned))
+    d.records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Run(run) => Some(run.run_id.clone()),
+            _ => None,
+        })
         .collect()
 }
 

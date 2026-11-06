@@ -60,7 +60,6 @@ library, so tools in other languages verify the same hashes.
 - A set of items (a split, the items a comparison used) is named by the
   BLAKE3 reference of the canonical JSON array of its sorted item IDs (D-022).
 
-
 ## 2. Layout
 
 The agent's project, `.evalsig/`:
@@ -359,7 +358,6 @@ code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other`;
 | Agent-side ledger | A record of the agent's operations | Proof: the agent can rewrite it |
 | Referee ledger | The same chain, in a place the agent cannot write, with every holdout query, gate result, seal and exclusion | Proof against a referee run with the agent's privileges |
 | `verify` | A saved result recomputes from the stored snapshots and configuration, or the differences are listed | That the ledger is intact, or that an unpurged snapshot is the data the importer meant |
-
 | Seal | Holdout labels are readable only with the referee's identity, and the sealed file is checkable with the standard age tools | Protection when the agent holds the key, for labels the agent can regenerate, or from a person who can read the plaintext label files before sealing |
 
 Signatures on ledger lines are not implemented.
