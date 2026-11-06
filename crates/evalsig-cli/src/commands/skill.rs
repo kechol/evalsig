@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::io_error;
 
@@ -171,7 +171,7 @@ pub fn run(root: &Path, cmd: &SkillCommand) -> Result<Output, Error> {
                 std::fs::write(&p, text).map_err(|e| io_error(&p, &e))?;
             }
             Ok(Output::success(Envelope::new(
-                "evalsig.skill/1",
+                Schema::Skill,
                 json!({
                     "dir": dir.display().to_string(),
                     "version": VERSION,
@@ -194,7 +194,7 @@ pub fn run(root: &Path, cmd: &SkillCommand) -> Result<Output, Error> {
                 });
             let current = states.iter().all(|(_, s)| *s == State::Current);
             let mut e = Envelope::new(
-                "evalsig.skill/1",
+                Schema::Skill,
                 json!({
                     "dir": dir.display().to_string(),
                     "version": VERSION,

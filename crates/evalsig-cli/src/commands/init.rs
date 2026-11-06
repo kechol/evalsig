@@ -5,7 +5,7 @@ use std::path::Path;
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::project::{self, Project, io_error};
 
 pub const TEMPLATE: &str = include_str!("../config_template.toml");
@@ -33,7 +33,7 @@ pub fn run(root: &Path, force: bool) -> Result<Output, Error> {
         state
     };
     Ok(Output::success(Envelope::new(
-        "evalsig.init/1",
+        Schema::Init,
         json!({
             "project": p.dir.display().to_string(),
             "created": created,

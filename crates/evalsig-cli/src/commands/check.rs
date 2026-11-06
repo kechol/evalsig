@@ -18,7 +18,7 @@ use evalsig_project::checks::{self, ArmChecks};
 use crate::args::{AnalysisArgs, DatasetArgs};
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, round_numbers};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, round_numbers};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
 
@@ -140,7 +140,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         (VerdictCode::Pass, Exit::Success, "every condition holds")
     };
     let mut envelope = Envelope::new(
-        "evalsig.check/1",
+        Schema::Check,
         round_numbers(json!({
             "name": file.name,
             "run": args.run,

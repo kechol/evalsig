@@ -6,7 +6,7 @@ use clap::{Arg, Command};
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, VerdictCode};
+use evalsig_project::envelope::{Envelope, Schema, VerdictCode};
 use evalsig_project::exit::Exit;
 
 fn arg(a: &Arg) -> Value {
@@ -73,12 +73,12 @@ pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, Error> {
             })?;
         }
         return Ok(Envelope::new(
-            "evalsig.help/1",
+            Schema::Help,
             json!({ "tool": root.get_name(), "global_args": args(&root, true), "commands": [command(cmd)] }),
         ));
     }
     Ok(Envelope::new(
-        "evalsig.help/1",
+        Schema::Help,
         json!({
             "tool": root.get_name(),
             "global_args": args(&root, true),

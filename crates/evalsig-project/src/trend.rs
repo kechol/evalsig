@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::Error;
 use crate::analysis::{self, Analysis};
 use crate::data::{self, Data};
-use crate::envelope::{Envelope, Output, Verdict, VerdictCode, Warning, round_numbers};
+use crate::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, Warning, round_numbers};
 use crate::exit::Exit;
 use crate::project::Project;
 
@@ -162,7 +162,7 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Erro
     });
     let latest = periods.keys().next_back().cloned();
     let mut envelope = Envelope::new(
-        "evalsig.trend/1",
+        Schema::Trend,
         round_numbers(json!({
             "run": args.run,
             "by": Period::from(args.by),

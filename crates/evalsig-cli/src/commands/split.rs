@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 use evalsig_project::provenance::item_set_hash;
@@ -87,7 +87,7 @@ fn read_json(path: &Path) -> Result<Value, Error> {
 /// The items and holdout hash of a remaining.json (`evalsig.remaining/1`).
 fn remaining(path: &Path) -> Result<(BTreeSet<String>, Option<String>), Error> {
     let v = read_json(path)?;
-    if v["schema"] != "evalsig.remaining/1" {
+    if v["schema"] != Schema::Remaining.name() {
         return Err(Error::usage(format!(
             "{}: not an evalsig.remaining/1 file",
             path.display()
@@ -192,7 +192,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let file_name = format!("{}.json", hex(&name_hash));
     let path = dir.join(&file_name);
     let file = json!({
-        "schema": "evalsig.split/1",
+        "schema": Schema::Split.name(),
         "method": name,
         "seed": seed,
         "stratum": random.then_some(&args.stratum),
@@ -207,7 +207,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let mut results = summary.clone();
     results["holdout_excluded"] = json!(within.is_some());
     results["file"] = json!(format!(".evalsig/splits/{file_name}"));
-    let mut envelope = Envelope::new("evalsig.split/1", results);
+    let mut envelope = Envelope::new(Schema::Split, results);
     let snapshots = d.snapshot_ids();
     envelope.provenance.snapshots = snapshots.clone();
     project.record(
@@ -251,7 +251,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, Error> {
     let hash = item_set_hash(held.iter())?;
     let file = referee.file("holdouts", &hash, "json");
     let mut text = serde_json::to_string_pretty(&json!({
-        "schema": "evalsig.holdout/1",
+        "schema": Schema::Holdout.name(),
         "holdout": hash,
         "method": name,
         "seed": (name == "random").then_some(seed),
@@ -264,7 +264,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, Error> {
     let out = args.out.as_ref().expect("clap requires --out");
     evalsig_project::project::outside_store(out)?;
     let mut text = serde_json::to_string_pretty(&json!({
-        "schema": "evalsig.remaining/1",
+        "schema": Schema::Remaining.name(),
         "holdout": hash,
         "items": remaining,
     }))
@@ -286,7 +286,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, Error> {
         vec![hash.clone()],
         summary.clone(),
     )?;
-    let mut envelope = Envelope::new("evalsig.holdout/1", summary);
+    let mut envelope = Envelope::new(Schema::Holdout, summary);
     envelope.provenance.snapshots = snapshots;
     envelope.provenance.ledger = Some("referee".into());
     Ok(Output::success(envelope))
@@ -309,7 +309,7 @@ pub fn list(root: &Path) -> Result<Output, Error> {
         })
         .collect();
     Ok(Output::success(Envelope::new(
-        "evalsig.splits/1",
+        Schema::Splits,
         json!({ "count": splits.len(), "splits": splits }),
     )))
 }

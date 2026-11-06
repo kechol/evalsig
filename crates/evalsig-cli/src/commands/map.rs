@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::commands::import::{parse_size, read_within};
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Next, Output, Verdict, VerdictCode};
+use evalsig_project::envelope::{Envelope, Next, Output, Schema, Verdict, VerdictCode};
 use evalsig_project::exit::Exit;
 use evalsig_project::mapped::{self, Bodies};
 use evalsig_project::project::{Project, io_error};
@@ -101,7 +101,7 @@ fn probe_rows(
 fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output, Error> {
     let p = probe_file(file, max_bytes, no_values)?;
     let mut envelope = Envelope::new(
-        "evalsig.map.probe/1",
+        Schema::MapProbe,
         json!({ "file": file.display().to_string(), "probe": p }),
     );
     envelope.next = vec![
@@ -162,7 +162,7 @@ fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result
     std::fs::rename(&tmp, out).map_err(|e| io_error(out, &e))?;
     let n = d.decisions_needed.len();
     let mut envelope = Envelope::new(
-        "evalsig.map.draft/1",
+        Schema::MapDraft,
         json!({
             "source": {"path": file.display().to_string(), "format": p.shape, "rows": p.rows},
             "detected_format": p.known,
@@ -239,7 +239,7 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
     let staged = path.with_extension("toml.tmp");
     std::fs::write(&staged, &after).map_err(|e| io_error(&staged, &e))?;
     let mut envelope = Envelope::new(
-        "evalsig.map.decide/1",
+        Schema::MapDecide,
         json!({
             "mapping": path.display().to_string(),
             "id": id,
@@ -333,7 +333,7 @@ fn test(path: &Path, files: &[PathBuf], args: &[String], max_bytes: u64) -> Resu
     };
     let failed = cases.as_ref().is_some_and(|c| !c.failures.is_empty());
     let mut envelope = Envelope::new(
-        "evalsig.map.test/1",
+        Schema::MapTest,
         json!({
             "mapping": path.display().to_string(),
             "coverage": report.coverage,

@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output, VerdictCode};
+use evalsig_project::envelope::{Envelope, Output, Schema, VerdictCode};
 use evalsig_project::exit::Exit;
 
 use crate::output::Format;
@@ -283,7 +283,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
         } => commands::validate::project(&cli.project, checks, list_checks),
         Command::Verify(ref args) => commands::verify::run(&cli.project, args),
         Command::Version => Ok(Output::success(Envelope::new(
-            "evalsig.version/1",
+            Schema::Version,
             json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "records": evalsig_core::records::RECORDS_VERSION,

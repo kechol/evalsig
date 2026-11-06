@@ -7,7 +7,7 @@ use evalsig_store::ledger::{self, LedgerSide, Problem};
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
 
@@ -83,7 +83,7 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, Error> {
                 })
                 .collect();
             Ok(Output::success(Envelope::new(
-                "evalsig.ledger.show/1",
+                Schema::LedgerShow,
                 json!({ "ledger": path.display().to_string(), "count": entries.len(), "entries": rows }),
             )))
         }
@@ -105,7 +105,7 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, Error> {
             }
             let head = ledger::head(&entries).to_owned();
             let mut envelope = Envelope::new(
-                "evalsig.ledger.verify/1",
+                Schema::LedgerVerify,
                 json!({
                     "ledger": path.display().to_string(),
                     "entries": entries.len(),
@@ -133,7 +133,7 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, Error> {
             let path = path_of(root, ledger.as_deref())?;
             let entries = ledger::read(&path).map_err(Error::store)?;
             Ok(Output::success(Envelope::new(
-                "evalsig.ledger.anchor/1",
+                Schema::LedgerAnchor,
                 json!({ "ledger": path.display().to_string(), "head": ledger::head(&entries), "seq": entries.last().map(|e| e.seq) }),
             )))
         }

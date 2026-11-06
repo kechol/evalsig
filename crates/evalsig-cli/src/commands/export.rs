@@ -23,7 +23,7 @@ use evalsig_project::analysis::{self, Analysis};
 use crate::args::AnalysisArgs;
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
 
@@ -316,10 +316,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
             json!({"table": t.name, "rows": t.rows.len(), "file": path.display().to_string()}),
         );
     }
-    let mut envelope = Envelope::new(
-        "evalsig.export/1",
-        json!({ "format": ext, "tables": written }),
-    );
+    let mut envelope = Envelope::new(Schema::Export, json!({ "format": ext, "tables": written }));
     envelope.provenance.snapshots = d.snapshot_ids();
     Ok(Output::success(envelope))
 }

@@ -8,11 +8,11 @@ use serde_json::{Value, json};
 
 use crate::Error;
 use crate::data::{self, Data};
-use crate::envelope::{Envelope, Output};
+use crate::envelope::{Envelope, Output, Schema};
 use crate::project::Project;
 
 fn envelope(
-    schema: &str,
+    schema: Schema,
     results: Value,
     snapshots: &[evalsig_store::hash::ContentHash],
 ) -> Output {
@@ -61,7 +61,7 @@ pub fn runs_of(d: &Data) -> Output {
         })
         .collect();
     envelope(
-        "evalsig.runs/1",
+        Schema::Runs,
         json!({ "count": runs.len(), "runs": runs }),
         &d.snapshots,
     )
@@ -96,7 +96,7 @@ pub fn items(root: &Path) -> Result<Output, Error> {
         })
         .collect();
     Ok(envelope(
-        "evalsig.items/1",
+        Schema::Items,
         json!({ "count": items.len(), "items": items }),
         &d.snapshots,
     ))
@@ -112,7 +112,7 @@ pub fn capabilities(root: &Path, run: Option<&str>) -> Result<Output, Error> {
     }
     let c = evalsig_core::capabilities::of(&d.records, run);
     let mut envelope = Envelope::new(
-        "evalsig.capabilities/1",
+        Schema::Capabilities,
         serde_json::json!({"run": run, "capabilities": c}),
     );
     envelope.provenance.snapshots = d.snapshot_ids();

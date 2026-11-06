@@ -13,7 +13,7 @@ use evalsig_project::checks::{self, ArmChecks};
 use crate::args::DatasetArgs;
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
 use evalsig_project::validate::{Issue, RecordValidator};
@@ -25,7 +25,7 @@ const MAX_ISSUES: usize = 1000;
 pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Error> {
     if list {
         return Ok(Output::success(Envelope::new(
-            "evalsig.validate/1",
+            Schema::Validate,
             json!({ "checks": checks::registry() }),
         )));
     }
@@ -37,7 +37,7 @@ pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Err
     );
     let counts = missing::tally(&data.records);
     let mut envelope = Envelope::new(
-        "evalsig.validate/1",
+        Schema::Validate,
         json!({
             "records": data.records.len(),
             "values": counts.values,
@@ -90,7 +90,7 @@ pub fn run(records: &Path) -> Result<Output, Error> {
         }
     }
     let mut envelope = Envelope::new(
-        "evalsig.validate/1",
+        Schema::Validate,
         json!({
             "file": records.display().to_string(),
             "records": lines,

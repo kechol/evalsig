@@ -22,7 +22,7 @@ use crate::analysis::{self, Analysis, ReferenceChoice};
 use crate::checks;
 use crate::data::{self, Data};
 use crate::envelope::{
-    Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
+    Envelope, Output, Schema, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
 use crate::exit::Exit;
 use crate::project::Project;
@@ -261,7 +261,7 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Erro
         results["parity"] = json!(p);
         (EnvelopeVerdict { code, text }, n == 2)
     });
-    let mut envelope = Envelope::new("evalsig.agree/1", round_numbers(results));
+    let mut envelope = Envelope::new(Schema::Agree, round_numbers(results));
     if let Some((verdict, two_raters)) = parity {
         envelope.verdict = Some(verdict);
         if two_raters {

@@ -26,7 +26,7 @@ use crate::conditions::Resolved;
 use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 use evalsig_project::validate::RecordValidator;
@@ -389,7 +389,7 @@ fn answer_envelope(
     (budget, used): (u64, u64),
 ) -> Envelope {
     let mut e = Envelope::new(
-        "evalsig.gate/1",
+        Schema::Gate,
         json!({
             "approved": approved,
             "candidate": candidate,

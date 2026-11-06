@@ -8,7 +8,7 @@ use evalsig_store::ledger::{self, Kind};
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, io_error};
 use evalsig_project::provenance::{Request, output_hash};
@@ -128,7 +128,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let saved_hash = output_hash(&saved["results"])?;
     let recomputed_hash = output_hash(&recomputed)?;
     let mut envelope = Envelope::new(
-        "evalsig.verify/1",
+        Schema::Verify,
         json!({
             "report": args.report.display().to_string(),
             "match": matched,

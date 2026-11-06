@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
-use evalsig_project::envelope::Envelope;
+use evalsig_project::envelope::{Envelope, Schema};
 
 /// A metric value with four decimals.
 fn num(v: &Value) -> String {
@@ -94,9 +94,9 @@ fn footer(s: &mut String, e: &Envelope) {
 
 /// The Markdown for a report or compare envelope, or `None` for other commands.
 pub fn render(e: &Envelope) -> Option<String> {
-    match e.schema.as_str() {
-        "evalsig.report/1" => Some(report(e)),
-        "evalsig.compare/1" => Some(compare(e)),
+    match Schema::from_name(&e.schema)? {
+        Schema::Report => Some(report(e)),
+        Schema::Compare => Some(compare(e)),
         _ => None,
     }
 }

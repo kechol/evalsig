@@ -10,7 +10,7 @@ use evalsig_store::seal;
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{actor, hex, io_error, now, str_set};
 
@@ -119,7 +119,7 @@ pub fn init(dir: &Path) -> Result<Output, Error> {
     // the moment it exists.
     write_private(&dir.join(LEDGER), b"")?;
     Ok(Output::success(Envelope::new(
-        "evalsig.referee/1",
+        Schema::Referee,
         json!({ "home": dir.display().to_string(), "recipient": recipient }),
     )))
 }

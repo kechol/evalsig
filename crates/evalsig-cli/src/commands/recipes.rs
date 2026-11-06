@@ -5,7 +5,7 @@ use clap::{Subcommand, ValueEnum};
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Source {
@@ -126,7 +126,7 @@ fn task(name: &str) -> Output {
         .find(|(n, _, _)| *n == name)
         .expect("every task subcommand has a recipe");
     Output::success(Envelope::new(
-        "evalsig.recipes/1",
+        Schema::Recipes,
         json!({"recipe": name, "about": about, "steps": steps}),
     ))
 }
@@ -140,7 +140,7 @@ pub fn run(cmd: Option<&RecipesCommand>) -> Result<Output, Error> {
                 .chain(std::iter::once(json!({"recipe": "acquire <source>", "about": "Steps to get judgments, replicates and labels out of a source"})))
                 .collect();
             return Ok(Output::success(Envelope::new(
-                "evalsig.recipes/1",
+                Schema::Recipes,
                 json!({"recipes": list}),
             )));
         }
@@ -157,7 +157,7 @@ pub fn run(cmd: Option<&RecipesCommand>) -> Result<Output, Error> {
         .get_name()
         .to_owned();
     Ok(Output::success(Envelope::new(
-        "evalsig.recipes/1",
+        Schema::Recipes,
         json!({"source": name, "steps": steps(*source)}),
     )))
 }

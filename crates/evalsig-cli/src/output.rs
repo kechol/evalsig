@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 
 use clap::ValueEnum;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use serde_json::{Map, Value as Json};
 
@@ -164,7 +164,7 @@ fn junit_conditions(e: &Envelope, conditions: &[Json], exit: Exit) -> String {
             xml_escape(&name)
         );
         // The referee returns verdicts only, so a gate case names no number.
-        let detail = if e.schema == "evalsig.gate/1" {
+        let detail = if e.schema == Schema::Gate.name() {
             "the referee returns the verdict only".to_owned()
         } else {
             format!(

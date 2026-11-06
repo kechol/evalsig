@@ -16,7 +16,7 @@ use evalsig_store::{content, rows};
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, VerdictCode, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::mapped::{self, Candidate, Reader};
 use evalsig_project::project::{Project, actor, io_error, now};
@@ -241,7 +241,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
                 .map_err(|e| io_error(p, &e))
         })
         .transpose()?;
-    let mut envelope = Envelope::new("evalsig.import/1", Value::Null);
+    let mut envelope = Envelope::new(Schema::Import, Value::Null);
     envelope.warnings = warnings;
     if args.dry_run {
         let (_, hash) = rows::canonical_lines(&mut records).map_err(Error::store)?;
@@ -399,7 +399,7 @@ fn blocked(issues: Vec<(String, Issue)>) -> Output {
         .map(|(file, i)| json!({"file": file, "line": i.line, "code": i.code, "path": i.path, "message": i.message}))
         .collect();
     let mut envelope = Envelope::new(
-        "evalsig.import/1",
+        Schema::Import,
         json!({ "issues": shown, "issues_total": total }),
     );
     envelope.verdict = Some(Verdict {

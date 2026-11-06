@@ -4,7 +4,7 @@
 use serde_json::{Value, json};
 
 use crate::Error;
-use crate::envelope::{Envelope, Output, VerdictCode};
+use crate::envelope::{Envelope, Output, Schema, VerdictCode};
 use crate::exit::Exit;
 
 pub const GLOSSARY: &str = include_str!("../../../docs/glossary.md");
@@ -73,7 +73,7 @@ pub fn run(name: &str) -> Result<Output, Error> {
             .with_hint("names are glossary identifiers, verdict codes, validity checks and exit codes; see evalsig help --json"));
     }
     Ok(Output::success(Envelope::new(
-        "evalsig.explain/1",
+        Schema::Explain,
         json!({ "name": name, "matches": matches }),
     )))
 }

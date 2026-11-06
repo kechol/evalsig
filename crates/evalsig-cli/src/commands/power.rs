@@ -15,7 +15,7 @@ use evalsig_project::analysis::{self, Analysis};
 use crate::args::AnalysisArgs;
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, round_numbers};
+use evalsig_project::envelope::{Envelope, Output, Schema, round_numbers};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::Project;
 
@@ -150,7 +150,7 @@ pub fn power(args: &PowerArgs) -> Result<Output, Error> {
         ));
     }
     Ok(Output::success(Envelope::new(
-        "evalsig.power/1",
+        Schema::Power,
         round_numbers(results),
     )))
 }
@@ -229,7 +229,7 @@ pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, Error> {
         }
     }
     Ok(Output::success(Envelope::new(
-        "evalsig.threshold/1",
+        Schema::Threshold,
         round_numbers(results),
     )))
 }

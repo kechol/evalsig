@@ -23,7 +23,7 @@ use crate::conditions::{self, Conditions, Ladder, Resolved};
 use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data::{self, Data};
-use evalsig_project::envelope::{Envelope, Output, Warning, round_numbers};
+use evalsig_project::envelope::{Envelope, Output, Schema, Warning, round_numbers};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 
@@ -155,7 +155,7 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
         summary,
     )?;
     let mut envelope = Envelope::new(
-        "evalsig.preregister/1",
+        Schema::Preregister,
         round_numbers(json!({
             "approved": approved,
             "file": path.display().to_string(),

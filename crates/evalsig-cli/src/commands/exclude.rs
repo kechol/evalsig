@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Warning};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error, str_set};
 use evalsig_project::provenance;
@@ -150,7 +150,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
     let mut results = summary.clone();
     results["items"] = json!(items);
     results["records_removed"] = json!(removed);
-    let mut envelope = Envelope::new("evalsig.exclude/1", results);
+    let mut envelope = Envelope::new(Schema::Exclude, results);
     envelope.warnings.push(Warning {
         code: "reimport_restores".into(),
         message: "records of these items imported later come back in; exclude them again after such an import".into(),
@@ -183,7 +183,7 @@ fn referee_side(args: &Args) -> Result<Output, Error> {
     referee.record(Kind::Exclude, vec![set_hash], vec![], summary.clone())?;
     let mut results = summary;
     results["items"] = json!(items);
-    let mut envelope = Envelope::new("evalsig.exclude/1", results);
+    let mut envelope = Envelope::new(Schema::Exclude, results);
     envelope.provenance.ledger = Some("referee".into());
     if referee
         .entries()?

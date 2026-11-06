@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::home::Referee;
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::{Project, hex, io_error};
 
@@ -135,7 +135,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
     )?;
     let mut results: Value = summary;
     results["file"] = json!(path.display().to_string());
-    let mut envelope = Envelope::new("evalsig.seal/1", results);
+    let mut envelope = Envelope::new(Schema::Seal, results);
     envelope.provenance.snapshots = snapshots;
     envelope.provenance.ledger = Some("referee".into());
     Ok(Output::success(envelope))

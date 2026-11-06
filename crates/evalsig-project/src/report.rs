@@ -14,7 +14,7 @@ use crate::Error;
 use crate::analysis::{self, Analysis};
 use crate::checks::{self, ArmChecks, DatasetChecks};
 use crate::data::{self, Data};
-use crate::envelope::{Envelope, Output, Warning, round_numbers};
+use crate::envelope::{Envelope, Output, Schema, Warning, round_numbers};
 use crate::project::Project;
 use crate::provenance;
 
@@ -106,7 +106,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
     let config = project.config()?;
     let d = data::load(&project)?;
     let c = compute(&d, &config, args)?;
-    let mut envelope = Envelope::new("evalsig.report/1", c.results);
+    let mut envelope = Envelope::new(Schema::Report, c.results);
     envelope.warnings = c.warnings;
     let summary = json!({
         "run": args.run,

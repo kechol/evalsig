@@ -10,7 +10,7 @@ use serde_json::json;
 
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::Project;
 
@@ -59,7 +59,7 @@ fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Ou
         rows.push(row);
     }
     let mut envelope = Envelope::new(
-        "evalsig.migrate/1",
+        Schema::Migrate,
         json!({ "dry_run": args.dry_run, "migrated": rows }),
     );
     if !replaced.is_empty() {

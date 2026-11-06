@@ -6,6 +6,195 @@ use serde_json::Value as Json;
 
 use crate::exit::Exit;
 
+/// Every envelope schema the commands write. A schema version changes when a field's
+/// meaning changes or a field is removed (D-008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Schema {
+    Agree,
+    Capabilities,
+    Check,
+    Compare,
+    Exclude,
+    Explain,
+    Export,
+    Gate,
+    Help,
+    Holdout,
+    Import,
+    Init,
+    Items,
+    LedgerAnchor,
+    LedgerShow,
+    LedgerVerify,
+    MapDecide,
+    MapDraft,
+    MapProbe,
+    MapTest,
+    Migrate,
+    Power,
+    Preregister,
+    Purge,
+    Recipes,
+    Referee,
+    Remaining,
+    Report,
+    Runs,
+    Schema,
+    Seal,
+    Skill,
+    Split,
+    Splits,
+    Threshold,
+    Trend,
+    Validate,
+    Verify,
+    Version,
+}
+
+impl Schema {
+    pub const ALL: [Schema; 39] = [
+        Schema::Agree,
+        Schema::Capabilities,
+        Schema::Check,
+        Schema::Compare,
+        Schema::Exclude,
+        Schema::Explain,
+        Schema::Export,
+        Schema::Gate,
+        Schema::Help,
+        Schema::Holdout,
+        Schema::Import,
+        Schema::Init,
+        Schema::Items,
+        Schema::LedgerAnchor,
+        Schema::LedgerShow,
+        Schema::LedgerVerify,
+        Schema::MapDecide,
+        Schema::MapDraft,
+        Schema::MapProbe,
+        Schema::MapTest,
+        Schema::Migrate,
+        Schema::Power,
+        Schema::Preregister,
+        Schema::Purge,
+        Schema::Recipes,
+        Schema::Referee,
+        Schema::Remaining,
+        Schema::Report,
+        Schema::Runs,
+        Schema::Schema,
+        Schema::Seal,
+        Schema::Skill,
+        Schema::Split,
+        Schema::Splits,
+        Schema::Threshold,
+        Schema::Trend,
+        Schema::Validate,
+        Schema::Verify,
+        Schema::Version,
+    ];
+
+    /// The name an envelope's `schema` field carries.
+    pub fn name(self) -> &'static str {
+        match self {
+            Schema::Agree => "evalsig.agree/1",
+            Schema::Capabilities => "evalsig.capabilities/1",
+            Schema::Check => "evalsig.check/1",
+            Schema::Compare => "evalsig.compare/1",
+            Schema::Exclude => "evalsig.exclude/1",
+            Schema::Explain => "evalsig.explain/1",
+            Schema::Export => "evalsig.export/1",
+            Schema::Gate => "evalsig.gate/1",
+            Schema::Help => "evalsig.help/1",
+            Schema::Holdout => "evalsig.holdout/1",
+            Schema::Import => "evalsig.import/1",
+            Schema::Init => "evalsig.init/1",
+            Schema::Items => "evalsig.items/1",
+            Schema::LedgerAnchor => "evalsig.ledger.anchor/1",
+            Schema::LedgerShow => "evalsig.ledger.show/1",
+            Schema::LedgerVerify => "evalsig.ledger.verify/1",
+            Schema::MapDecide => "evalsig.map.decide/1",
+            Schema::MapDraft => "evalsig.map.draft/1",
+            Schema::MapProbe => "evalsig.map.probe/1",
+            Schema::MapTest => "evalsig.map.test/1",
+            Schema::Migrate => "evalsig.migrate/1",
+            Schema::Power => "evalsig.power/1",
+            Schema::Preregister => "evalsig.preregister/1",
+            Schema::Purge => "evalsig.purge/1",
+            Schema::Recipes => "evalsig.recipes/1",
+            Schema::Referee => "evalsig.referee/1",
+            Schema::Remaining => "evalsig.remaining/1",
+            Schema::Report => "evalsig.report/1",
+            Schema::Runs => "evalsig.runs/1",
+            Schema::Schema => "evalsig.schema/1",
+            Schema::Seal => "evalsig.seal/1",
+            Schema::Skill => "evalsig.skill/1",
+            Schema::Split => "evalsig.split/1",
+            Schema::Splits => "evalsig.splits/1",
+            Schema::Threshold => "evalsig.threshold/1",
+            Schema::Trend => "evalsig.trend/1",
+            Schema::Validate => "evalsig.validate/1",
+            Schema::Verify => "evalsig.verify/1",
+            Schema::Version => "evalsig.version/1",
+        }
+    }
+
+    /// The fields whose text comes from the evaluated data, wherever they occur in
+    /// `results`. Agent mode takes them out (D-018); identifiers (item, run, rater,
+    /// system) stay, since every answer needs them.
+    pub fn content_fields(self) -> &'static [&'static str] {
+        match self {
+            Schema::Compare => &["by"],
+            // Issue messages quote the offending values; paths can hold the data's own keys.
+            Schema::Import => &["message", "path"],
+            Schema::Items => &["strata"],
+            Schema::MapDraft => &["values"],
+            Schema::MapProbe => &["values"],
+            Schema::MapTest => &["values", "invalid_examples", "message", "got", "expected"],
+            // Per-stratum results are keyed by the strata's own values.
+            Schema::Report => &["by"],
+            Schema::Validate => &["message", "path"],
+            // A mismatch echoes the verified results, content included.
+            Schema::Verify => &["saved", "recomputed", "path"],
+            Schema::Agree
+            | Schema::Capabilities
+            | Schema::Check
+            | Schema::Exclude
+            | Schema::Explain
+            | Schema::Export
+            | Schema::Gate
+            | Schema::Help
+            | Schema::Holdout
+            | Schema::Init
+            | Schema::LedgerAnchor
+            | Schema::LedgerShow
+            | Schema::LedgerVerify
+            | Schema::MapDecide
+            | Schema::Migrate
+            | Schema::Power
+            | Schema::Preregister
+            | Schema::Purge
+            | Schema::Recipes
+            | Schema::Referee
+            | Schema::Remaining
+            | Schema::Runs
+            | Schema::Schema
+            | Schema::Seal
+            | Schema::Skill
+            | Schema::Split
+            | Schema::Splits
+            | Schema::Threshold
+            | Schema::Trend
+            | Schema::Version => &[],
+        }
+    }
+
+    /// The schema of this name, if the commands write one.
+    pub fn from_name(name: &str) -> Option<Schema> {
+        Schema::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
+
 /// The conclusion of an output. The set is fixed within a schema version; agents
 /// quote unknown codes without interpreting them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,9 +392,9 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn new(schema: &str, results: impl Serialize) -> Self {
+    pub fn new(schema: Schema, results: impl Serialize) -> Self {
         Envelope {
-            schema: schema.to_owned(),
+            schema: schema.name().to_owned(),
             ok: true,
             verdict: None,
             results: serde_json::to_value(results).expect("results serialize to JSON"),
@@ -269,6 +458,18 @@ mod tests {
                 VerdictCode::from(v).as_str()
             );
         }
+    }
+
+    #[test]
+    fn schema_names_are_distinct_and_read_back() {
+        let mut names: Vec<&str> = Schema::ALL.iter().map(|s| s.name()).collect();
+        for s in Schema::ALL {
+            assert_eq!(Schema::from_name(s.name()), Some(s));
+            assert!(s.name().starts_with("evalsig.") && s.name().ends_with("/1"));
+        }
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), Schema::ALL.len());
     }
 
     #[test]

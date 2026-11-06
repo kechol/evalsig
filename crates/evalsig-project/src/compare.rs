@@ -21,7 +21,7 @@ use crate::analysis::{self, Analysis};
 use crate::checks::{self, ArmChecks, DatasetChecks};
 use crate::data::{self, Data};
 use crate::envelope::{
-    Envelope, Next, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
+    Envelope, Next, Output, Schema, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
 use crate::exit::Exit;
 use crate::project::Project;
@@ -547,7 +547,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
         config.compare.validation_warn_after,
     );
     let next = power_hint(&c.results, c.verdict.as_ref().map(|v| v.code));
-    let mut envelope = Envelope::new("evalsig.compare/1", c.results);
+    let mut envelope = Envelope::new(Schema::Compare, c.results);
     envelope.verdict = c.verdict;
     envelope.next.extend(next);
     envelope.warnings = c.warnings;

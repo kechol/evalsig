@@ -10,7 +10,7 @@ use evalsig_store::ledger::Kind;
 use serde_json::json;
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::project::{Project, io_error};
 use evalsig_referee::approve;
 use evalsig_referee::conditions::parse;
@@ -78,7 +78,7 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
             let r = Referee::open(referee.as_deref())?;
             let doc = approve::load(&r, approved)?;
             Ok(Output::success(Envelope::new(
-                "evalsig.preregister/1",
+                Schema::Preregister,
                 json!({ "approved": approved, "conditions": doc.conditions }),
             )))
         }
@@ -107,7 +107,7 @@ fn draft(root: &Path, file: &Path) -> Result<Output, Error> {
         "conditions": doc.conditions.len(),
     });
     let mut envelope = Envelope::new(
-        "evalsig.preregister/1",
+        Schema::Preregister,
         json!({
             "draft": hash.to_string(),
             "name": doc.name,

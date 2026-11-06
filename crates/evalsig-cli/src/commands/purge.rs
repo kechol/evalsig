@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use evalsig_project::Error;
 use evalsig_project::data;
-use evalsig_project::envelope::{Envelope, Output, Warning};
+use evalsig_project::envelope::{Envelope, Output, Schema, Warning};
 use evalsig_project::project::{Project, io_error};
 
 #[derive(Debug, clap::Args)]
@@ -128,7 +128,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let mut results = summary.clone();
     results["body"] = json!(body_ref);
     results["items"] = json!(items);
-    let mut envelope = Envelope::new("evalsig.purge/1", results);
+    let mut envelope = Envelope::new(Schema::Purge, results);
     // The ledger names the replacements before anything is deleted, so an
     // interrupted purge leaves text behind rather than data that cannot be loaded.
     project.record(

@@ -6,6 +6,7 @@ pub mod screens;
 pub mod server;
 pub mod svg;
 
+use evalsig_project::envelope::Schema;
 use serde_json::Value;
 
 /// One self-contained page for a result (`--format html`): the verdict, warnings,
@@ -21,7 +22,7 @@ pub fn static_report(e: &Value) -> String {
             e["verdict"]["text"].as_str().unwrap_or_default(),
         ));
     }
-    let point = if schema == "evalsig.compare/1" {
+    let point = if schema == Schema::Compare.name() {
         "delta"
     } else {
         "value"

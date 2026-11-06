@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::envelope::{Envelope, Output, Schema};
 use evalsig_project::exit::Exit;
 use evalsig_project::schemas;
 
@@ -23,7 +23,7 @@ fn lookup(name: &str) -> Result<Value, Error> {
 pub fn run(name: &str) -> Result<Output, Error> {
     let schema = lookup(name)?;
     Ok(Output::success(Envelope::new(
-        "evalsig.schema/1",
+        Schema::Schema,
         json!({ "name": name, "id": schema["$id"], "schema": schema }),
     )))
 }
