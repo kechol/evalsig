@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::commands::gate::{Request, Submission, judge_request};
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::Output;
-use crate::project::io_error;
 use crate::referee::Referee;
+use evalsig_project::Error;
+use evalsig_project::envelope::Output;
+use evalsig_project::exit::Exit;
+use evalsig_project::project::io_error;
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct ServeArgs {
@@ -160,8 +160,8 @@ impl Drop for Slot {
 }
 const TOKEN: &str = "token";
 
-fn transport(message: impl Into<String>) -> CliError {
-    CliError::new("gate_transport", message, Exit::Rejected)
+fn transport(message: impl Into<String>) -> Error {
+    Error::new("gate_transport", message, Exit::Rejected)
 }
 
 /// Answer one submission, serialized with every other by `lock`.
@@ -191,7 +191,7 @@ fn answer(root: &Path, referee: &Referee, lock: &Mutex<()>, bytes: &[u8]) -> Ans
     }
 }
 
-fn failed(e: &CliError) -> Answer {
+fn failed(e: &Error) -> Answer {
     Answer {
         exit: e.exit.code(),
         body: json!({ "error": e }),
@@ -270,7 +270,7 @@ fn http_exchange(
 }
 
 #[cfg(unix)]
-fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, CliError> {
+fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, Error> {
     if path.exists() {
         if std::os::unix::net::UnixStream::connect(path).is_ok() {
             return Err(transport(format!(
@@ -286,7 +286,7 @@ fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, CliErr
 }
 
 /// The bearer token in the referee home, created (mode 0600) on first use.
-fn token(referee: &Referee) -> Result<String, CliError> {
+fn token(referee: &Referee) -> Result<String, Error> {
     let p = referee.path(TOKEN);
     if let Ok(t) = std::fs::read_to_string(&p) {
         return Ok(t.trim().to_owned());
@@ -297,11 +297,11 @@ fn token(referee: &Referee) -> Result<String, CliError> {
 }
 
 /// Serve until killed. The first line on stdout names where it listens.
-pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
+pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, Error> {
     // Without Unix sockets the only listener is token HTTP (SPEC §14).
     #[cfg(not(unix))]
     if args.http.is_none() {
-        return Err(CliError::usage(
+        return Err(Error::usage(
             "gate serve needs --http <port> where Unix sockets are not available",
         ));
     }
@@ -393,7 +393,7 @@ pub fn serve(root: &Path, args: &ServeArgs) -> Result<Output, CliError> {
 }
 
 /// Send one submission and return the referee's answer as this process's output.
-pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
+pub fn submit(args: &SubmitArgs) -> Result<Output, Error> {
     let s = &args.submission;
     let (approved, candidate, records) = s.parts();
     let wire = Wire {
@@ -406,7 +406,7 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
     let body = serde_json::to_vec(&wire).expect("submission serializes");
     // The referee stops reading past the cap, which the client would see as a reset.
     if body.len() as u64 > SUBMISSION_BYTES {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "the submission is larger than {} MiB, the most the referee reads",
             SUBMISSION_BYTES >> 20
         )));
@@ -424,7 +424,7 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
         .unwrap_or(Exit::Rejected);
     if let Some(e) = a.body.get("error") {
         let text = |k: &str| e[k].as_str().unwrap_or_default().to_owned();
-        let mut err = CliError::new(text("code"), text("message"), exit);
+        let mut err = Error::new(text("code"), text("message"), exit);
         err.hint = e["hint"].as_str().map(str::to_owned);
         return Err(err);
     }
@@ -433,19 +433,19 @@ pub fn submit(args: &SubmitArgs) -> Result<Output, CliError> {
     Ok(Output { envelope, exit })
 }
 
-fn token_for(args: &SubmitArgs) -> Result<String, CliError> {
+fn token_for(args: &SubmitArgs) -> Result<String, Error> {
     match &args.token_file {
         Some(p) => Ok(std::fs::read_to_string(p)
             .map_err(|e| io_error(p, &e))?
             .trim()
             .to_owned()),
         None => std::env::var("EVALSIG_GATE_TOKEN")
-            .map_err(|_| CliError::usage("--url needs --token-file or EVALSIG_GATE_TOKEN")),
+            .map_err(|_| Error::usage("--url needs --token-file or EVALSIG_GATE_TOKEN")),
     }
 }
 
 #[cfg(unix)]
-fn send_socket(path: &Path, body: &[u8]) -> Result<Vec<u8>, CliError> {
+fn send_socket(path: &Path, body: &[u8]) -> Result<Vec<u8>, Error> {
     let mut s = std::os::unix::net::UnixStream::connect(path)
         .map_err(|e| transport(format!("cannot reach {}: {e}", path.display())))?;
     s.set_read_timeout(Some(ANSWER_TIMEOUT))
@@ -460,15 +460,15 @@ fn send_socket(path: &Path, body: &[u8]) -> Result<Vec<u8>, CliError> {
 }
 
 #[cfg(not(unix))]
-fn send_socket(_: &Path, _: &[u8]) -> Result<Vec<u8>, CliError> {
-    Err(CliError::usage(
+fn send_socket(_: &Path, _: &[u8]) -> Result<Vec<u8>, Error> {
+    Err(Error::usage(
         "Unix sockets are not available here; use --url",
     ))
 }
 
-fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, CliError> {
+fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, Error> {
     let not_loopback = |why: &str| {
-        CliError::usage(format!(
+        Error::usage(format!(
             "{url}: {why}; gate submit speaks plain HTTP to a loopback address"
         ))
         .with_hint("reach a remote referee through a tunnel to its 127.0.0.1 port")
@@ -480,7 +480,7 @@ fn send_http(url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, CliError> {
     let target = std::net::ToSocketAddrs::to_socket_addrs(addr)
         .ok()
         .and_then(|mut a| a.next())
-        .ok_or_else(|| CliError::usage(format!("{url}: not a host and port")))?;
+        .ok_or_else(|| Error::usage(format!("{url}: not a host and port")))?;
     // The token travels in clear text, so it never leaves the machine.
     if !target.ip().is_loopback() {
         return Err(not_loopback(&format!(

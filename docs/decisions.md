@@ -1042,6 +1042,9 @@ after the entry is `Accepted`.
 - Consequences: the project and referee crates return `CliError`-shaped
   errors through their own error type, which the binary renders; the
   dashboard depends on `evalsig-project` rather than on the CLI's JSON alone.
+  The published JSON Schemas move with the validation that embeds them, to
+  `crates/evalsig-project/schema/`; the paths D-003, D-007, D-011 and D-012
+  name are read accordingly.
 
 ## D-030 The recorded request of a saved result
 

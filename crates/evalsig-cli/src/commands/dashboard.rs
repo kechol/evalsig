@@ -5,17 +5,14 @@
 
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
 use evalsig_dashboard::html::{self, esc};
 use evalsig_dashboard::server::{self, Page};
 use evalsig_dashboard::svg;
 use serde_json::{Value, json};
 
-use crate::commands::{agree, compare, list, report, trend};
-use crate::data;
-use crate::error::CliError;
-use crate::output::Output;
-use crate::project::Project;
+use evalsig_project::envelope::Output;
+use evalsig_project::project::Project;
+use evalsig_project::{Error, agree, compare, data, explain, list, report, trend};
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct Args {
@@ -32,20 +29,6 @@ pub const NAV: [(&str, &str); 6] = [
     ("reference", "Reference quality"),
     ("discrimination", "Discrimination"),
 ];
-
-/// Command-line arguments for a command's own parser, so a screen asks exactly what
-/// the command would compute.
-#[derive(Parser)]
-struct Wrap<A: clap::Args> {
-    #[command(flatten)]
-    args: A,
-}
-
-fn parse<A: clap::Args>(words: &[&str]) -> Result<A, CliError> {
-    Wrap::<A>::try_parse_from(std::iter::once("evalsig").chain(words.iter().copied()))
-        .map(|w| w.args)
-        .map_err(|e| CliError::usage(e.render().to_string()))
-}
 
 fn query(path: &str) -> (&str, Vec<(String, String)>) {
     let (route, q) = path.split_once('?').unwrap_or((path, ""));
@@ -106,7 +89,7 @@ fn cell(v: &Value) -> String {
 }
 
 /// The runs, in import order.
-fn run_ids(root: &Path) -> Result<Vec<String>, CliError> {
+fn run_ids(root: &Path) -> Result<Vec<String>, Error> {
     Ok(list::runs(root)?.envelope.results["runs"]
         .as_array()
         .into_iter()
@@ -138,7 +121,7 @@ fn picker(route: &str, runs: &[String], fields: &[(&str, &str)]) -> String {
 fn how_to_read(names: &[&str]) -> String {
     let mut items = String::new();
     for n in names {
-        if let Ok(o) = crate::commands::explain::run(n)
+        if let Ok(o) = explain::run(n)
             && let Some(m) = o.envelope.results["matches"]
                 .as_array()
                 .and_then(|m| m.first())
@@ -156,7 +139,7 @@ fn how_to_read(names: &[&str]) -> String {
     format!("<details><summary>How to read</summary><dl>{items}</dl></details>")
 }
 
-fn warnings_of(v: &[crate::output::Warning]) -> Vec<String> {
+fn warnings_of(v: &[evalsig_project::envelope::Warning]) -> Vec<String> {
     v.iter()
         .map(|w| format!("{}: {}", w.code, w.message))
         .collect()
@@ -177,14 +160,22 @@ struct Screen {
     body: String,
 }
 
-fn computed_report(root: &Path, words: &[&str]) -> Result<report::Computed, CliError> {
+/// A run's report as `report` computes it, with the defaults of the command line.
+fn report_of(run: &str) -> report::Request {
+    report::Request {
+        run: run.to_owned(),
+        ..report::Request::default()
+    }
+}
+
+fn computed_report(root: &Path, request: &report::Request) -> Result<report::Computed, Error> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    report::compute(&d, &config, &parse::<report::Args>(words)?)
+    report::compute(&d, &config, request)
 }
 
-fn overview(root: &Path) -> Result<Screen, CliError> {
+fn overview(root: &Path) -> Result<Screen, Error> {
     let runs = list::runs(root)?.envelope;
     let rows: Vec<Vec<String>> = runs.results["runs"]
         .as_array()
@@ -230,9 +221,7 @@ fn overview(root: &Path) -> Result<Screen, CliError> {
         .filter_map(|r| r["run_id"].as_str());
     for id in ids {
         // One run that cannot be reported shows its error; the others still render.
-        let c = match parse::<report::Args>(&["--", id])
-            .and_then(|a| report::compute(&d, &config, &a))
-        {
+        let c = match report::compute(&d, &config, &report_of(id)) {
             Ok(c) => c,
             Err(e) => {
                 body.push_str(&format!("<h2>{}</h2><p>{}</p>", esc(id), esc(&e.message)));
@@ -259,7 +248,7 @@ fn overview(root: &Path) -> Result<Screen, CliError> {
     })
 }
 
-fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(root)?;
     if runs.len() < 2 {
         return Ok(Screen {
@@ -273,8 +262,13 @@ fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
-    let args = parse::<compare::Args>(&["--items", "--", &base, &cand])?;
-    let c = compare::compute(&d, &config, &args, None)?;
+    let request = compare::Request {
+        baseline: base.clone(),
+        candidates: vec![cand.clone()],
+        items: true,
+        ..compare::Request::default()
+    };
+    let c = compare::compute(&d, &config, &request, None)?;
     let r = &c.results;
     let mut body = picker(
         "compare",
@@ -326,7 +320,7 @@ fn comparison(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
     })
 }
 
-fn trend_screen(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+fn trend_screen(root: &Path, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(root)?;
     let Some(first) = runs.first() else {
         return Ok(Screen {
@@ -337,7 +331,11 @@ fn trend_screen(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError>
     };
     let run = chosen(q, "run", &runs, first).to_owned();
     let mut body = picker("trend", &runs, &[("run", &run)]);
-    match trend::run(root, &parse::<trend::Args>(&["--", &run])?) {
+    let request = trend::Request {
+        run: run.clone(),
+        ..trend::Request::default()
+    };
+    match trend::run(root, &request) {
         Ok(out) => {
             let r = &out.envelope.results;
             if let Some(v) = &out.envelope.verdict {
@@ -363,7 +361,7 @@ fn trend_screen(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError>
     }
 }
 
-fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(root)?;
     let Some(first) = runs.first() else {
         return Ok(Screen {
@@ -373,7 +371,13 @@ fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErr
         });
     };
     let run = chosen(q, "run", &runs, first).to_owned();
-    let c = computed_report(root, &["--k-curve", "--", &run])?;
+    let c = computed_report(
+        root,
+        &report::Request {
+            k_curve: true,
+            ..report_of(&run)
+        },
+    )?;
     let mut body = picker("reproducibility", &runs, &[("run", &run)]);
     let rep = &c.results["reproducibility"];
     let rows: Vec<Vec<String>> = rep
@@ -415,18 +419,18 @@ fn reproducibility(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErr
     })
 }
 
-fn reference(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+fn reference(root: &Path, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(root)?;
     // The system's row joins the human ones when a run is chosen.
     let run = runs
         .first()
         .map(|first| chosen(q, "run", &runs, first).to_owned());
-    let mut words = vec![];
-    if let Some(r) = &run {
-        words.extend(["--run", r.as_str()]);
-    }
     let mut body = picker("reference", &runs, &[("run", run.as_deref().unwrap_or(""))]);
-    let warnings = match agree::run(root, &parse::<agree::Args>(&words)?) {
+    let request = agree::Request {
+        run: run.clone(),
+        ..agree::Request::default()
+    };
+    let warnings = match agree::run(root, &request) {
         Ok(o) => {
             let r = &o.envelope.results;
             // Everyone against the human raters under the same rule (leave-one-out).
@@ -524,7 +528,7 @@ fn reference(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
     })
 }
 
-fn discrimination(root: &Path, q: &[(String, String)]) -> Result<Screen, CliError> {
+fn discrimination(root: &Path, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(root)?;
     let Some(first) = runs.first() else {
         return Ok(Screen {
@@ -534,7 +538,7 @@ fn discrimination(root: &Path, q: &[(String, String)]) -> Result<Screen, CliErro
         });
     };
     let run = chosen(q, "run", &runs, first).to_owned();
-    let c = computed_report(root, &["--", &run])?;
+    let c = computed_report(root, &report_of(&run))?;
     let r = &c.results;
     let mut body = picker("discrimination", &runs, &[("run", &run)]);
     if r["roc"].is_object() {
@@ -579,16 +583,16 @@ fn route(root: &Path, path: &str) -> Page {
     }
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     Project::open(root)?;
     let token = evalsig_store::seal::random_token();
     let srv = server::bind(args.port, token)
-        .map_err(|e| CliError::usage(format!("cannot listen on 127.0.0.1:{}: {e}", args.port)))?;
+        .map_err(|e| Error::usage(format!("cannot listen on 127.0.0.1:{}: {e}", args.port)))?;
     use std::io::Write as _;
     let mut out = std::io::stdout();
     let _ = writeln!(out, "{}", json!({ "url": srv.url() }));
     let _ = out.flush();
     let root: PathBuf = root.to_path_buf();
     srv.serve(move |path| route(&root, path));
-    Err(CliError::usage("the dashboard stopped"))
+    Err(Error::usage("the dashboard stopped"))
 }

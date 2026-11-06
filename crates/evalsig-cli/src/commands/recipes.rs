@@ -4,8 +4,8 @@
 use clap::{Subcommand, ValueEnum};
 use serde_json::json;
 
-use crate::error::CliError;
-use crate::output::{Envelope, Output};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Source {
@@ -131,7 +131,7 @@ fn task(name: &str) -> Output {
     ))
 }
 
-pub fn run(cmd: Option<&RecipesCommand>) -> Result<Output, CliError> {
+pub fn run(cmd: Option<&RecipesCommand>) -> Result<Output, Error> {
     let source = match cmd {
         None => {
             let list: Vec<_> = TASKS

@@ -8,19 +8,19 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use serde_json::Value;
 
-use crate::commands::{compare, report};
+use crate::Error;
 use crate::data::Data;
-use crate::error::CliError;
-use crate::output::Envelope;
+use crate::envelope::Envelope;
 use crate::project::{Project, io_error};
+use crate::{compare, report};
 
 /// The command and arguments a result was computed from, which `verify` repeats.
 /// Serialized as `{"command": ..., "args": ...}`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "command", content = "args", rename_all = "snake_case")]
 pub enum Request {
-    Report(report::Args),
-    Compare(compare::Args),
+    Report(report::Request),
+    Compare(compare::Request),
 }
 
 impl Request {
@@ -33,23 +33,23 @@ impl Request {
 }
 
 /// The hash of canonical results.
-pub fn output_hash(results: &Value) -> Result<ContentHash, CliError> {
+pub fn output_hash(results: &Value) -> Result<ContentHash, Error> {
     Ok(ContentHash::blake3(
-        &to_canonical_bytes(results).map_err(CliError::store)?,
+        &to_canonical_bytes(results).map_err(Error::store)?,
     ))
 }
 
 /// The name of an item set (a split, the items a comparison evaluates): the BLAKE3
 /// reference of the canonical JSON array of its sorted item IDs (D-022).
-pub fn item_set_hash<'a>(items: impl Iterator<Item = &'a String>) -> Result<String, CliError> {
+pub fn item_set_hash<'a>(items: impl Iterator<Item = &'a String>) -> Result<String, Error> {
     Ok(ContentHash::blake3(&item_set_bytes(items)?).to_string())
 }
 
 /// The canonical JSON array of the sorted item IDs that `item_set_hash` names.
-pub fn item_set_bytes<'a>(items: impl Iterator<Item = &'a String>) -> Result<Vec<u8>, CliError> {
+pub fn item_set_bytes<'a>(items: impl Iterator<Item = &'a String>) -> Result<Vec<u8>, Error> {
     let mut ids: Vec<&String> = items.collect();
     ids.sort();
-    to_canonical_bytes(&serde_json::json!(ids)).map_err(CliError::store)
+    to_canonical_bytes(&serde_json::json!(ids)).map_err(Error::store)
 }
 
 /// Fill the provenance with what the result was computed from; returns the output
@@ -61,7 +61,7 @@ pub fn fill(
     envelope: &mut Envelope,
     seed: u64,
     request: &Request,
-) -> Result<ContentHash, CliError> {
+) -> Result<ContentHash, Error> {
     let out = output_hash(&envelope.results)?;
     let p = &mut envelope.provenance;
     p.snapshots = d.snapshot_ids();
@@ -82,7 +82,7 @@ pub fn finish(
     seed: u64,
     request: &Request,
     summary: Value,
-) -> Result<(), CliError> {
+) -> Result<(), Error> {
     let out = fill(project, config, d, envelope, seed, request)?;
     // Save before the ledger names the output, so a recorded output always exists.
     let path = project.reports_dir().join(format!("{}.json", out.hex()));

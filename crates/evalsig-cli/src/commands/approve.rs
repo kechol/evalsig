@@ -18,12 +18,12 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{Entry, Kind};
 use serde_json::{Value, json};
 
-use crate::data::{self, Data};
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Warning, round_numbers};
-use crate::project::{Project, hex, io_error};
 use crate::referee::Referee;
+use evalsig_project::Error;
+use evalsig_project::data::{self, Data};
+use evalsig_project::envelope::{Envelope, Output, Warning, round_numbers};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, hex, io_error};
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct ApproveArgs {
@@ -44,23 +44,23 @@ pub struct ApproveArgs {
     pub referee: Option<PathBuf>,
 }
 
-fn rejected(message: impl Into<String>) -> CliError {
-    CliError::new("invalid_conditions", message, Exit::Rejected)
+fn rejected(message: impl Into<String>) -> Error {
+    Error::new("invalid_conditions", message, Exit::Rejected)
 }
 
-pub fn canonical_hash(v: &Value) -> Result<String, CliError> {
-    Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(CliError::store)?).to_string())
+pub fn canonical_hash(v: &Value) -> Result<String, Error> {
+    Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(Error::store)?).to_string())
 }
 
 /// The draft from a project's drafts directory, checked against its hash.
-fn draft(dir: &Path, hash: &str) -> Result<Value, CliError> {
+fn draft(dir: &Path, hash: &str) -> Result<Value, Error> {
     let path = Project::open(dir)?
         .dir
         .join("drafts")
         .join(format!("{}.json", hex(hash)));
     let text = std::fs::read_to_string(&path)
-        .map_err(|_| CliError::usage(format!("no draft {hash} in {}", dir.display())))?;
-    let doc: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&path, e))?;
+        .map_err(|_| Error::usage(format!("no draft {hash} in {}", dir.display())))?;
+    let doc: Value = serde_json::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
     if canonical_hash(&doc)? != hash {
         return Err(rejected(format!(
             "{} does not hash to {hash}",
@@ -80,7 +80,7 @@ fn last<'e>(entries: &'e [Entry], kind: Kind, holdout: &str) -> Option<&'e Entry
 }
 
 /// A rule as the draft writes it, or the configuration's.
-fn rule(v: &Value, fallback: Option<Rule>) -> Result<Option<Rule>, CliError> {
+fn rule(v: &Value, fallback: Option<Rule>) -> Result<Option<Rule>, Error> {
     match v {
         Value::Null => Ok(fallback),
         other => serde_json::from_value(other.clone())
@@ -89,17 +89,16 @@ fn rule(v: &Value, fallback: Option<Rule>) -> Result<Option<Rule>, CliError> {
     }
 }
 
-pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
+pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, Error> {
     let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let mut doc = draft(args.from.as_deref().unwrap_or(root), &args.draft)?;
     let entries = referee.entries()?;
-    let split = last(&entries, Kind::Split, &args.holdout).ok_or_else(|| {
-        CliError::usage(format!("this referee has cut no holdout {}", args.holdout))
-    })?;
+    let split = last(&entries, Kind::Split, &args.holdout)
+        .ok_or_else(|| Error::usage(format!("this referee has cut no holdout {}", args.holdout)))?;
     let seal = last(&entries, Kind::Seal, &args.holdout)
-        .ok_or_else(|| CliError::usage("seal the holdout before approving conditions on it"))?;
+        .ok_or_else(|| Error::usage("seal the holdout before approving conditions on it"))?;
     let held = referee.holdout_items(&args.holdout)?;
     if let Some(m) = doc["min_items"]
         .as_u64()
@@ -214,7 +213,7 @@ fn resolve(
     baseline: Option<&str>,
     held: &BTreeSet<String>,
     budget: u32,
-) -> Result<Resolved, CliError> {
+) -> Result<Resolved, Error> {
     let run = baseline.map(|b| d.run(b)).transpose()?;
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().filter(|l| l.task() == task).collect();
@@ -293,8 +292,8 @@ fn resolve(
 }
 
 /// The baseline's records, canonical and sorted, by hash.
-pub fn baseline_hash(d: &Data, run: &str) -> Result<String, CliError> {
-    crate::data::records_hash(run_records(&d.records, run))
+pub fn baseline_hash(d: &Data, run: &str) -> Result<String, Error> {
+    evalsig_project::data::records_hash(run_records(&d.records, run))
 }
 
 /// The records of one run: the run and its judgments.
@@ -310,7 +309,7 @@ pub fn run_records<'a>(
 }
 
 /// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
-pub fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, CliError> {
+pub fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, Error> {
     let items: Vec<Value> = d
         .items()
         .into_iter()
@@ -357,7 +356,7 @@ fn power_at_hypothesis(
     positive: Option<Rule>,
     decision: Option<Rule>,
     per_submission: f64,
-) -> Result<Option<f64>, CliError> {
+) -> Result<Option<f64>, Error> {
     let c = &doc["conditions"][0];
     let delta_rule = matches!(
         c["rule"].as_str(),
@@ -374,8 +373,7 @@ fn power_at_hypothesis(
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().collect();
     let settings = baseline_settings(doc, config, positive, decision);
-    let r =
-        report::build(run, &outside, &d.items(), &labels, &settings).map_err(CliError::report)?;
+    let r = report::build(run, &outside, &d.items(), &labels, &settings).map_err(Error::report)?;
     let Some(accuracy) = r
         .metrics
         .iter()
@@ -416,22 +414,21 @@ pub fn budget(doc: &Value) -> u64 {
 
 /// `preregister show <approved>`: the approved conditions as gate reads them, checked
 /// against their hash.
-pub fn load(referee: &Referee, approved: &str) -> Result<Value, CliError> {
+pub fn load(referee: &Referee, approved: &str) -> Result<Value, Error> {
     // The hash names a file, and gate serve takes it from the network: only a well-formed
     // BLAKE3 reference may reach the path.
     if !approved
         .parse::<ContentHash>()
         .is_ok_and(|h| h.to_string().starts_with("blake3:"))
     {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "{approved:?} is not an approved hash (blake3:<64 hex>)"
         )));
     }
     let path = referee.file("approved", approved, "toml");
     let text = std::fs::read_to_string(&path)
-        .map_err(|_| CliError::usage(format!("no approved conditions {approved}")))?;
-    let table: toml::Table =
-        toml::from_str(&text).map_err(|e| CliError::invalid_input(&path, e))?;
+        .map_err(|_| Error::usage(format!("no approved conditions {approved}")))?;
+    let table: toml::Table = toml::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
     let doc = serde_json::to_value(table).expect("TOML converts to JSON");
     if canonical_hash(&doc)? != approved {
         return Err(rejected(format!(
@@ -490,7 +487,7 @@ fn ladder(
     held: &BTreeSet<String>,
     positive: Option<Rule>,
     decision: Option<Rule>,
-) -> Result<Option<Value>, CliError> {
+) -> Result<Option<Value>, Error> {
     let metric = doc["conditions"][0]["metric"].as_str().unwrap_or_default();
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().collect();
@@ -501,14 +498,14 @@ fn ladder(
     };
     let items = d.items();
     // The metric's value, its denominator and its direction, on or off the holdout.
-    let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, CliError> {
+    let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, Error> {
         let judgments: Vec<&Judgment> = d
             .judgments(&run.run_id)
             .into_iter()
             .filter(|j| held.contains(&j.item_id) == inside)
             .collect();
-        let p = report::prepare(run, &judgments, &items, &labels, &settings)
-            .map_err(CliError::report)?;
+        let p =
+            report::prepare(run, &judgments, &items, &labels, &settings).map_err(Error::report)?;
         let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == metric) else {
             return Ok(None);
         };
@@ -526,7 +523,7 @@ fn ladder(
     let step = match doc["holdout"]["ladder_step"].as_f64() {
         // A step printed at six decimals and copied back is the automatic one.
         Some(s) if s < automatic - 1e-6 => {
-            return Err(CliError::usage(format!(
+            return Err(Error::usage(format!(
                 "ladder_step {s} is below the automatic step {automatic:.6}; a finer step would return more than the holdout can tell"
             )));
         }

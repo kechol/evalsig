@@ -16,7 +16,7 @@ use evalsig_store::objects::ObjectStore;
 use evalsig_store::snapshot::SourceFile;
 use serde_json::Value;
 
-use crate::error::CliError;
+use crate::Error;
 use crate::exit::Exit;
 use crate::project::io_error;
 use crate::validate::Issue;
@@ -52,23 +52,23 @@ pub struct Via {
     pub files: Vec<PathBuf>,
 }
 
-fn invalid(e: impl std::fmt::Display) -> CliError {
-    CliError::new("invalid_mapping", e.to_string(), Exit::Rejected)
+fn invalid(e: impl std::fmt::Display) -> Error {
+    Error::new("invalid_mapping", e.to_string(), Exit::Rejected)
 }
 
 /// Parse and check a mapping file's text.
-pub fn compile_text(path: &Path, text: &str) -> Result<Compiled, CliError> {
+pub fn compile_text(path: &Path, text: &str) -> Result<Compiled, Error> {
     mapping::parse(text)
         .and_then(|m| mapping::compile(&m))
         .map_err(|e| invalid(format!("{}: {e}", path.display())))
 }
 
 /// Refuse a mapping that still says DECIDE anywhere.
-pub fn require_decided(c: &Compiled) -> Result<(), CliError> {
+pub fn require_decided(c: &Compiled) -> Result<(), Error> {
     if c.undecided.is_empty() {
         return Ok(());
     }
-    Err(CliError::new(
+    Err(Error::new(
         "undecided_mapping",
         format!(
             "the mapping still says DECIDE at {}",
@@ -81,7 +81,7 @@ pub fn require_decided(c: &Compiled) -> Result<(), CliError> {
 
 /// The files a block's `path` names, relative to the project root. `*` may appear
 /// in the last component.
-fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, CliError> {
+fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, Error> {
     let full = root.join(pattern);
     let name = full
         .file_name()
@@ -104,7 +104,7 @@ fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, CliError> {
         .collect();
     out.sort();
     if out.is_empty() {
-        return Err(CliError::usage(format!("no file matches {pattern}"))
+        return Err(Error::usage(format!("no file matches {pattern}"))
             .with_hint("check the block's path, relative to the project root"));
     }
     Ok(out)
@@ -117,12 +117,12 @@ pub fn resolve(
     config: &Config,
     file: Option<&Path>,
     from: Option<&str>,
-) -> Result<Option<Via>, CliError> {
+) -> Result<Option<Via>, Error> {
     let via = match (file, from) {
         (Some(path), _) => {
             let bytes = std::fs::read(path).map_err(|e| io_error(path, &e))?;
-            let text = std::str::from_utf8(&bytes)
-                .map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
+            let text =
+                std::str::from_utf8(&bytes).map_err(|_| Error::invalid_input(path, "not UTF-8"))?;
             let compiled = compile_text(path, text)?;
             Via {
                 adapter: format!("mapping:{}", compiled.name),
@@ -137,17 +137,15 @@ pub fn resolve(
                 .iter()
                 .find(|i| i.name == name)
                 .ok_or_else(|| {
-                    CliError::usage(format!("no [[import]] block named {name:?}")).with_hint(
-                        format!(
-                            "blocks: {}",
-                            config
-                                .imports
-                                .iter()
-                                .map(|i| i.name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                    )
+                    Error::usage(format!("no [[import]] block named {name:?}")).with_hint(format!(
+                        "blocks: {}",
+                        config
+                            .imports
+                            .iter()
+                            .map(|i| i.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
                 })?;
             let reader = match block.adapter {
                 Adapter::Inspect => Reader::Inspect(inspect::Options {
@@ -159,7 +157,7 @@ pub fn resolve(
                 _ => Reader::Mapping(Box::new(mapping::from_import(block).map_err(invalid)?)),
             };
             let canonical = to_canonical_bytes(&serde_json::to_value(block).expect("serializes"))
-                .map_err(CliError::store)?;
+                .map_err(Error::store)?;
             Via {
                 adapter: format!("import:{name}"),
                 reader,
@@ -192,18 +190,18 @@ pub struct Bodies {
 }
 
 impl Bodies {
-    pub fn new(args: &[String], config: &Config, limits: Limits) -> Result<Bodies, CliError> {
+    pub fn new(args: &[String], config: &Config, limits: Limits) -> Result<Bodies, Error> {
         let args = args
             .iter()
             .map(|a| {
                 a.split_once('=')
                     .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                    .ok_or_else(|| CliError::usage(format!("--arg takes NAME=VALUE, not {a:?}")))
+                    .ok_or_else(|| Error::usage(format!("--arg takes NAME=VALUE, not {a:?}")))
             })
             .collect::<Result<_, _>>()?;
         let redactor = match config.store.content {
             ContentMode::Redact => Redactor::new(&config.store.redact_patterns)
-                .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))?,
+                .map_err(|e| Error::new("invalid_config", e.to_string(), Exit::Rejected))?,
             _ => Redactor::default(),
         };
         Ok(Bodies {
@@ -220,9 +218,9 @@ impl Bodies {
     }
 
     /// Store the bodies once the import is accepted.
-    pub fn commit(&mut self, store: &ObjectStore) -> Result<(), CliError> {
+    pub fn commit(&mut self, store: &ObjectStore) -> Result<(), Error> {
         for bytes in self.objects.drain(..) {
-            store.put(&bytes).map_err(CliError::store)?;
+            store.put(&bytes).map_err(Error::store)?;
         }
         Ok(())
     }
@@ -295,12 +293,12 @@ impl Reader {
         path: &Path,
         bytes: &'a [u8],
         host: &mut Bodies,
-    ) -> Result<(Candidates<'a>, Vec<Issue>), CliError> {
-        let bad = |e: &dyn std::fmt::Display| CliError::invalid_input(path, e);
+    ) -> Result<(Candidates<'a>, Vec<Issue>), Error> {
+        let bad = |e: &dyn std::fmt::Display| Error::invalid_input(path, e);
         match self {
             Reader::Records => {
                 limits::check_jsonl_depth(bytes, &host.limits).map_err(|e| {
-                    CliError::new(
+                    Error::new(
                         "input_limit",
                         format!("{}: {e}", path.display()),
                         Exit::Rejected,
@@ -330,7 +328,7 @@ impl Reader {
                 let rows = mapping::rows(compiled, bytes, &host.limits).map_err(|e| bad(&e))?;
                 let (records, issues) =
                     mapping::apply(compiled, &rows, host).map_err(|e| match e {
-                        MapError::Unexpected { .. } => CliError::new(
+                        MapError::Unexpected { .. } => Error::new(
                             "unexpected_source",
                             format!("{}: {e}", path.display()),
                             Exit::Rejected,

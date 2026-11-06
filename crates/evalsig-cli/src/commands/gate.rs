@@ -24,13 +24,13 @@ use evalsig_store::seal;
 use serde_json::{Value, json};
 
 use crate::commands::{approve, gate_serve};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
-use crate::project::{Project, hex, io_error};
 use crate::referee::Referee;
-use crate::validate::RecordValidator;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, hex, io_error};
+use evalsig_project::validate::RecordValidator;
 
 #[derive(Debug, Clone, clap::Args)]
 #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
@@ -96,17 +96,17 @@ impl Submission {
 
     /// The head of the agent-side ledger, if one was named; a named ledger that cannot
     /// be read is an error, not a missing head.
-    pub fn agent_ledger_head(&self) -> Result<Option<String>, CliError> {
+    pub fn agent_ledger_head(&self) -> Result<Option<String>, Error> {
         let Some(p) = self.agent_ledger.as_ref() else {
             return Ok(None);
         };
         let entries = evalsig_store::ledger::read(p)
-            .map_err(|e| CliError::usage(format!("--agent-ledger {}: {e}", p.display())))?;
+            .map_err(|e| Error::usage(format!("--agent-ledger {}: {e}", p.display())))?;
         Ok(entries.last().map(|e| e.hash.clone()))
     }
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     match &args.action {
         Some(Action::Serve(a)) => gate_serve::serve(root, a),
         Some(Action::Submit(a)) => gate_serve::submit(a),
@@ -129,8 +129,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
 }
 
-fn rejected(code: &'static str, message: impl Into<String>) -> CliError {
-    CliError::new(code, message, Exit::Rejected)
+fn rejected(code: &'static str, message: impl Into<String>) -> Error {
+    Error::new(code, message, Exit::Rejected)
 }
 
 /// The answer the candidate's side receives.
@@ -151,7 +151,7 @@ struct NewBest {
 
 /// Judge one submission: the checks, the budget, the conditions, the ledger lines and
 /// the result file.
-pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<Output, CliError> {
+pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<Output, Error> {
     // One submission at a time per referee home, across processes: the budget is
     // read, then written.
     let _lock = referee.lock()?;
@@ -188,7 +188,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
             .join(format!("{}-{}.json", hex(&args.approved), submission.hex()));
     if let Ok(saved) = std::fs::read_to_string(&result_path) {
         let mut envelope: Envelope =
-            serde_json::from_str(&saved).map_err(|e| CliError::invalid_input(&result_path, e))?;
+            serde_json::from_str(&saved).map_err(|e| Error::invalid_input(&result_path, e))?;
         let exit = exit_for(envelope.verdict.as_ref().map(|v| v.code));
         envelope.warnings.push(Warning {
             code: "resubmission".into(),
@@ -371,10 +371,10 @@ fn referee_state(
     (approved_hash, approved): (&str, &Value),
     entries: &[evalsig_store::ledger::Entry],
     held: &BTreeSet<String>,
-) -> Result<RefereeState, CliError> {
+) -> Result<RefereeState, Error> {
     let r = &approved["resolved"];
     let stale = |what: &str| {
-        CliError::new(
+        Error::new(
             "approval_out_of_date",
             format!("{what} since approval; approve the conditions again (no budget was spent)"),
             Exit::Rejected,
@@ -510,9 +510,9 @@ fn mix_ups(
     args: &Request,
     run: &Run,
     judgments: &[&Judgment],
-) -> Result<(), CliError> {
+) -> Result<(), Error> {
     let r = &approved["resolved"];
-    let refuse = |what: &str| -> Result<(), CliError> {
+    let refuse = |what: &str| -> Result<(), Error> {
         Err(rejected("does_not_match_approval", what.to_owned()))
     };
     let grader = run.grader.as_ref();
@@ -576,7 +576,7 @@ fn judge(
     judgments: &[&Judgment],
     records: &[Record],
     recorded: &mut Vec<String>,
-) -> Result<Answer, CliError> {
+) -> Result<Answer, Error> {
     let r = &approved["resolved"];
     let (d, held) = (&state.d, &state.held);
     let task = r["task"]
@@ -661,7 +661,7 @@ fn judge(
             // The raters are tested together at the submission's level α/B, so the
             // budget keeps its error rate (metrics spec §9.4, §11.1).
             let p = report::prepare(run, &on_holdout(judgments, &items), &items, &labels, &at)
-                .map_err(CliError::report)?;
+                .map_err(Error::report)?;
             // Approval fixes epsilon, since the gate reads no configuration.
             let epsilon = c["value"].as_f64().ok_or_else(|| {
                 rejected(
@@ -748,7 +748,7 @@ fn ladder(
     settings: &Settings,
     budget: u32,
     records: &[Record],
-) -> Result<Option<NewBest>, CliError> {
+) -> Result<Option<NewBest>, Error> {
     let l = &approved["resolved"]["ladder"];
     let (Some(metric), Some(step), Some(first_best)) = (
         l["metric"].as_str(),
@@ -766,7 +766,7 @@ fn ladder(
         ..settings.clone()
     };
     let cand = report::prepare(run, &on_holdout(judgments, items), items, labels, &at)
-        .map_err(CliError::report)?;
+        .map_err(Error::report)?;
     let Some(id) = cand.metric_ids().into_iter().find(|id| id.name() == metric) else {
         return Ok(None);
     };
@@ -781,7 +781,7 @@ fn ladder(
         }
         None => report::prepare(base_run, base_judgments, items, labels, &at),
     }
-    .map_err(CliError::report)?;
+    .map_err(Error::report)?;
     let options = Options {
         level: at.level,
         bootstrap: at.bootstrap,
@@ -866,7 +866,7 @@ fn evidence(
     base_judgments: &[&Judgment],
     items: &BTreeMap<&str, &Item>,
     labels: &[&Label],
-) -> Result<Option<Evidence>, CliError> {
+) -> Result<Option<Evidence>, Error> {
     let cand_j = on_holdout(judgments, items);
     if metric == "missing_rate" {
         // Every missing judgment counts, whatever its reason (SPEC §8.3).
@@ -882,9 +882,9 @@ fn evidence(
         let Some(base_run) = base_run else {
             return Ok(None);
         };
-        let pa = report::prepare(base_run, base_judgments, items, labels, s)
-            .map_err(CliError::report)?;
-        let pb = report::prepare(run, &cand_j, items, labels, s).map_err(CliError::report)?;
+        let pa =
+            report::prepare(base_run, base_judgments, items, labels, s).map_err(Error::report)?;
+        let pb = report::prepare(run, &cand_j, items, labels, s).map_err(Error::report)?;
         let options = Options {
             level: s.level,
             bootstrap: s.bootstrap,
@@ -916,7 +916,7 @@ fn evidence(
             _ => None,
         });
     }
-    let r = report::build(run, &cand_j, items, labels, s).map_err(CliError::report)?;
+    let r = report::build(run, &cand_j, items, labels, s).map_err(Error::report)?;
     let m = r
         .metrics
         .iter()
@@ -930,7 +930,7 @@ fn evidence(
 
 /// A condition on a metric the gate does not compute for this run is an error in the
 /// approval, not too little data.
-fn not_computed(metric: &str) -> CliError {
+fn not_computed(metric: &str) -> Error {
     rejected(
         "metric_not_computed",
         format!("the gate computes no {metric} for this run; approve conditions on its metrics"),

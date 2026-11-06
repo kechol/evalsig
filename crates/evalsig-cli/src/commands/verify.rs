@@ -7,13 +7,12 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{self, Kind};
 use serde_json::{Value, json};
 
-use crate::commands::{compare, report};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
-use crate::project::{Project, io_error};
-use crate::provenance::{Request, output_hash};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
+use evalsig_project::provenance::{Request, output_hash};
+use evalsig_project::{compare, data, report};
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -21,8 +20,8 @@ pub struct Args {
     pub report: PathBuf,
 }
 
-fn invalid(message: impl Into<String>) -> CliError {
-    CliError::new("invalid_report", message, Exit::Rejected)
+fn invalid(message: impl Into<String>) -> Error {
+    Error::new("invalid_report", message, Exit::Rejected)
 }
 
 /// Paths where two JSON values differ, with both values.
@@ -55,7 +54,7 @@ fn differences(path: &str, saved: &Value, recomputed: &Value, out: &mut Vec<Valu
     }
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let text = std::fs::read_to_string(&args.report).map_err(|e| io_error(&args.report, &e))?;
     let saved: Value = serde_json::from_str(&text)
@@ -87,7 +86,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             let scope = a
                 .split
                 .map(|p| {
-                    crate::commands::split::scope(
+                    evalsig_project::split::scope(
                         &project,
                         p.part(),
                         saved["results"]["split"].as_str(),
@@ -98,7 +97,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             // The use count comes from the ledger lines before the one naming this
             // output. A comparison made with --scratch is in no line, so its count
             // cannot be recounted and is taken as saved.
-            let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+            let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
             let recorded = entries.iter().position(|e| {
                 e.outputs
                     .iter()
@@ -157,7 +156,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             ),
         });
     }
-    if prov["tool"].as_str() != Some(crate::tool_version().as_str()) {
+    if prov["tool"].as_str() != Some(evalsig_project::tool_version().as_str()) {
         envelope.warnings.push(Warning {
             code: "tool_version_differs".into(),
             message: format!(

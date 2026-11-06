@@ -6,8 +6,8 @@ use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use serde_json::{Map, Value};
 
-use crate::error::CliError;
-use crate::output::{Envelope, Truncated, Warning};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Truncated, Warning};
 
 pub const ROWS: usize = 50;
 pub const CELL: usize = 500;
@@ -88,7 +88,7 @@ fn redact_quotes(text: &str) -> String {
 
 /// An error as agent mode prints it: quoted values withheld from the message, and
 /// the message as written in `untrusted_content` on request (D-018).
-pub fn error_json(err: &CliError, include_content: bool) -> String {
+pub fn error_json(err: &Error, include_content: bool) -> String {
     let message = redact_quotes(&err.message);
     let hint = err.hint.as_deref().map(redact_quotes);
     let mut v = serde_json::json!({ "error": {

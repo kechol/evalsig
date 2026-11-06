@@ -6,10 +6,10 @@ use clap::Subcommand;
 use evalsig_store::ledger::{self, LedgerSide, Problem};
 use serde_json::json;
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode};
-use crate::project::{Project, io_error};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum SideArg {
@@ -58,22 +58,19 @@ pub enum LedgerCommand {
 
 /// The ledger to read: a named file, which must exist, or the project's own, which
 /// is empty until the first entry.
-fn path_of(root: &Path, ledger: Option<&Path>) -> Result<PathBuf, CliError> {
+fn path_of(root: &Path, ledger: Option<&Path>) -> Result<PathBuf, Error> {
     match ledger {
-        Some(p) if !p.is_file() => Err(CliError::usage(format!(
-            "no ledger file at {}",
-            p.display()
-        ))),
+        Some(p) if !p.is_file() => Err(Error::usage(format!("no ledger file at {}", p.display()))),
         Some(p) => Ok(p.to_path_buf()),
         None => Ok(Project::open(root)?.ledger_path()),
     }
 }
 
-pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, CliError> {
+pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, Error> {
     match cmd {
         LedgerCommand::Show { ledger, last } => {
             let path = path_of(root, ledger.as_deref())?;
-            let entries = ledger::read(&path).map_err(CliError::store)?;
+            let entries = ledger::read(&path).map_err(Error::store)?;
             let skip = last.map_or(0, |n| entries.len().saturating_sub(n));
             let rows: Vec<_> = entries
                 .iter()
@@ -134,7 +131,7 @@ pub fn run(root: &Path, cmd: &LedgerCommand) -> Result<Output, CliError> {
         }
         LedgerCommand::Anchor { ledger } => {
             let path = path_of(root, ledger.as_deref())?;
-            let entries = ledger::read(&path).map_err(CliError::store)?;
+            let entries = ledger::read(&path).map_err(Error::store)?;
             Ok(Output::success(Envelope::new(
                 "evalsig.ledger.anchor/1",
                 json!({ "ledger": path.display().to_string(), "head": ledger::head(&entries), "seq": entries.last().map(|e| e.seq) }),

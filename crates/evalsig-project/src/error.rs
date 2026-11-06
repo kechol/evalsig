@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::exit::Exit;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CliError {
+pub struct Error {
     /// A literal in this program, or a code relayed from a referee (`gate submit`).
     pub code: Cow<'static, str>,
     pub message: String,
@@ -19,9 +19,9 @@ pub struct CliError {
     pub exit: Exit,
 }
 
-impl CliError {
+impl Error {
     pub fn new(code: impl Into<Cow<'static, str>>, message: impl Into<String>, exit: Exit) -> Self {
-        CliError {
+        Error {
             code: code.into(),
             message: message.into(),
             hint: None,
@@ -31,16 +31,16 @@ impl CliError {
 
     /// A report that cannot be computed from these records and settings.
     pub fn report(e: evalsig_core::report::ReportError) -> Self {
-        CliError::new("report", e.to_string(), Exit::Rejected)
+        Error::new("report", e.to_string(), Exit::Rejected)
     }
 
     pub fn usage(message: impl Into<String>) -> Self {
-        CliError::new("usage", message, Exit::Usage)
+        Error::new("usage", message, Exit::Usage)
     }
 
     /// Input that cannot be read as the requested format.
     pub fn invalid_input(path: &std::path::Path, e: impl std::fmt::Display) -> Self {
-        CliError::new(
+        Error::new(
             "invalid_input",
             format!("{}: {e}", path.display()),
             Exit::Blocked,
@@ -49,7 +49,7 @@ impl CliError {
 
     /// The object store, snapshots or ledger failed.
     pub fn store(e: impl std::fmt::Display) -> Self {
-        CliError::new("store", e.to_string(), Exit::Blocked)
+        Error::new("store", e.to_string(), Exit::Blocked)
     }
 
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
@@ -72,10 +72,10 @@ impl CliError {
     }
 }
 
-impl std::fmt::Display for CliError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-impl std::error::Error for CliError {}
+impl std::error::Error for Error {}

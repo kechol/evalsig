@@ -8,19 +8,21 @@ use serde_json::json;
 
 use evalsig_core::{missing, validity};
 
-use crate::checks::{self, ArmArgs, DatasetArgs};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode};
-use crate::project::{Project, io_error};
-use crate::validate::{Issue, RecordValidator};
+use evalsig_project::checks::{self, ArmChecks};
+
+use crate::args::DatasetArgs;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
+use evalsig_project::validate::{Issue, RecordValidator};
 
 /// Issues kept in the output; the total is always reported.
 const MAX_ISSUES: usize = 1000;
 
 /// Run the dataset checks over the project's imported data.
-pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, CliError> {
+pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Error> {
     if list {
         return Ok(Output::success(Envelope::new(
             "evalsig.validate/1",
@@ -29,7 +31,10 @@ pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Cli
     }
     let project = Project::open(root)?;
     let data = data::load(&project)?;
-    let findings = validity::dataset(&data.records, &checks::overrides(args, ArmArgs::default()));
+    let findings = validity::dataset(
+        &data.records,
+        &checks::overrides(args.into(), ArmChecks::default()),
+    );
     let counts = missing::tally(&data.records);
     let mut envelope = Envelope::new(
         "evalsig.validate/1",
@@ -45,7 +50,7 @@ pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Cli
     Ok(checks::apply(envelope, &findings))
 }
 
-pub fn run(records: &Path) -> Result<Output, CliError> {
+pub fn run(records: &Path) -> Result<Output, Error> {
     let file = std::fs::File::open(records).map_err(|e| io_error(records, &e))?;
     let mut reader = std::io::BufReader::new(file);
     let validator = RecordValidator::new();

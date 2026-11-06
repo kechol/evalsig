@@ -3,11 +3,11 @@
 
 use serde_json::{Value, json};
 
-use crate::error::CliError;
+use crate::Error;
+use crate::envelope::{Envelope, Output, VerdictCode};
 use crate::exit::Exit;
-use crate::output::{Envelope, Output, VerdictCode};
 
-pub const GLOSSARY: &str = include_str!("../../../../docs/glossary.md");
+pub const GLOSSARY: &str = include_str!("../../../docs/glossary.md");
 
 /// The glossary rows whose identifiers include `name`: (section, term, identifiers,
 /// meaning).
@@ -50,7 +50,7 @@ fn glossary(name: &str) -> Vec<Value> {
     out
 }
 
-pub fn run(name: &str) -> Result<Output, CliError> {
+pub fn run(name: &str) -> Result<Output, Error> {
     let mut matches = glossary(name);
     if let Some(v) = VerdictCode::ALL.into_iter().find(|v| v.as_str() == name) {
         matches.push(json!({ "kind": "verdict", "code": v.as_str(), "meaning": v.meaning() }));
@@ -69,7 +69,7 @@ pub fn run(name: &str) -> Result<Output, CliError> {
         matches.push(json!({ "kind": "exit_code", "code": e.code(), "meaning": e.meaning() }));
     }
     if matches.is_empty() {
-        return Err(CliError::usage(format!("nothing is called {name:?}"))
+        return Err(Error::usage(format!("nothing is called {name:?}"))
             .with_hint("names are glossary identifiers, verdict codes, validity checks and exit codes; see evalsig help --json"));
     }
     Ok(Output::success(Envelope::new(

@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
-use crate::output::Envelope;
+use evalsig_project::envelope::Envelope;
 
 /// A metric value with four decimals.
 fn num(v: &Value) -> String {

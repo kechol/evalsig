@@ -1,34 +1,30 @@
-//! Override flags for validity checks and how check findings enter an envelope.
+//! Overrides of validity checks and how check findings enter an envelope.
 
 use evalsig_core::checks::{self, Finding, Overrides};
 use serde_json::json;
 
+use crate::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
 use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
 
-/// Flags for the checks that run over one dataset.
-#[derive(Debug, Clone, Copy, Default, clap::Args, serde::Serialize, serde::Deserialize)]
-pub struct DatasetArgs {
+/// Overrides of the checks that run over one dataset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DatasetChecks {
     /// Continue although some missing values have no explained reason.
-    #[arg(long)]
     pub allow_unexplained_missing: bool,
     /// Stop when content looks like a secret instead of warning.
-    #[arg(long)]
     pub fail_on_secret: bool,
 }
 
-/// Flags for the checks that compare two arms.
-#[derive(Debug, Clone, Copy, Default, clap::Args, serde::Serialize, serde::Deserialize)]
-pub struct ArmArgs {
+/// Overrides of the checks that compare two arms.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArmChecks {
     /// Continue although the compared arms used different grader versions.
-    #[arg(long)]
     pub allow_mixed_grader: bool,
     /// Keep items whose input differs between the compared arms.
-    #[arg(long)]
     pub allow_input_change: bool,
 }
 
-pub fn overrides(dataset: DatasetArgs, arms: ArmArgs) -> Overrides {
+pub fn overrides(dataset: DatasetChecks, arms: ArmChecks) -> Overrides {
     Overrides {
         allow_unexplained_missing: dataset.allow_unexplained_missing,
         allow_mixed_grader: arms.allow_mixed_grader,

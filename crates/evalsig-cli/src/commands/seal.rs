@@ -11,12 +11,12 @@ use evalsig_store::ledger::Kind;
 use evalsig_store::{seal, snapshot};
 use serde_json::{Value, json};
 
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::{Project, hex, io_error};
 use crate::referee::Referee;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, hex, io_error};
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct Args {
@@ -31,7 +31,7 @@ pub struct Args {
     pub referee: Option<PathBuf>,
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let held = referee.holdout_items(&args.holdout)?;
     // The agent's environment must never have held these labels (SPEC §8.2). Snapshots
@@ -39,8 +39,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     // is searched line by line: a line this version cannot read does not hide the rest.
     let store = Project::open(&args.agent_project)?.objects();
     let mut leaked = BTreeSet::new();
-    for h in store.list().map_err(CliError::store)? {
-        let bytes = store.get(&h).map_err(CliError::store)?;
+    for h in store.list().map_err(Error::store)? {
+        let bytes = store.get(&h).map_err(Error::store)?;
         for line in snapshot::lines(&bytes) {
             let Some(Record::Label(l)) = std::str::from_utf8(line)
                 .ok()
@@ -54,7 +54,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         }
     }
     if !leaked.is_empty() {
-        return Err(CliError::new(
+        return Err(Error::new(
             "holdout_labels_in_agent",
             format!(
                 "the agent's snapshots hold labels of {} holdout items; cut a new holdout from items the agent has no labels for",
@@ -72,13 +72,13 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .filter(|r| matches!(r, Record::Label(l) if held.contains(&l.item_id)))
         .map(|r| {
             let v = serde_json::to_value(r).expect("records serialize");
-            to_canonical_bytes(&v).map_err(CliError::store)
+            to_canonical_bytes(&v).map_err(Error::store)
         })
         .collect::<Result<_, _>>()?;
     lines.sort();
     lines.dedup();
     if lines.is_empty() {
-        return Err(CliError::new(
+        return Err(Error::new(
             "insufficient_data",
             "the referee's project holds no label of the holdout items",
             Exit::InsufficientData,
@@ -89,7 +89,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         .flat_map(|l| l.iter().copied().chain([b'\n']))
         .collect();
     let sealed = seal::seal(&referee.recipient()?, &plaintext)
-        .map_err(|e| CliError::new("seal", e.to_string(), Exit::Rejected))?;
+        .map_err(|e| Error::new("seal", e.to_string(), Exit::Rejected))?;
     let path = referee.file("sealed", &args.holdout, "age");
     std::fs::write(&path, &sealed).map_err(|e| io_error(&path, &e))?;
     let sealed_ref = ContentHash::blake3(&sealed).to_string();

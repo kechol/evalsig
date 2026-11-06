@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
-use crate::project::io_error;
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::io_error;
 
 const SKILL: [(&str, &str); 3] = [
     ("SKILL.md", include_str!("../../skill/evalsig/SKILL.md")),
@@ -88,16 +88,16 @@ pub enum SkillCommand {
 /// The Skill's directory: Claude Code reads `.claude/skills/` in the project and in
 /// the home directory; Codex documents `$CODEX_HOME/skills` (default `~/.codex/skills`)
 /// only, so it has no project scope here.
-fn skill_dir(root: &Path, place: &Place) -> Result<PathBuf, CliError> {
+fn skill_dir(root: &Path, place: &Place) -> Result<PathBuf, Error> {
     if let Some(d) = &place.dir {
         let dir = d.join("evalsig");
-        crate::project::outside_store(&dir)?;
+        evalsig_project::project::outside_store(&dir)?;
         return Ok(dir);
     }
     let home = || {
         std::env::var_os("HOME")
             .map(PathBuf::from)
-            .ok_or_else(|| CliError::usage("HOME is not set; pass --dir"))
+            .ok_or_else(|| Error::usage("HOME is not set; pass --dir"))
     };
     match (place.target, place.scope) {
         (Target::Claude, Scope::Project) => Ok(root.join(".claude/skills/evalsig")),
@@ -106,10 +106,10 @@ fn skill_dir(root: &Path, place: &Place) -> Result<PathBuf, CliError> {
             .map(PathBuf::from)
             .map_or_else(|| home().map(|h| h.join(".codex")), Ok)?
             .join("skills/evalsig")),
-        (Target::Codex, Scope::Project) => Err(CliError::usage(
+        (Target::Codex, Scope::Project) => Err(Error::usage(
             "Codex reads skills from $CODEX_HOME/skills; use --scope user or --dir",
         )),
-        (Target::Generic, _) => Err(CliError::usage("--target generic needs --dir")),
+        (Target::Generic, _) => Err(Error::usage("--target generic needs --dir")),
     }
 }
 
@@ -145,7 +145,7 @@ fn compare(dir: &Path, files: &[(&'static str, String)]) -> Vec<(&'static str, S
         .collect()
 }
 
-pub fn run(root: &Path, cmd: &SkillCommand) -> Result<Output, CliError> {
+pub fn run(root: &Path, cmd: &SkillCommand) -> Result<Output, Error> {
     let files = files();
     match cmd {
         SkillCommand::Install { place, force } => {
@@ -155,7 +155,7 @@ pub fn run(root: &Path, cmd: &SkillCommand) -> Result<Output, CliError> {
                     .iter()
                     .any(|(_, s)| *s == State::Differs)
             {
-                return Err(CliError::usage(format!(
+                return Err(Error::usage(format!(
                     "{} holds a Skill that differs from this evalsig's",
                     dir.display()
                 ))

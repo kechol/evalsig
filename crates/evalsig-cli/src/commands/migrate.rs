@@ -8,11 +8,11 @@ use evalsig_store::migrate::{self, MIGRATIONS, Migration};
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::json;
 
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::Project;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::Project;
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -21,20 +21,20 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     migrate_with(root, args, MIGRATIONS)
 }
 
-fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Output, CliError> {
+fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let store = project.objects();
     let mut rows = Vec::new();
     let mut replaced = Vec::new();
     for x in data::in_force(&project)? {
         let old = x.snapshot;
-        let lines = migrate::read_lines(&store, &old).map_err(CliError::store)?;
+        let lines = migrate::read_lines(&store, &old).map_err(Error::store)?;
         let (mut records, path) = migrate::upgrade(lines, migrations).map_err(|e| {
-            CliError::new(
+            Error::new(
                 "unknown_format",
                 format!("snapshot {old}: {e}"),
                 Exit::Rejected,
@@ -50,8 +50,8 @@ fn migrate_with(root: &Path, args: &Args, migrations: &[Migration]) -> Result<Ou
         });
         if !args.dry_run {
             let prov = data::provenance_of(&store, &x)?;
-            let r = snapshot::replace(&store, old, &mut records, prov, |_| {})
-                .map_err(CliError::store)?;
+            let r =
+                snapshot::replace(&store, old, &mut records, prov, |_| {}).map_err(Error::store)?;
             row["to"] = json!(r.to);
             row["provenance"] = json!(r.provenance);
             replaced.push(r);

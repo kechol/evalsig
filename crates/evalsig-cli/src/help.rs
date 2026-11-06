@@ -5,9 +5,9 @@
 use clap::{Arg, Command};
 use serde_json::{Value, json};
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, VerdictCode};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, VerdictCode};
+use evalsig_project::exit::Exit;
 
 fn arg(a: &Arg) -> Value {
     json!({
@@ -61,14 +61,14 @@ fn command(cmd: &Command) -> Value {
 }
 
 /// The whole tree, or only the command at `path` (`help --json compare`).
-pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, CliError> {
+pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, Error> {
     let mut root = root.clone();
     root.build();
     if !path.is_empty() {
         let mut cmd = &root;
         for name in path {
             cmd = cmd.find_subcommand(name).ok_or_else(|| {
-                CliError::usage(format!("no command {:?}", path.join(" ")))
+                Error::usage(format!("no command {:?}", path.join(" ")))
                     .with_hint("list the commands with evalsig help --json")
             })?;
         }

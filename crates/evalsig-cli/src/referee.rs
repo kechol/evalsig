@@ -9,10 +9,10 @@ use evalsig_store::ledger::{self, Entry, Kind, LedgerSide, NewEntry};
 use evalsig_store::seal;
 use serde_json::{Value, json};
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::{actor, hex, io_error, now, str_set};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{actor, hex, io_error, now, str_set};
 
 pub const ENV: &str = "EVALSIG_REFEREE";
 const IDENTITY: &str = "identity.txt";
@@ -33,8 +33,8 @@ pub struct Referee {
     pub dir: PathBuf,
 }
 
-fn referee_only(message: impl Into<String>) -> CliError {
-    CliError::new("referee_only", message, Exit::Rejected).with_hint(
+fn referee_only(message: impl Into<String>) -> Error {
+    Error::new("referee_only", message, Exit::Rejected).with_hint(
         "run this as the referee, with --referee <dir> or EVALSIG_REFEREE naming its home",
     )
 }
@@ -42,7 +42,7 @@ fn referee_only(message: impl Into<String>) -> CliError {
 /// Only the referee's user may use `path`: files 0600, directories 0700. A group the
 /// agent belongs to may then traverse the home to reach `gate.sock` and nothing else.
 #[cfg(unix)]
-pub fn private(path: &Path) -> Result<(), CliError> {
+pub fn private(path: &Path) -> Result<(), Error> {
     use std::os::unix::fs::PermissionsExt;
     let mode = if path.is_dir() { 0o700 } else { 0o600 };
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
@@ -50,13 +50,13 @@ pub fn private(path: &Path) -> Result<(), CliError> {
 }
 
 #[cfg(not(unix))]
-pub fn private(_: &Path) -> Result<(), CliError> {
+pub fn private(_: &Path) -> Result<(), Error> {
     Ok(())
 }
 
 /// Create `path` holding `bytes`, readable by the referee's user only from the
 /// moment it exists.
-pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -70,7 +70,7 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
 
 /// Replace `path` with `bytes`, readable by the referee's user only, so that a reader
 /// sees the old file or the new one and never a part.
-pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     let tmp = path.with_extension("tmp");
     // A temporary file left by an interrupted write is stale; the home's lock is held.
     match std::fs::remove_file(&tmp) {
@@ -86,16 +86,16 @@ pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
 }
 
 /// `evalsig referee init <dir>`: a new home with a fresh identity.
-pub fn init(dir: &Path) -> Result<Output, CliError> {
+pub fn init(dir: &Path) -> Result<Output, Error> {
     if dir.join(IDENTITY).exists() {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "{} already holds a referee identity",
             dir.display()
         )));
     }
     // The home is made private, so it must be the referee's own: new or empty.
     if std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some()) {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "{} is not empty; a referee home starts in a new or empty directory",
             dir.display()
         )));
@@ -124,19 +124,19 @@ pub fn init(dir: &Path) -> Result<Output, CliError> {
     )))
 }
 
-fn item_ids(p: &Path, text: &str) -> Result<BTreeSet<String>, CliError> {
-    let v: Value = serde_json::from_str(text).map_err(|e| CliError::invalid_input(p, e))?;
+fn item_ids(p: &Path, text: &str) -> Result<BTreeSet<String>, Error> {
+    let v: Value = serde_json::from_str(text).map_err(|e| Error::invalid_input(p, e))?;
     Ok(str_set(&v["items"]))
 }
 
 /// The items named by the `exclude` lines of the referee ledger.
-fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, CliError> {
+fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, Error> {
     let mut out = BTreeSet::new();
     for e in entries.iter().filter(|e| e.kind == Kind::Exclude) {
         let Some(h) = e.inputs.first() else { continue };
         let p = referee.file("exclusions", h, "json");
         let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
-        let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| Error::invalid_input(&p, e))?;
         out.extend(str_set(&v));
     }
     Ok(out)
@@ -145,14 +145,14 @@ fn excluded(referee: &Referee, entries: &[Entry]) -> Result<BTreeSet<String>, Cl
 impl Referee {
     /// The home, as `open` finds it, locked against every other writer while the
     /// returned guard lives.
-    pub fn open_exclusive(arg: Option<&Path>) -> Result<(Referee, std::fs::File), CliError> {
+    pub fn open_exclusive(arg: Option<&Path>) -> Result<(Referee, std::fs::File), Error> {
         let referee = Referee::open(arg)?;
         let lock = referee.lock()?;
         Ok((referee, lock))
     }
 
     /// The home named by `arg` or `EVALSIG_REFEREE`, if its identity can be read.
-    pub fn open(arg: Option<&Path>) -> Result<Referee, CliError> {
+    pub fn open(arg: Option<&Path>) -> Result<Referee, Error> {
         let dir = match arg {
             Some(p) => p.to_path_buf(),
             None => std::env::var_os(ENV)
@@ -169,12 +169,12 @@ impl Referee {
         Ok(Referee { dir })
     }
 
-    pub fn identity(&self) -> Result<String, CliError> {
+    pub fn identity(&self) -> Result<String, Error> {
         let p = self.dir.join(IDENTITY);
         std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))
     }
 
-    pub fn recipient(&self) -> Result<String, CliError> {
+    pub fn recipient(&self) -> Result<String, Error> {
         let p = self.dir.join(RECIPIENT);
         Ok(std::fs::read_to_string(&p)
             .map_err(|e| io_error(&p, &e))?
@@ -184,7 +184,7 @@ impl Referee {
 
     /// The items of a holdout this referee cut, by its hash, less the items the
     /// referee excluded (D-027).
-    pub fn holdout_items(&self, hash: &str) -> Result<BTreeSet<String>, CliError> {
+    pub fn holdout_items(&self, hash: &str) -> Result<BTreeSet<String>, Error> {
         self.holdout_items_in(hash, &self.entries()?)
     }
 
@@ -193,10 +193,10 @@ impl Referee {
         &self,
         hash: &str,
         entries: &[Entry],
-    ) -> Result<BTreeSet<String>, CliError> {
+    ) -> Result<BTreeSet<String>, Error> {
         let p = self.file("holdouts", hash, "json");
         let text = std::fs::read_to_string(&p)
-            .map_err(|_| CliError::usage(format!("this referee has cut no holdout {hash}")))?;
+            .map_err(|_| Error::usage(format!("this referee has cut no holdout {hash}")))?;
         let excluded = excluded(self, entries)?;
         Ok(item_ids(&p, &text)?
             .into_iter()
@@ -205,7 +205,7 @@ impl Referee {
     }
 
     /// Every item of every holdout this referee cut.
-    pub fn all_holdout_items(&self) -> Result<BTreeSet<String>, CliError> {
+    pub fn all_holdout_items(&self) -> Result<BTreeSet<String>, Error> {
         let dir = self.path("holdouts");
         let mut out = BTreeSet::new();
         for entry in std::fs::read_dir(&dir).map_err(|e| io_error(&dir, &e))? {
@@ -227,7 +227,7 @@ impl Referee {
 
     /// An exclusive lock on the home, held while the guard lives: one operation that
     /// writes the home at a time, whichever process runs it.
-    pub fn lock(&self) -> Result<std::fs::File, CliError> {
+    pub fn lock(&self) -> Result<std::fs::File, Error> {
         let p = self.path("state").join("gate.lock");
         let f = std::fs::OpenOptions::new()
             .create(true)
@@ -243,11 +243,11 @@ impl Referee {
         self.dir.join(LEDGER)
     }
 
-    pub fn entries(&self) -> Result<Vec<Entry>, CliError> {
+    pub fn entries(&self) -> Result<Vec<Entry>, Error> {
         if !self.ledger_path().exists() {
             return Ok(Vec::new());
         }
-        ledger::read(&self.ledger_path()).map_err(CliError::store)
+        ledger::read(&self.ledger_path()).map_err(Error::store)
     }
 
     /// Append a referee ledger line.
@@ -257,7 +257,7 @@ impl Referee {
         inputs: Vec<String>,
         outputs: Vec<String>,
         summary: Value,
-    ) -> Result<Entry, CliError> {
+    ) -> Result<Entry, Error> {
         let Value::Object(summary) = summary else {
             panic!("a ledger summary is a JSON object");
         };
@@ -271,16 +271,16 @@ impl Referee {
                 inputs,
                 outputs,
                 summary,
-                tool: crate::tool_version(),
+                tool: evalsig_project::tool_version(),
             },
         )
-        .map_err(CliError::store)
+        .map_err(Error::store)
         .and_then(|e| private(&self.ledger_path()).map(|()| e))
     }
 
     /// Whether the agent could read the key: the home lies inside the project, or the
     /// identity is readable by group or others (D-014).
-    pub fn seal_void(&self, project: &crate::project::Project) -> bool {
+    pub fn seal_void(&self, project: &evalsig_project::project::Project) -> bool {
         let inside = match (
             self.dir.canonicalize(),
             project.dir.parent().map(Path::canonicalize),

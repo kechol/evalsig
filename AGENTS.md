@@ -12,7 +12,8 @@ contributors and to AI coding agents alike.
 | `crates/evalsig-core` | Data types, metrics and validity checks. Pure computation, no I/O |
 | `crates/evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing |
 | `crates/evalsig-adapters` | Ingestion adapters (Inspect, promptfoo, declarative mapping) |
-| `crates/evalsig-cli` | The `evalsig` binary, agent output, generated help and Skill |
+| `crates/evalsig-project` | The `.evalsig/` project: data in force, analyses, provenance, import, published JSON Schemas |
+| `crates/evalsig-cli` | The `evalsig` binary: argument parsing, rendering, agent output, generated help and Skill |
 | `crates/evalsig-dashboard` | Local web server and SVG rendering |
 | `docs/decisions.md` | Decision ledger (`D-NNN`). Read its header before adding an entry |
 | `docs/glossary.md` | Glossary. CLI output, reports and docs use only these terms |

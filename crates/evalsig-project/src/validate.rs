@@ -29,6 +29,12 @@ pub struct RecordValidator {
 /// The record kinds of `records/1`, one `$defs` entry each.
 const KINDS: [&str; 6] = ["item", "label", "judgment", "preference", "run", "content"];
 
+impl Default for RecordValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RecordValidator {
     pub fn new() -> Self {
         let schema: Value =

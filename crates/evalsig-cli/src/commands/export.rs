@@ -18,12 +18,14 @@ use parquet::file::writer::SerializedFileWriter;
 use parquet::schema::types::Type;
 use serde_json::{Map, Value, json};
 
-use crate::analysis::{self, AnalysisArgs};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::{Project, io_error};
+use evalsig_project::analysis::{self, Analysis};
+
+use crate::args::AnalysisArgs;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum To {
@@ -111,10 +113,10 @@ fn column_type(rows: &[Map<String, Value>], name: &str) -> Column {
 }
 
 /// A cell as text: strings as they are, other values as canonical JSON.
-fn text(v: &Value) -> Result<String, CliError> {
+fn text(v: &Value) -> Result<String, Error> {
     Ok(match v {
         Value::String(s) => s.clone(),
-        other => String::from_utf8(to_canonical_bytes(other).map_err(CliError::store)?)
+        other => String::from_utf8(to_canonical_bytes(other).map_err(Error::store)?)
             .expect("canonical JSON is UTF-8"),
     })
 }
@@ -124,9 +126,9 @@ fn columns(t: &Table) -> Vec<String> {
     set.into_iter().cloned().collect()
 }
 
-fn write_parquet(t: &Table, path: &Path) -> Result<(), CliError> {
+fn write_parquet(t: &Table, path: &Path) -> Result<(), Error> {
     let fail =
-        |e: parquet::errors::ParquetError| CliError::new("export", e.to_string(), Exit::Rejected);
+        |e: parquet::errors::ParquetError| Error::new("export", e.to_string(), Exit::Rejected);
     let names = columns(t);
     let types: Vec<Column> = names.iter().map(|n| column_type(&t.rows, n)).collect();
     let fields = names
@@ -212,7 +214,7 @@ fn csv_field(s: &str) -> String {
     }
 }
 
-fn write_csv(t: &Table, path: &Path) -> Result<(), CliError> {
+fn write_csv(t: &Table, path: &Path) -> Result<(), Error> {
     let names = columns(t);
     let mut out = names
         .iter()
@@ -234,18 +236,18 @@ fn write_csv(t: &Table, path: &Path) -> Result<(), CliError> {
     std::fs::write(path, out).map_err(|e| io_error(path, &e))
 }
 
-fn write_jsonl(t: &Table, path: &Path) -> Result<(), CliError> {
+fn write_jsonl(t: &Table, path: &Path) -> Result<(), Error> {
     let mut f = File::create(path).map_err(|e| io_error(path, &e))?;
     for r in &t.rows {
-        let mut line = to_canonical_bytes(&Value::Object(r.clone())).map_err(CliError::store)?;
+        let mut line = to_canonical_bytes(&Value::Object(r.clone())).map_err(Error::store)?;
         line.push(b'\n');
         f.write_all(&line).map_err(|e| io_error(path, &e))?;
     }
     Ok(())
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
-    args.analysis.without_proxy("export")?;
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
+    Analysis::from(args.analysis.clone()).without_proxy("export")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
@@ -272,7 +274,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     if let Some(run_id) = &args.items {
         let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
         let labels: Vec<&Label> = all.iter().collect();
-        let mut settings = analysis::settings(&config, &args.analysis);
+        let mut settings = analysis::settings(&config, &args.analysis.clone().into());
         settings.items = true;
         let r = report::build(
             d.run(run_id)?,
@@ -281,7 +283,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             &labels,
             &settings,
         )
-        .map_err(CliError::report)?;
+        .map_err(Error::report)?;
         let rows = r
             .items
             .iter()
@@ -295,7 +297,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             rows,
         });
     }
-    crate::project::outside_store(&args.out)?;
+    evalsig_project::project::outside_store(&args.out)?;
     std::fs::create_dir_all(&args.out).map_err(|e| io_error(&args.out, &e))?;
     let ext = match args.to {
         To::Parquet => "parquet",

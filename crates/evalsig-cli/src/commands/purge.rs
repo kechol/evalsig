@@ -10,10 +10,10 @@ use evalsig_store::ledger::Kind;
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
 
-use crate::data;
-use crate::error::CliError;
-use crate::output::{Envelope, Output, Warning};
-use crate::project::{Project, io_error};
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, Warning};
+use evalsig_project::project::{Project, io_error};
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -29,7 +29,7 @@ pub struct Args {
 
 /// Saved reports computed from any of these snapshots. Files that are not JSON
 /// results are not reports and are left alone.
-fn reports_using(dir: &Path, snapshots: &BTreeSet<String>) -> Result<Vec<PathBuf>, CliError> {
+fn reports_using(dir: &Path, snapshots: &BTreeSet<String>) -> Result<Vec<PathBuf>, Error> {
     let mut out = Vec::new();
     if snapshots.is_empty() {
         return Ok(out);
@@ -60,23 +60,21 @@ fn reports_using(dir: &Path, snapshots: &BTreeSet<String>) -> Result<Vec<PathBuf
     Ok(out)
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let body: ContentHash = args.body.parse().map_err(|_| {
-        CliError::usage(format!("{:?} is not a content reference", args.body))
+        Error::usage(format!("{:?} is not a content reference", args.body))
             .with_hint("pass blake3:<64 hex> or sha256:<64 hex>")
     })?;
     if !args.yes {
-        return Err(
-            CliError::usage("purge deletes content and cannot be undone")
-                .with_hint("pass --yes to confirm"),
-        );
+        return Err(Error::usage("purge deletes content and cannot be undone")
+            .with_hint("pass --yes to confirm"));
     }
     let body_ref = body.to_string();
     let project = Project::open(root)?;
     let store = project.objects();
     let mut sets = Vec::new();
     for x in data::in_force(&project)? {
-        let records = snapshot::read(&store, &x.snapshot).map_err(CliError::store)?;
+        let records = snapshot::read(&store, &x.snapshot).map_err(Error::store)?;
         sets.push((x.snapshot, records, data::provenance_of(&store, &x)?));
     }
     let items: BTreeSet<String> = sets
@@ -95,14 +93,14 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     );
     doomed.extend(store.contains(&body).then_some(body));
     if items.is_empty() && doomed.is_empty() {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "no record names {body_ref} and it is not stored"
         )));
     }
     let mut replaced = Vec::new();
     let mut records_changed = 0;
     for (old, mut records, prov) in sets {
-        let n = content::purge_records(&mut records, &items, &body_ref).map_err(CliError::store)?;
+        let n = content::purge_records(&mut records, &items, &body_ref).map_err(Error::store)?;
         if n == 0 {
             continue;
         }
@@ -110,7 +108,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         let r = snapshot::replace(&store, old, &mut records, prov, |p| {
             p.redactions.retain(|r| r.original != body)
         })
-        .map_err(CliError::store)?;
+        .map_err(Error::store)?;
         doomed.push(old);
         replaced.push(r);
     }
@@ -141,7 +139,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         summary,
     )?;
     for h in &doomed {
-        store.remove(h).map_err(CliError::store)?;
+        store.remove(h).map_err(Error::store)?;
     }
     for p in &reports {
         std::fs::remove_file(p).map_err(|e| io_error(p, &e))?;

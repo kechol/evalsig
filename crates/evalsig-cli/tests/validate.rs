@@ -90,7 +90,7 @@ fn raw_schema_is_the_published_document() {
         .clone();
     let published = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/schema/records.schema.json"
+        "/../evalsig-project/schema/records.schema.json"
     ))
     .unwrap();
     assert_eq!(out, published);

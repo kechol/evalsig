@@ -6,7 +6,7 @@ use evalsig_core::config::Config;
 use evalsig_core::time::Instant;
 use evalsig_store::objects::ObjectStore;
 
-use crate::error::CliError;
+use crate::Error;
 use crate::exit::Exit;
 
 pub const DIR: &str = ".evalsig";
@@ -27,10 +27,10 @@ impl Project {
     }
 
     /// The project, which must have been initialized.
-    pub fn open(root: &Path) -> Result<Self, CliError> {
+    pub fn open(root: &Path) -> Result<Self, Error> {
         let p = Project::at(root);
         if !p.config_path().is_file() {
-            return Err(CliError::new(
+            return Err(Error::new(
                 "not_initialized",
                 format!("no evalsig project at {}", p.dir.display()),
                 Exit::Usage,
@@ -66,12 +66,12 @@ impl Project {
     /// envelope's provenance.
     pub fn record(
         &self,
-        envelope: &mut crate::output::Envelope,
+        envelope: &mut crate::envelope::Envelope,
         kind: evalsig_store::ledger::Kind,
         inputs: Vec<String>,
         outputs: Vec<String>,
         summary: serde_json::Value,
-    ) -> Result<(), CliError> {
+    ) -> Result<(), Error> {
         let serde_json::Value::Object(summary) = summary else {
             panic!("a ledger summary is a JSON object");
         };
@@ -88,7 +88,7 @@ impl Project {
                 tool: crate::tool_version(),
             },
         )
-        .map_err(CliError::store)?;
+        .map_err(Error::store)?;
         envelope.provenance.ledger = Some("agent".into());
         envelope.provenance.ledger_seq = Some(entry.seq);
         Ok(())
@@ -96,33 +96,27 @@ impl Project {
 
     /// Keep the configuration (with defaults filled in) as an object named by its
     /// hash, so `verify` can recompute with exactly the settings a result used.
-    pub fn store_config(
-        &self,
-        config: &Config,
-    ) -> Result<evalsig_store::hash::ContentHash, CliError> {
+    pub fn store_config(&self, config: &Config) -> Result<evalsig_store::hash::ContentHash, Error> {
         let bytes = evalsig_store::canonical::to_canonical_bytes(&config.to_json())
-            .map_err(CliError::store)?;
+            .map_err(Error::store)?;
         self.objects()
             .put(&bytes)
             .map(|(h, _)| h)
-            .map_err(CliError::store)
+            .map_err(Error::store)
     }
 
     /// A stored configuration by its hash.
-    pub fn stored_config(
-        &self,
-        hash: &evalsig_store::hash::ContentHash,
-    ) -> Result<Config, CliError> {
-        let bytes = self.objects().get(hash).map_err(CliError::store)?;
+    pub fn stored_config(&self, hash: &evalsig_store::hash::ContentHash) -> Result<Config, Error> {
+        let bytes = self.objects().get(hash).map_err(Error::store)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))
+            .map_err(|e| Error::new("invalid_config", e.to_string(), Exit::Rejected))
     }
 
-    pub fn config(&self) -> Result<Config, CliError> {
+    pub fn config(&self) -> Result<Config, Error> {
         let path = self.config_path();
         let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, &e))?;
         Config::from_toml(&text).map_err(|e| {
-            CliError::new(
+            Error::new(
                 "invalid_config",
                 format!("{}: {e}", path.display()),
                 Exit::Rejected,
@@ -134,7 +128,7 @@ impl Project {
 /// Refuse an output path in a `.evalsig` directory, as written or once every symbolic
 /// link on the way is resolved (the destination itself included): the store, the
 /// ledger and the configuration are never the destination of a file a command writes.
-pub fn outside_store(path: &Path) -> Result<(), CliError> {
+pub fn outside_store(path: &Path) -> Result<(), Error> {
     let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let resolved = abs.canonicalize().ok().or_else(|| {
         abs.parent()
@@ -149,7 +143,7 @@ pub fn outside_store(path: &Path) -> Result<(), CliError> {
         })
     });
     if inside {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "{} is inside .evalsig/, which holds the store, the ledger and the configuration",
             path.display()
         ))
@@ -172,8 +166,8 @@ pub fn hex(h: &str) -> &str {
     h.strip_prefix("blake3:").unwrap_or(h)
 }
 
-pub fn io_error(path: &Path, e: &std::io::Error) -> CliError {
-    CliError::new("io", format!("{}: {e}", path.display()), Exit::Blocked)
+pub fn io_error(path: &Path, e: &std::io::Error) -> Error {
+    Error::new("io", format!("{}: {e}", path.display()), Exit::Blocked)
 }
 
 /// Who is acting, for ledger lines. Self-reported: an audit hint, not a control.

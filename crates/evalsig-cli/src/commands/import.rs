@@ -15,12 +15,12 @@ use evalsig_store::snapshot::{self, PROVENANCE_SCHEMA, Provenance, SourceFile};
 use evalsig_store::{content, rows};
 use serde_json::{Value, json};
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::mapped::{self, Candidate, Reader};
-use crate::output::{Envelope, Output, Verdict, VerdictCode, Warning};
-use crate::project::{Project, actor, io_error, now};
-use crate::validate::{Issue, RecordValidator};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, Warning};
+use evalsig_project::exit::Exit;
+use evalsig_project::mapped::{self, Candidate, Reader};
+use evalsig_project::project::{Project, actor, io_error, now};
+use evalsig_project::validate::{Issue, RecordValidator};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum AdapterArg {
@@ -101,12 +101,12 @@ pub(crate) fn parse_size(s: &str) -> Result<u64, String> {
 }
 
 /// A file read within the size limit; a refusal names the limit that applies.
-pub(crate) fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliError> {
+pub(crate) fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, Error> {
     limits::read_file(path, limits).map_err(|e| match e {
         LimitError::Io(io) => io_error(path, &io),
         other => {
             let hint = matches!(other, LimitError::TooLarge { .. });
-            let err = CliError::new(
+            let err = Error::new(
                 "input_limit",
                 format!("{}: {other}", path.display()),
                 Exit::Rejected,
@@ -121,7 +121,7 @@ pub(crate) fn read_within(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliEr
 }
 
 /// The reader for a file when no mapping is given: by `--adapter`, else extension.
-fn reader_for(path: &Path, args: &Args) -> Result<Reader, CliError> {
+fn reader_for(path: &Path, args: &Args) -> Result<Reader, Error> {
     Ok(match adapter_for(path, args.adapter)? {
         AdapterArg::Records => Reader::Records,
         AdapterArg::Csv => Reader::Csv(match args.row {
@@ -135,7 +135,7 @@ fn reader_for(path: &Path, args: &Args) -> Result<Reader, CliError> {
 
 const MAX_ISSUES: usize = 50;
 
-fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, CliError> {
+fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, Error> {
     if let Some(a) = explicit {
         return Ok(a);
     }
@@ -145,23 +145,23 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
         Some("eval") => Ok(AdapterArg::Inspect),
         Some("db") => Ok(AdapterArg::Promptfoo),
         _ => Err(
-            CliError::usage(format!("cannot tell the format of {}", path.display()))
+            Error::usage(format!("cannot tell the format of {}", path.display()))
                 .with_hint("pass --adapter records, csv, inspect or promptfoo"),
         ),
     }
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let grader = parse_grader(args.grader.as_deref())?;
     if args.system_version.as_deref() == Some("") {
-        return Err(CliError::usage("--system-version cannot be empty"));
+        return Err(Error::usage("--system-version cannot be empty"));
     }
     let project = Project::open(root)?;
     let config = project.config()?;
     let redactor = (config.store.content == ContentMode::Redact)
         .then(|| content::Redactor::new(&config.store.redact_patterns))
         .transpose()
-        .map_err(|e| CliError::new("invalid_config", e.to_string(), Exit::Rejected))?;
+        .map_err(|e| Error::new("invalid_config", e.to_string(), Exit::Rejected))?;
     let via = mapped::resolve(root, &config, args.mapping.as_deref(), args.from.as_deref())?;
     let store = project.objects();
     let limits = Limits {
@@ -244,12 +244,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     let mut envelope = Envelope::new("evalsig.import/1", Value::Null);
     envelope.warnings = warnings;
     if args.dry_run {
-        let (_, hash) = rows::canonical_lines(&mut records).map_err(CliError::store)?;
+        let (_, hash) = rows::canonical_lines(&mut records).map_err(Error::store)?;
         envelope.results =
             json!({ "dry_run": true, "snapshot": hash, "records": counts, "sources": sources });
         return Ok(Output::success(envelope));
     }
-    let tool = crate::tool_version();
+    let tool = evalsig_project::tool_version();
     let imported_at = now();
     let who = actor();
     let adapter = match &via {
@@ -270,18 +270,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
         actor: who.clone(),
         redactions: bodies.redactions.clone(),
     })
-    .map_err(CliError::store)?;
-    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+    .map_err(Error::store)?;
+    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
     if snapshot::purged(&entries)
-        .map_err(CliError::store)?
+        .map_err(Error::store)?
         .contains(&written.snapshot)
     {
         // Purge deleted this snapshot, so the object was just written again.
         project
             .objects()
             .remove(&written.snapshot)
-            .map_err(CliError::store)?;
-        return Err(CliError::new(
+            .map_err(Error::store)?;
+        return Err(Error::new(
             "purged_records",
             "these records were purged from the project; remove the purged text from the source before importing it again",
             Exit::Rejected,
@@ -314,7 +314,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             tool,
         },
     )
-    .map_err(CliError::store)?;
+    .map_err(Error::store)?;
     envelope.results = json!({
         "snapshot": written.snapshot,
         "provenance": written.provenance,
@@ -332,14 +332,14 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 }
 
 /// `<id>[@<version>]`, both parts non-empty when present.
-fn parse_grader(arg: Option<&str>) -> Result<Option<(String, Option<String>)>, CliError> {
+fn parse_grader(arg: Option<&str>) -> Result<Option<(String, Option<String>)>, Error> {
     let Some(g) = arg else { return Ok(None) };
     let (id, version) = match g.split_once('@') {
         Some((i, v)) => (i, Some(v)),
         None => (g, None),
     };
     if id.is_empty() || version == Some("") {
-        return Err(CliError::usage(
+        return Err(Error::usage(
             "--grader takes <id>[@<version>] with non-empty parts",
         ));
     }

@@ -11,13 +11,13 @@ use evalsig_store::ledger::{self, Kind};
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
 
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Warning};
-use crate::project::{Project, hex, io_error, str_set};
-use crate::provenance;
 use crate::referee::Referee;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, Warning};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, hex, io_error, str_set};
+use evalsig_project::provenance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,16 +57,16 @@ fn item_of(r: &Record) -> Option<&str> {
 }
 
 /// The items and their set hash, the input of the `exclude` line.
-fn item_set(items: &[String]) -> Result<(BTreeSet<String>, Vec<u8>, String), CliError> {
+fn item_set(items: &[String]) -> Result<(BTreeSet<String>, Vec<u8>, String), Error> {
     let set: BTreeSet<String> = items.iter().cloned().collect();
     let bytes = provenance::item_set_bytes(set.iter())?;
     let hash = ContentHash::blake3(&bytes).to_string();
     Ok((set, bytes, hash))
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if args.reason == Reason::Other && args.detail.as_deref().is_none_or(|d| d.trim().is_empty()) {
-        return Err(CliError::usage("--reason other needs --detail"));
+        return Err(Error::usage("--reason other needs --detail"));
     }
     let referee_home = args.referee.is_some()
         || std::env::var_os(crate::referee::ENV).is_some_and(|v| !v.is_empty());
@@ -79,8 +79,8 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 
 /// The items the agent may use, when a split was made within the referee's
 /// remaining items: the parts of the latest such split.
-fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, CliError> {
-    let entries = ledger::read(&project.ledger_path()).map_err(CliError::store)?;
+fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, Error> {
+    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
     for e in entries.iter().rev().filter(|e| e.kind == Kind::Split) {
         if e.summary.get("holdout").is_none_or(Value::is_null) {
             continue;
@@ -90,7 +90,7 @@ fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, CliError> {
         };
         let p = project.splits_dir().join(format!("{}.json", hex(name)));
         let text = std::fs::read_to_string(&p).map_err(|e| io_error(&p, &e))?;
-        let v: Value = serde_json::from_str(&text).map_err(|e| CliError::invalid_input(&p, e))?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| Error::invalid_input(&p, e))?;
         let mut ids = str_set(&v["dev"]);
         ids.extend(str_set(&v["validation"]));
         return Ok(Some(ids));
@@ -98,13 +98,13 @@ fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, CliError> {
     Ok(None)
 }
 
-fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
+fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let (items, bytes, set_hash) = item_set(&args.items)?;
     if let Some(mine) = remaining(&project)?
         && let Some(held) = items.iter().find(|i| !mine.contains(*i))
     {
-        return Err(CliError::new(
+        return Err(Error::new(
             "holdout_item",
             format!(
                 "{held} is not among the referee's remaining items; only the referee can exclude holdout items"
@@ -115,7 +115,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
     let store = project.objects();
     let mut sets = Vec::new();
     for x in data::in_force(&project)? {
-        let records = snapshot::read(&store, &x.snapshot).map_err(CliError::store)?;
+        let records = snapshot::read(&store, &x.snapshot).map_err(Error::store)?;
         sets.push((x, records));
     }
     let known: BTreeSet<&str> = sets
@@ -123,10 +123,10 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
         .flat_map(|(_, rs)| rs.iter().filter_map(item_of))
         .collect();
     if let Some(unknown) = items.iter().find(|i| !known.contains(i.as_str())) {
-        return Err(CliError::usage(format!("no item {unknown:?}"))
+        return Err(Error::usage(format!("no item {unknown:?}"))
             .with_hint("list items with `evalsig items`"));
     }
-    store.put(&bytes).map_err(CliError::store)?;
+    store.put(&bytes).map_err(Error::store)?;
     let mut replaced = Vec::new();
     let mut removed = 0;
     for (x, mut records) in sets {
@@ -138,7 +138,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
         removed += before - records.len();
         let prov = data::provenance_of(&store, &x)?;
         let r = snapshot::replace(&store, x.snapshot, &mut records, prov, |_| {})
-            .map_err(CliError::store)?;
+            .map_err(Error::store)?;
         replaced.push(r);
     }
     let summary = json!({
@@ -167,13 +167,13 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
     Ok(Output::success(envelope))
 }
 
-fn referee_side(args: &Args) -> Result<Output, CliError> {
+fn referee_side(args: &Args) -> Result<Output, Error> {
     let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let (items, bytes, set_hash) = item_set(&args.items)?;
     let held = referee.all_holdout_items()?;
     if let Some(other) = items.iter().find(|i| !held.contains(*i)) {
         return Err(
-            CliError::usage(format!("{other} is in no holdout of this referee"))
+            Error::usage(format!("{other} is in no holdout of this referee"))
                 .with_hint("the agent excludes the items it may use, without --referee"),
         );
     }

@@ -6,9 +6,9 @@ use std::path::Path;
 use evalsig_core::records::Record;
 use serde_json::{Value, json};
 
+use crate::Error;
 use crate::data;
-use crate::error::CliError;
-use crate::output::{Envelope, Output};
+use crate::envelope::{Envelope, Output};
 use crate::project::Project;
 
 fn envelope(
@@ -21,7 +21,7 @@ fn envelope(
     Output::success(e)
 }
 
-pub fn runs(root: &Path) -> Result<Output, CliError> {
+pub fn runs(root: &Path) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let d = data::load(&project)?;
     let mut judged: BTreeMap<&str, (u64, BTreeSet<&str>, u64)> = BTreeMap::new();
@@ -64,7 +64,7 @@ pub fn runs(root: &Path) -> Result<Output, CliError> {
     ))
 }
 
-pub fn items(root: &Path) -> Result<Output, CliError> {
+pub fn items(root: &Path) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let d = data::load(&project)?;
     let mut labels: BTreeMap<&str, u64> = BTreeMap::new();
@@ -101,7 +101,7 @@ pub fn items(root: &Path) -> Result<Output, CliError> {
 
 /// `evalsig capabilities [--run]`: the analyses the imported data allow, and what to
 /// add for the others.
-pub fn capabilities(root: &Path, run: Option<&str>) -> Result<Output, CliError> {
+pub fn capabilities(root: &Path, run: Option<&str>) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let d = data::load(&project)?;
     if let Some(r) = run {

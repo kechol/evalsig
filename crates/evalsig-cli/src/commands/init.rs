@@ -4,13 +4,13 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::error::CliError;
-use crate::output::{Envelope, Output};
-use crate::project::{self, Project, io_error};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::project::{self, Project, io_error};
 
 pub const TEMPLATE: &str = include_str!("../config_template.toml");
 
-pub fn run(root: &Path, force: bool) -> Result<Output, CliError> {
+pub fn run(root: &Path, force: bool) -> Result<Output, Error> {
     let p = Project::at(root);
     let mut created = Vec::new();
     for dir in std::iter::once(p.dir.clone()).chain(project::SUBDIRS.iter().map(|d| p.dir.join(d)))

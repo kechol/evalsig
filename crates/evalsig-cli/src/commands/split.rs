@@ -8,16 +8,17 @@ use evalsig_core::records::Item;
 use evalsig_core::split::{self, Assignment, Method, Part, SplitError};
 use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Entry, Kind};
+use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::{Project, hex, io_error, str_set};
-use crate::provenance::item_set_hash;
 use crate::referee::Referee;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, hex, io_error};
+use evalsig_project::provenance::item_set_hash;
+use evalsig_project::split::split_entries;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum MethodArg {
@@ -65,58 +66,58 @@ pub struct Args {
 }
 
 /// The same mistake gets the same code and exit on either side of the split.
-fn split_error(e: SplitError) -> CliError {
+fn split_error(e: SplitError) -> Error {
     match e {
         SplitError::CrossesCluster { .. } => rejected("split_crosses_cluster", e.to_string()),
         SplitError::NotAvailable(_) => rejected("holdout_item", e.to_string()),
-        SplitError::Share => CliError::usage(e.to_string()),
+        SplitError::Share => Error::usage(e.to_string()),
         _ => rejected("split", e.to_string()),
     }
 }
 
-fn rejected(code: &'static str, message: impl Into<String>) -> CliError {
-    CliError::new(code, message, Exit::Rejected)
+fn rejected(code: &'static str, message: impl Into<String>) -> Error {
+    Error::new(code, message, Exit::Rejected)
 }
 
-fn read_json(path: &Path) -> Result<Value, CliError> {
+fn read_json(path: &Path) -> Result<Value, Error> {
     let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
-    serde_json::from_str(&text).map_err(|e| CliError::usage(format!("{}: {e}", path.display())))
+    serde_json::from_str(&text).map_err(|e| Error::usage(format!("{}: {e}", path.display())))
 }
 
 /// The items and holdout hash of a remaining.json (`evalsig.remaining/1`).
-fn remaining(path: &Path) -> Result<(BTreeSet<String>, Option<String>), CliError> {
+fn remaining(path: &Path) -> Result<(BTreeSet<String>, Option<String>), Error> {
     let v = read_json(path)?;
     if v["schema"] != "evalsig.remaining/1" {
-        return Err(CliError::usage(format!(
+        return Err(Error::usage(format!(
             "{}: not an evalsig.remaining/1 file",
             path.display()
         )));
     }
     let items = v["items"]
         .as_array()
-        .ok_or_else(|| CliError::usage(format!("{}: needs an items array", path.display())))?
+        .ok_or_else(|| Error::usage(format!("{}: needs an items array", path.display())))?
         .iter()
         .map(|i| {
             i.as_str()
                 .map(str::to_owned)
-                .ok_or_else(|| CliError::usage(format!("{}: item IDs are strings", path.display())))
+                .ok_or_else(|| Error::usage(format!("{}: item IDs are strings", path.display())))
         })
         .collect::<Result<_, _>>()?;
     Ok((items, v["holdout"].as_str().map(str::to_owned)))
 }
 
-fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, CliError> {
+fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, Error> {
     let v = read_json(path)?;
     let obj = v
         .as_object()
-        .ok_or_else(|| CliError::usage(format!("{}: needs an object", path.display())))?;
+        .ok_or_else(|| Error::usage(format!("{}: needs an object", path.display())))?;
     obj.iter()
         .map(|(id, side)| {
             let part = match side.as_str() {
                 Some("dev") => Part::Dev,
                 Some("validation") => Part::Validation,
                 _ => {
-                    return Err(CliError::usage(format!(
+                    return Err(Error::usage(format!(
                         "{}: item {id:?} must be \"dev\" or \"validation\"",
                         path.display()
                     )));
@@ -127,7 +128,7 @@ fn assignment_file(path: &Path) -> Result<BTreeMap<String, Part>, CliError> {
         .collect()
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if args.holdout {
         return holdout(root, args);
     }
@@ -165,14 +166,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     };
     let random = name == "random";
     if !random && (args.stratum.is_some() || args.seed.is_some()) {
-        return Err(CliError::usage(
-            "--stratum and --seed apply to random splits",
-        ));
+        return Err(Error::usage("--stratum and --seed apply to random splits"));
     }
     let seed = random.then_some(seed);
     let a: Assignment =
         split::split(&items, within.as_ref(), &method, args.validation).map_err(split_error)?;
-    let part = |ids: &[String]| -> Result<Value, CliError> {
+    let part = |ids: &[String]| -> Result<Value, Error> {
         Ok(json!({ "hash": item_set_hash(ids.iter())?, "items": ids.len() }))
     };
     let summary = json!({
@@ -185,7 +184,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     // The file is named by both parts, so two splits sharing one part stay apart.
     let name_hash = ContentHash::blake3(
         &to_canonical_bytes(&json!({"dev": a.dev, "validation": a.validation}))
-            .map_err(CliError::store)?,
+            .map_err(Error::store)?,
     )
     .to_string();
     let dir = project.splits_dir();
@@ -224,7 +223,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 /// `split --holdout`, the referee's carve-out (SPEC §8.1, D-022): whole clusters to
 /// the holdout, recorded in the referee ledger by the holdout's item-set hash, which
 /// names the holdout and its budget; the agent gets the other item IDs only.
-fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
+fn holdout(root: &Path, args: &Args) -> Result<Output, Error> {
     let (referee, _lock) = Referee::open_exclusive(args.referee.as_deref())?;
     let project = Project::open(root)?;
     let config = project.config()?;
@@ -263,7 +262,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
     text.push('\n');
     std::fs::write(&file, text).map_err(|e| io_error(&file, &e))?;
     let out = args.out.as_ref().expect("clap requires --out");
-    crate::project::outside_store(out)?;
+    evalsig_project::project::outside_store(out)?;
     let mut text = serde_json::to_string_pretty(&json!({
         "schema": "evalsig.remaining/1",
         "holdout": hash,
@@ -293,55 +292,7 @@ fn holdout(root: &Path, args: &Args) -> Result<Output, CliError> {
     Ok(Output::success(envelope))
 }
 
-/// The recorded agent-side splits, oldest first.
-pub fn split_entries(project: &Project) -> Result<Vec<Entry>, CliError> {
-    Ok(ledger::read(&project.ledger_path())
-        .map_err(CliError::store)?
-        .into_iter()
-        .filter(|e| e.kind == Kind::Split)
-        .collect())
-}
-
-/// A part of a recorded split: its hash and items.
-#[derive(Debug, Clone)]
-pub struct Scope {
-    pub hash: String,
-    pub items: BTreeSet<String>,
-}
-
-/// One part of the latest recorded split, or of the split whose part has `hash`.
-pub fn scope(project: &Project, part: Part, hash: Option<&str>) -> Result<Scope, CliError> {
-    let key = match part {
-        Part::Dev => "dev",
-        Part::Validation => "validation",
-    };
-    let part_hash = |e: &Entry| {
-        e.summary
-            .get(key)
-            .and_then(|p| p["hash"].as_str())
-            .map(str::to_owned)
-    };
-    let entry = split_entries(project)?
-        .into_iter()
-        .rev()
-        .find(|e| hash.is_none_or(|h| part_hash(e).as_deref() == Some(h)))
-        .ok_or_else(|| {
-            CliError::usage(match hash {
-                Some(h) => format!("no recorded split has a {key} part {h}"),
-                None => "no split is recorded".to_owned(),
-            })
-            .with_hint("run `evalsig split` first")
-        })?;
-    let name = entry.outputs.first().cloned().unwrap_or_default();
-    let path = project.splits_dir().join(format!("{}.json", hex(&name)));
-    let items = str_set(&read_json(&path)?[key]);
-    Ok(Scope {
-        hash: part_hash(&entry).unwrap_or_default(),
-        items,
-    })
-}
-
-pub fn list(root: &Path) -> Result<Output, CliError> {
+pub fn list(root: &Path) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let splits: Vec<Value> = split_entries(&project)?
         .into_iter()

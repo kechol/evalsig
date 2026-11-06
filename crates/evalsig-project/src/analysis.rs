@@ -5,28 +5,37 @@ use evalsig_core::config::{Config, Estimand, ReferenceMode};
 use evalsig_core::records::DEFAULT_TASK;
 use evalsig_core::report::Settings;
 
-#[derive(Debug, Clone, clap::Args, serde::Serialize, serde::Deserialize)]
-pub struct AnalysisArgs {
+/// The options shared by the analyses. Their serde names are the recorded form of a
+/// request (D-030).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Analysis {
     /// The judgment task.
-    #[arg(long, default_value = DEFAULT_TASK)]
     pub task: String,
-    /// The estimand: single_shot, majority@k, any@k or all@k (default from the configuration).
-    #[arg(long)]
+    /// The estimand; the configuration's when absent.
     pub estimand: Option<Estimand>,
     /// Decision threshold for score outputs; for score runs, also the share at or above it.
-    #[arg(long)]
     pub threshold: Option<f64>,
     /// Use the labels as they were at this RFC 3339 time.
-    #[arg(long, value_name = "TIME")]
     pub labels_as_of: Option<String>,
-    /// How several raters' labels become the reference (default from the configuration).
-    #[arg(long, value_enum)]
-    pub reference: Option<ReferenceArg>,
+    /// How several raters' labels become the reference; the configuration's when absent.
+    pub reference: Option<ReferenceChoice>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
+impl Default for Analysis {
+    fn default() -> Self {
+        Analysis {
+            task: DEFAULT_TASK.to_owned(),
+            estimand: None,
+            threshold: None,
+            labels_as_of: None,
+            reference: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ReferenceArg {
+pub enum ReferenceChoice {
     Single,
     Majority,
     Soft,
@@ -35,24 +44,24 @@ pub enum ReferenceArg {
     Human,
 }
 
-impl From<ReferenceArg> for ReferenceMode {
-    fn from(r: ReferenceArg) -> Self {
+impl From<ReferenceChoice> for ReferenceMode {
+    fn from(r: ReferenceChoice) -> Self {
         match r {
-            ReferenceArg::Single => ReferenceMode::Single,
-            ReferenceArg::Majority => ReferenceMode::Majority,
-            ReferenceArg::Soft => ReferenceMode::Soft,
-            ReferenceArg::Latent => ReferenceMode::Latent,
+            ReferenceChoice::Single => ReferenceMode::Single,
+            ReferenceChoice::Majority => ReferenceMode::Majority,
+            ReferenceChoice::Soft => ReferenceMode::Soft,
+            ReferenceChoice::Latent => ReferenceMode::Latent,
             // The human labels form the reference; `--proxy` adds the correction.
-            ReferenceArg::Human => ReferenceMode::Soft,
+            ReferenceChoice::Human => ReferenceMode::Soft,
         }
     }
 }
 
-impl AnalysisArgs {
+impl Analysis {
     /// Refuse `--reference human`, which only `report --proxy` reads.
-    pub fn without_proxy(&self, command: &str) -> Result<(), crate::error::CliError> {
-        if matches!(self.reference, Some(ReferenceArg::Human)) {
-            return Err(crate::error::CliError::usage(format!(
+    pub fn without_proxy(&self, command: &str) -> Result<(), crate::Error> {
+        if matches!(self.reference, Some(ReferenceChoice::Human)) {
+            return Err(crate::Error::usage(format!(
                 "--reference human applies to report --proxy; {command} uses single, majority or soft"
             )));
         }
@@ -62,7 +71,7 @@ impl AnalysisArgs {
 
 /// The settings for these options under a configuration; `prevalence`, `by` and
 /// `items` are left for the command to set.
-pub fn settings(config: &Config, a: &AnalysisArgs) -> Settings {
+pub fn settings(config: &Config, a: &Analysis) -> Settings {
     Settings {
         task: a.task.clone(),
         positive: config.positive().for_task(&a.task).copied(),

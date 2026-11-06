@@ -13,12 +13,12 @@ use evalsig_store::ledger::{self, Kind};
 use serde_json::json;
 
 use crate::commands::import::{parse_size, read_within};
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::mapped::{self, Bodies};
-use crate::output::{Envelope, Next, Output, Verdict, VerdictCode};
-use crate::project::{Project, io_error};
-use crate::validate::RecordValidator;
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Next, Output, Verdict, VerdictCode};
+use evalsig_project::exit::Exit;
+use evalsig_project::mapped::{self, Bodies};
+use evalsig_project::project::{Project, io_error};
+use evalsig_project::validate::RecordValidator;
 
 #[derive(Debug, Subcommand)]
 pub enum MapCommand {
@@ -75,7 +75,7 @@ pub enum MapCommand {
     },
 }
 
-fn probe_file(file: &Path, max_bytes: u64, no_values: bool) -> Result<probe::Probe, CliError> {
+fn probe_file(file: &Path, max_bytes: u64, no_values: bool) -> Result<probe::Probe, Error> {
     probe_rows(file, max_bytes, no_values).map(|(p, _)| p)
 }
 
@@ -84,9 +84,9 @@ fn probe_rows(
     file: &Path,
     max_bytes: u64,
     no_values: bool,
-) -> Result<(probe::Probe, Vec<serde_json::Value>), CliError> {
+) -> Result<(probe::Probe, Vec<serde_json::Value>), Error> {
     let shape = Shape::from_extension(file).ok_or_else(|| {
-        CliError::usage(format!("cannot tell the format of {}", file.display()))
+        Error::usage(format!("cannot tell the format of {}", file.display()))
             .with_hint("name the file .json, .jsonl, .ndjson, .csv, .eval or .zip")
     })?;
     let limits = Limits {
@@ -94,11 +94,11 @@ fn probe_rows(
         ..Limits::default()
     };
     let bytes = read_within(file, &limits)?;
-    let rows = probe::rows(shape, &bytes, &limits).map_err(|e| CliError::invalid_input(file, e))?;
+    let rows = probe::rows(shape, &bytes, &limits).map_err(|e| Error::invalid_input(file, e))?;
     Ok((probe::probe(shape, &rows, no_values), rows))
 }
 
-fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output, CliError> {
+fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output, Error> {
     let p = probe_file(file, max_bytes, no_values)?;
     let mut envelope = Envelope::new(
         "evalsig.map.probe/1",
@@ -119,15 +119,15 @@ fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output,
     Ok(Output::success(envelope))
 }
 
-fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result<Output, CliError> {
-    crate::project::outside_store(out)?;
+fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result<Output, Error> {
+    evalsig_project::project::outside_store(out)?;
     if out.exists() && !force {
-        return Err(CliError::usage(format!("{} exists", out.display()))
+        return Err(Error::usage(format!("{} exists", out.display()))
             .with_hint("pass --force to replace it"));
     }
     if Shape::from_extension(file) == Some(Shape::Zip) {
         return Err(
-            CliError::usage("archives are read by harness adapters, not mappings")
+            Error::usage("archives are read by harness adapters, not mappings")
                 .with_hint("for an Inspect log: evalsig import --adapter inspect <file>"),
         );
     }
@@ -192,7 +192,7 @@ fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result
     Ok(Output::success(envelope))
 }
 
-pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, CliError> {
+pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, Error> {
     match cmd {
         MapCommand::Probe {
             file,
@@ -220,20 +220,18 @@ pub fn run(root: &Path, cmd: &MapCommand) -> Result<Output, CliError> {
     }
 }
 
-fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<Output, CliError> {
+fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<Output, Error> {
     if by.trim().is_empty() {
-        return Err(CliError::usage("--by names who decided"));
+        return Err(Error::usage("--by names who decided"));
     }
     let project = Project::open(root)?;
     let before = std::fs::read(path).map_err(|e| io_error(path, &e))?;
-    let text =
-        std::str::from_utf8(&before).map_err(|_| CliError::invalid_input(path, "not UTF-8"))?;
-    let mut table: toml::Table =
-        toml::from_str(text).map_err(|e| CliError::invalid_input(path, e))?;
+    let text = std::str::from_utf8(&before).map_err(|_| Error::invalid_input(path, "not UTF-8"))?;
+    let mut table: toml::Table = toml::from_str(text).map_err(|e| Error::invalid_input(path, e))?;
     let seq = ledger::read(&project.ledger_path())
-        .map_err(CliError::store)?
+        .map_err(Error::store)?
         .len() as u64;
-    draft::decide(&mut table, id, choice, by, seq).map_err(CliError::usage)?;
+    draft::decide(&mut table, id, choice, by, seq).map_err(Error::usage)?;
     let after = toml::to_string(&table).expect("tables serialize");
     let remaining = mapped::compile_text(path, &after)?.undecided;
     // Written beside the file and renamed after the ledger line, so the file never
@@ -281,12 +279,7 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
     Ok(Output::success(envelope))
 }
 
-fn test(
-    path: &Path,
-    files: &[PathBuf],
-    args: &[String],
-    max_bytes: u64,
-) -> Result<Output, CliError> {
+fn test(path: &Path, files: &[PathBuf], args: &[String], max_bytes: u64) -> Result<Output, Error> {
     let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
     let compiled = mapped::compile_text(path, &text)?;
     mapped::require_decided(&compiled)?;
@@ -301,10 +294,10 @@ fn test(
         let bytes = read_within(file, &limits)?;
         // Rows are numbered across the files, after the last number used so far.
         let base = rows.last().map_or(0, |(n, _)| *n);
-        let these = mapping::rows(&compiled, &bytes, &limits)
-            .map_err(|e| CliError::invalid_input(file, e))?;
+        let these =
+            mapping::rows(&compiled, &bytes, &limits).map_err(|e| Error::invalid_input(file, e))?;
         let (r, i) = mapping::apply(&compiled, &these, &mut host)
-            .map_err(|e| CliError::invalid_input(file, e))?;
+            .map_err(|e| Error::invalid_input(file, e))?;
         records.extend(r.into_iter().map(|(n, v)| (base + n, v)));
         issues.extend(i.into_iter().map(|mut x| {
             x.row += base;
@@ -333,7 +326,7 @@ fn test(
     let cases = match std::fs::read_to_string(&tests_path) {
         Ok(t) => Some(
             maptest::cases(&compiled, &t, &mut host)
-                .map_err(|e| CliError::invalid_input(&tests_path, e))?,
+                .map_err(|e| Error::invalid_input(&tests_path, e))?,
         ),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(io_error(&tests_path, &e)),

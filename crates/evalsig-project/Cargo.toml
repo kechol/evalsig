@@ -1,0 +1,24 @@
+[package]
+name = "evalsig-project"
+description = "The evalsig project: data in force, analyses, provenance and import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+evalsig-adapters.workspace = true
+evalsig-core.workspace = true
+evalsig-store.workspace = true
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -9,11 +9,11 @@ use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output};
-use crate::project::{Project, io_error};
-use crate::schemas;
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
+use evalsig_project::schemas;
 
 #[derive(Debug, Clone, clap::Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -42,13 +42,13 @@ pub enum Action {
     },
 }
 
-fn invalid(message: impl Into<String>) -> CliError {
-    CliError::new("invalid_conditions", message, Exit::Rejected)
+fn invalid(message: impl Into<String>) -> Error {
+    Error::new("invalid_conditions", message, Exit::Rejected)
 }
 
 /// The conditions as JSON, checked against `gate/1`; refuses the `resolved` section,
 /// which only approval writes.
-pub fn parse(path: &Path) -> Result<Value, CliError> {
+pub fn parse(path: &Path) -> Result<Value, Error> {
     let text = std::fs::read_to_string(path).map_err(|e| io_error(path, &e))?;
     let toml: toml::Table = toml::from_str(&text)
         .map_err(|e: toml::de::Error| invalid(format!("{}: {e}", path.display())))?;
@@ -60,7 +60,7 @@ pub fn parse(path: &Path) -> Result<Value, CliError> {
 /// The checks a draft passes when it is written and again when the referee approves
 /// it, since the agent can write the stored copy: no resolved section, the gate.toml
 /// schema, and a threshold for every condition that compares against one.
-pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
+pub fn check(doc: &Value, origin: &str) -> Result<(), Error> {
     if doc.get("resolved").is_some() {
         return Err(invalid(
             "a draft has no resolved section; approval writes it",
@@ -109,7 +109,7 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, CliError> {
+pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
     match (&args.draft, &args.action) {
         (_, Some(Action::Approve(a))) => crate::commands::approve::approve(root, a),
         (_, Some(Action::Show { approved, referee })) => {
@@ -120,19 +120,19 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, CliError> {
                 json!({ "approved": approved, "conditions": doc }),
             )))
         }
-        (Some(_), None) if agent && !args.yes => Err(CliError::usage(
+        (Some(_), None) if agent && !args.yes => Err(Error::usage(
             "in agent mode a draft changes the procedure and needs confirming",
         )
         .with_hint("pass --yes; a person still approves the draft as the referee")),
         (Some(file), None) => draft(root, file),
-        (None, None) => Err(CliError::usage("give --draft <gate.toml>, approve or show")),
+        (None, None) => Err(Error::usage("give --draft <gate.toml>, approve or show")),
     }
 }
 
-fn draft(root: &Path, file: &Path) -> Result<Output, CliError> {
+fn draft(root: &Path, file: &Path) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let doc = parse(file)?;
-    let canonical = to_canonical_bytes(&doc).map_err(CliError::store)?;
+    let canonical = to_canonical_bytes(&doc).map_err(Error::store)?;
     let hash = ContentHash::blake3(&canonical);
     let dir = project.dir.join("drafts");
     std::fs::create_dir_all(&dir).map_err(|e| io_error(&dir, &e))?;

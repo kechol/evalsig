@@ -12,13 +12,15 @@ use evalsig_core::report::{self, Report};
 use evalsig_core::validity;
 use serde_json::json;
 
-use crate::analysis::{self, AnalysisArgs};
-use crate::checks::{self, ArmArgs, DatasetArgs};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, Verdict, VerdictCode, round_numbers};
-use crate::project::{Project, io_error};
+use evalsig_project::analysis::{self, Analysis};
+use evalsig_project::checks::{self, ArmChecks};
+
+use crate::args::{AnalysisArgs, DatasetArgs};
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, Verdict, VerdictCode, round_numbers};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::{Project, io_error};
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct Args {
@@ -33,12 +35,12 @@ pub struct Args {
     pub checks: DatasetArgs,
 }
 
-fn rejected(message: impl Into<String>) -> CliError {
-    CliError::new("invalid_conditions", message, Exit::Rejected)
+fn rejected(message: impl Into<String>) -> Error {
+    Error::new("invalid_conditions", message, Exit::Rejected)
 }
 
-pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
-    args.analysis.without_proxy("check")?;
+pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
+    Analysis::from(args.analysis.clone()).without_proxy("check")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let text = std::fs::read_to_string(&args.file).map_err(|e| io_error(&args.file, &e))?;
@@ -63,7 +65,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = all.iter().collect();
-    let mut settings = analysis::settings(&config, &args.analysis);
+    let mut settings = analysis::settings(&config, &args.analysis.clone().into());
     if let Some(e) = file.estimand {
         settings.estimand = e;
     }
@@ -92,7 +94,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
                 ..settings.clone()
             };
             slot.insert(
-                report::build(run, &judgments, &items, &labels, &s).map_err(CliError::report)?,
+                report::build(run, &judgments, &items, &labels, &s).map_err(Error::report)?,
             );
         }
     }
@@ -158,7 +160,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     envelope.provenance.snapshots = d.snapshot_ids();
     let findings = validity::dataset(
         &d.records,
-        &checks::overrides(args.checks, ArmArgs::default()),
+        &checks::overrides(args.checks.into(), ArmChecks::default()),
     );
     let out = checks::apply(envelope, &findings);
     Ok(if out.exit == Exit::Success {
@@ -172,7 +174,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
 type Measured = (Option<f64>, Option<(f64, f64)>);
 
 /// A condition's point value and the interval at the level its sidedness needs.
-fn condition_value(c: &Condition, r: &Report, level: f64) -> Result<Measured, CliError> {
+fn condition_value(c: &Condition, r: &Report, level: f64) -> Result<Measured, Error> {
     if c.metric == "missing_rate" {
         let system: u64 = r
             .missing_by_reason

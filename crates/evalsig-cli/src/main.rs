@@ -1,21 +1,12 @@
 //! The `evalsig` command-line interface.
 
 mod agent;
-mod analysis;
-mod checks;
+mod args;
 mod commands;
-mod data;
-mod error;
-mod exit;
 mod help;
-mod mapped;
 mod markdown;
 mod output;
-mod project;
-mod provenance;
 mod referee;
-mod schemas;
-mod validate;
 
 use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
@@ -24,9 +15,11 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Format, Output};
+use evalsig_project::Error;
+use evalsig_project::envelope::{Envelope, Output, VerdictCode};
+use evalsig_project::exit::Exit;
+
+use crate::output::Format;
 
 #[derive(Debug, Parser)]
 #[command(name = "evalsig", version, about, disable_help_subcommand = true)]
@@ -162,7 +155,7 @@ enum Command {
         #[arg(long)]
         list_checks: bool,
         #[command(flatten)]
-        checks: checks::DatasetArgs,
+        checks: args::DatasetArgs,
     },
     /// The cost-optimal decision threshold of a run and its sensitivity to the cost ratio.
     Threshold(commands::power::ThresholdArgs),
@@ -195,13 +188,9 @@ enum RefereeCommand {
     Init { dir: PathBuf },
 }
 
-pub(crate) fn tool_version() -> String {
-    format!("evalsig {}", env!("CARGO_PKG_VERSION"))
-}
-
-fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
+fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
     if cli.format == Format::Jsonl && !matches!(&cli.command, Command::Compare(a) if a.items) {
-        return Err(CliError::usage(
+        return Err(Error::usage(
             "--format jsonl prints per-item rows and needs `compare --items`",
         ));
     }
@@ -218,7 +207,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
             let mut at = &mut cmd;
             for name in path {
                 at = at.find_subcommand_mut(name).ok_or_else(|| {
-                    CliError::usage(format!("no command {:?}", path.join(" ")))
+                    Error::usage(format!("no command {:?}", path.join(" ")))
                         .with_hint("run `evalsig --help` for usage")
                 })?;
             }
@@ -243,21 +232,21 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
     }
     let out = match cli.command {
         Command::Init { force } => commands::init::run(&cli.project, force),
-        Command::Agree(ref args) => commands::agree::run(&cli.project, args),
+        Command::Agree(ref args) => evalsig_project::agree::run(&cli.project, &args.into()),
         Command::Check(ref args) => commands::check::run(&cli.project, args),
-        Command::Compare(ref args) => commands::compare::run(&cli.project, args),
+        Command::Compare(ref args) => evalsig_project::compare::run(&cli.project, &args.into()),
         Command::Capabilities { ref run } => {
-            commands::list::capabilities(&cli.project, run.as_deref())
+            evalsig_project::list::capabilities(&cli.project, run.as_deref())
         }
         Command::Exclude(ref args) => commands::exclude::run(&cli.project, args),
-        Command::Explain { ref name } => commands::explain::run(name),
+        Command::Explain { ref name } => evalsig_project::explain::run(name),
         Command::Dashboard(ref args) => commands::dashboard::run(&cli.project, args),
         Command::Skill(ref cmd) => commands::skill::run(&cli.project, cmd),
         Command::AgentGuide { .. } | Command::Help { .. } => unreachable!("printed above"),
         Command::Export(ref args) => commands::export::run(&cli.project, args),
         Command::Gate(ref args) => commands::gate::run(&cli.project, args),
         Command::Import(ref args) => commands::import::run(&cli.project, args),
-        Command::Items => commands::list::items(&cli.project),
+        Command::Items => evalsig_project::list::items(&cli.project),
         Command::Ledger(ref cmd) => commands::ledger::run(&cli.project, cmd),
         Command::Map(ref cmd) => commands::map::run(&cli.project, cmd),
         Command::Migrate(ref args) => commands::migrate::run(&cli.project, args),
@@ -267,13 +256,13 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
         }
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
         Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),
-        Command::Report(ref args) => commands::report::run(&cli.project, args),
-        Command::Runs => commands::list::runs(&cli.project),
+        Command::Report(ref args) => evalsig_project::report::run(&cli.project, &args.into()),
+        Command::Runs => evalsig_project::list::runs(&cli.project),
         Command::Schema { ref name, .. } => commands::schema::run(name),
         Command::Seal(ref args) => commands::seal::run(&cli.project, args),
         Command::Split(ref args) => commands::split::run(&cli.project, args),
         Command::Threshold(ref args) => commands::power::threshold(&cli.project, args),
-        Command::Trend(ref args) => commands::trend::run(&cli.project, args),
+        Command::Trend(ref args) => evalsig_project::trend::run(&cli.project, &args.into()),
         Command::Splits => commands::split::list(&cli.project),
         Command::Recipes { ref recipe } => commands::recipes::run(recipe.as_ref()),
         Command::Validate {
@@ -282,7 +271,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
             checks,
         } => {
             if list_checks || checks.allow_unexplained_missing || checks.fail_on_secret {
-                return Err(CliError::usage(
+                return Err(Error::usage(
                     "--records checks the file's format only; --list-checks and check flags apply to the project's data",
                 ));
             }
@@ -300,7 +289,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, CliError> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "records": evalsig_core::records::RECORDS_VERSION,
                 "exit_codes": Exit::ALL.iter().map(|e| json!({"code": e.code(), "meaning": e.meaning()})).collect::<Vec<_>>(),
-                "verdict_codes": output::VerdictCode::ALL.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
+                "verdict_codes": VerdictCode::ALL.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
             }),
         ))),
     }?;
@@ -332,7 +321,7 @@ fn requested_format(args: &[std::ffi::OsString]) -> Format {
     Format::Text
 }
 
-fn report_error(err: &CliError, format: Format) -> ExitCode {
+fn report_error(err: &Error, format: Format) -> ExitCode {
     let text = match format {
         Format::Json => err.to_json(),
         _ => err.to_text(),
@@ -359,7 +348,7 @@ fn main() -> ExitCode {
                 .unwrap_or("usage error")
                 .trim_start_matches("error: ")
                 .to_owned();
-            let err = CliError::usage(first).with_hint("run `evalsig --help` for usage");
+            let err = Error::usage(first).with_hint("run `evalsig --help` for usage");
             let has = |flag: &str| args.iter().any(|a| a.to_string_lossy() == flag);
             let agent_mode = agent::wanted(
                 has("--agent"),
@@ -382,7 +371,7 @@ fn main() -> ExitCode {
     let format_given = requested_format_given(&args);
     if cli.agent && format_given {
         return report_error(
-            &CliError::usage("--agent prints JSON; leave out --format"),
+            &Error::usage("--agent prints JSON; leave out --format"),
             Format::Json,
         );
     }

@@ -14,7 +14,7 @@ are recorded in [`decisions.md`](decisions.md) as `D-NNN`.
 | [`cli.md`](cli.md) | Generated reference of every command and option |
 | [`sample-size.md`](sample-size.md) | Generated tables of required item counts |
 
-The published schemas live in `crates/evalsig-cli/schema/` and are printed by
+The published schemas live in `crates/evalsig-project/schema/` and are printed by
 `evalsig schema <name>` (`records`, `ledger-entry`, `mapping`, `gate`,
 `envelope`).
 
@@ -193,7 +193,7 @@ documents. The ones used most in this page:
 ## 5. Data model
 
 The canonical format is `records/1`: JSONL, one record per line, tagged by
-`record`, described by `crates/evalsig-cli/schema/records.schema.json` (D-003).
+`record`, described by `crates/evalsig-project/schema/records.schema.json` (D-003).
 Unknown records and unknown fields are rejected. Examples:
 `examples/records.jsonl`, `examples/synthetic/records.jsonl`.
 
@@ -570,7 +570,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 
 ### 8.3 Preregistration and gate (`preregister`, `gate`)
 
-- **Writing conditions.** `gate.toml` (`crates/evalsig-cli/schema/gate.schema.json`,
+- **Writing conditions.** `gate.toml` (`crates/evalsig-project/schema/gate.schema.json`,
   example `examples/gate.toml`) holds the name and hypothesis, the baseline and
   candidate (the candidate may be `*`, meaning whatever the agent submits), the
   grader the candidate must have (`[grader]`, required), the estimand, the number of
@@ -895,10 +895,11 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `evalsig-core` | Data types, metrics, validity checks. Pure computation, no I/O | statrs, rand_chacha |
 | `evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing | blake3, ruzstd, age |
 | `evalsig-adapters` | Ingestion adapters, probe, draft and test of mappings | zip (Deflate only), ruzstd, rusqlite (bundled, promptfoo databases) |
-| `evalsig-cli` | The `evalsig` binary, agent output, generated help and Skill | clap, jsonschema, parquet |
+| `evalsig-project` | The `.evalsig/` project: data in force, settings, the analyses, provenance and ledger lines, import, validation against the published schemas | jsonschema |
+| `evalsig-cli` | The `evalsig` binary: argument parsing, rendering, agent output, generated help and Skill | clap, parquet |
 | `evalsig-dashboard` | Local web server and SVG rendering | standard library, serde_json |
 
-Dependencies point inwards (D-001). No C code is built into the binary except the
+Dependencies point inwards (D-029); only `evalsig-cli` depends on clap. No C code is built into the binary except the
 bundled SQLite that reads promptfoo databases (D-010, D-028): Zstandard entries of an Inspect log are taken raw from
 the zip and decompressed with `ruzstd`.
 

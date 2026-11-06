@@ -10,12 +10,14 @@ use evalsig_core::records::Label;
 use evalsig_core::report;
 use serde_json::{Value, json};
 
-use crate::analysis::{self, AnalysisArgs};
-use crate::data;
-use crate::error::CliError;
-use crate::exit::Exit;
-use crate::output::{Envelope, Output, round_numbers};
-use crate::project::Project;
+use evalsig_project::analysis::{self, Analysis};
+
+use crate::args::AnalysisArgs;
+use evalsig_project::Error;
+use evalsig_project::data;
+use evalsig_project::envelope::{Envelope, Output, round_numbers};
+use evalsig_project::exit::Exit;
+use evalsig_project::project::Project;
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct PowerArgs {
@@ -58,12 +60,12 @@ pub struct PowerArgs {
     pub icc: Option<f64>,
 }
 
-pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
+pub fn power(args: &PowerArgs) -> Result<Output, Error> {
     let mut args = args.clone();
     if let Some(path) = &args.gate {
-        let text = std::fs::read_to_string(path).map_err(|e| crate::project::io_error(path, &e))?;
-        let doc: toml::Table =
-            toml::from_str(&text).map_err(|e| CliError::invalid_input(path, e))?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| evalsig_project::project::io_error(path, &e))?;
+        let doc: toml::Table = toml::from_str(&text).map_err(|e| Error::invalid_input(path, e))?;
         let primary = doc
             .get("conditions")
             .and_then(|c| c.as_array())
@@ -112,7 +114,7 @@ pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
         let mut paired = json!({"discordance": psi, "power": args.power});
         if let Some(delta) = args.delta {
             if !(delta > 0.0 && delta < psi && psi <= 1.0) {
-                return Err(CliError::usage("--delta must lie in (0, --discordance)"));
+                return Err(Error::usage("--delta must lie in (0, --discordance)"));
             }
             let (p10, p01) = ((psi + delta) / 2.0, (psi - delta) / 2.0);
             paired["delta"] = json!(delta);
@@ -143,7 +145,7 @@ pub fn power(args: &PowerArgs) -> Result<Output, CliError> {
         any = true;
     }
     if !any {
-        return Err(CliError::usage(
+        return Err(Error::usage(
             "give --zero-events-below, --rate with --half-width, or --discordance (with --delta or --n)",
         ));
     }
@@ -169,33 +171,33 @@ pub struct ThresholdArgs {
     pub against: Option<String>,
 }
 
-pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, CliError> {
-    args.analysis.without_proxy("threshold")?;
+pub fn threshold(root: &Path, args: &ThresholdArgs) -> Result<Output, Error> {
+    Analysis::from(args.analysis.clone()).without_proxy("threshold")?;
     let project = Project::open(root)?;
     let config = project.config()?;
     let c = config.cost.clone().ok_or_else(|| {
-        CliError::usage("threshold needs a [cost] matrix and prevalence in the configuration")
+        Error::usage("threshold needs a [cost] matrix and prevalence in the configuration")
     })?;
     let d = data::load(&project)?;
     let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = all.iter().collect();
-    let settings = analysis::settings(&config, &args.analysis);
+    let settings = analysis::settings(&config, &args.analysis.clone().into());
     let items = d.items();
-    let prepare = |id: &str| -> Result<report::Prepared<'_>, CliError> {
+    let prepare = |id: &str| -> Result<report::Prepared<'_>, Error> {
         report::prepare(d.run(id)?, &d.judgments(id), &items, &labels, &settings)
-            .map_err(CliError::report)
+            .map_err(Error::report)
     };
     let p = prepare(&args.run)?;
     let levels = c.matrix.first().map_or(0, Vec::len);
     let (pos, neg) = p.level_counts(levels).ok_or_else(|| {
-        CliError::new(
+        Error::new(
             "insufficient_data",
             "the run's judgments are not levels 0 … k−1 with a reference",
             Exit::InsufficientData,
         )
     })?;
     let ratio = args.ratio.or_else(|| c.corner_ratio()).ok_or_else(|| {
-        CliError::usage("the [cost] matrix's corners give no cost ratio; pass --ratio")
+        Error::usage("the [cost] matrix's corners give no cost ratio; pass --ratio")
     })?;
     let binary = cost::ratio_matrix(ratio);
     let mut results = json!({
