@@ -449,8 +449,8 @@ after the entry is `Accepted`.
 
 ## D-017 Alternative annotator test parameters
 
-- Status: Proposed
-- Date: 2026-11-03
+- Status: Accepted
+- Date: 2026-11-06
 - Context: `agree --parity` answers whether a system could replace one of the
   human raters (metrics spec §9.4). The spec gives ε = 0.1, a winning rate of
   0.5 to pass and the null "the system is worse by ε or more", but asks for
@@ -461,7 +461,7 @@ after the entry is `Accepted`.
   in the example notebook of github.com/nitaytech/alttest, read on
   2026-11-03) settles these; the repository has no licence, so evalsig takes
   the procedure, not the code or the data.
-- Decision (proposed):
+- Decision:
   - For each human rater j with enough items, and each item i that j and at
     least one other human labelled: the score of a labeller on i is its
     agreement with the other humans on i, the share of them it matches for
