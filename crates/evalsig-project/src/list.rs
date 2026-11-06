@@ -7,7 +7,7 @@ use evalsig_core::records::Record;
 use serde_json::{Value, json};
 
 use crate::Error;
-use crate::data;
+use crate::data::{self, Data};
 use crate::envelope::{Envelope, Output};
 use crate::project::Project;
 
@@ -22,8 +22,11 @@ fn envelope(
 }
 
 pub fn runs(root: &Path) -> Result<Output, Error> {
-    let project = Project::open(root)?;
-    let d = data::load(&project)?;
+    Ok(runs_of(&data::load(&Project::open(root)?)?))
+}
+
+/// The runs of data already loaded.
+pub fn runs_of(d: &Data) -> Output {
     let mut judged: BTreeMap<&str, (u64, BTreeSet<&str>, u64)> = BTreeMap::new();
     for r in &d.records {
         if let Record::Judgment(j) = r {
@@ -57,11 +60,11 @@ pub fn runs(root: &Path) -> Result<Output, Error> {
             _ => None,
         })
         .collect();
-    Ok(envelope(
+    envelope(
         "evalsig.runs/1",
         json!({ "count": runs.len(), "runs": runs }),
         &d.snapshots,
-    ))
+    )
 }
 
 pub fn items(root: &Path) -> Result<Output, Error> {

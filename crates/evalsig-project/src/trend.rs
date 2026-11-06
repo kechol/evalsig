@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use evalsig_core::compare::{self, Drift, Options};
+use evalsig_core::config::Config;
 use evalsig_core::records::{Judgment, Label};
 use evalsig_core::report;
 use evalsig_core::time::{Instant, Period};
@@ -12,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::Error;
 use crate::analysis::{self, Analysis};
-use crate::data;
+use crate::data::{self, Data};
 use crate::envelope::{Envelope, Output, Verdict, VerdictCode, Warning, round_numbers};
 use crate::exit::Exit;
 use crate::project::Project;
@@ -49,15 +50,18 @@ pub struct Request {
 }
 
 pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
-    args.analysis.without_proxy("trend")?;
     let project = Project::open(root)?;
-    let config = project.config()?;
-    let d = data::load(&project)?;
+    compute(&data::load(&project)?, &project.config()?, args)
+}
+
+/// The trend of data already loaded, under this configuration.
+pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Error> {
+    args.analysis.without_proxy("trend")?;
     let run = d.run(&args.run)?;
     let items = d.items();
     let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = all.iter().collect();
-    let settings = analysis::settings(&config, &args.analysis);
+    let settings = analysis::settings(config, &args.analysis);
     let since = args
         .since
         .as_deref()

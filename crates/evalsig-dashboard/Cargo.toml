@@ -9,7 +9,9 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+evalsig-core.workspace = true
 evalsig-project.workspace = true
+evalsig-store.workspace = true
 serde_json.workspace = true
 
 [lints]

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use evalsig_core::agreement;
 use evalsig_core::checks::{Finding, Overrides};
+use evalsig_core::config::Config;
 use evalsig_core::meta::{self, MetaEvaluation};
 use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::preference::{self, RankingError};
@@ -19,7 +20,7 @@ use serde_json::{Value, json};
 use crate::Error;
 use crate::analysis::{self, Analysis, ReferenceChoice};
 use crate::checks;
-use crate::data;
+use crate::data::{self, Data};
 use crate::envelope::{
     Envelope, Output, Verdict as EnvelopeVerdict, VerdictCode, Warning, round_numbers,
 };
@@ -83,6 +84,12 @@ fn headline(m: &MetaEvaluation) -> Option<f64> {
 }
 
 pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
+    let project = Project::open(root)?;
+    compute(&data::load(&project)?, &project.config()?, args)
+}
+
+/// Agreement in data already loaded, under this configuration.
+pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Error> {
     if matches!(args.analysis.reference, Some(ReferenceChoice::Latent)) {
         return Err(Error::new(
             "report",
@@ -91,9 +98,6 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
         ));
     }
     args.analysis.without_proxy("agree")?;
-    let project = Project::open(root)?;
-    let config = project.config()?;
-    let d = data::load(&project)?;
     let task = args.analysis.task.as_str();
     let (all, _) = d.labels(args.analysis.labels_as_of.as_deref())?;
     let labels: Vec<&Label> = all.iter().filter(|l| l.task() == task).collect();
@@ -170,7 +174,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
     let mut parity_block = None;
     if let Some(run_id) = &args.run {
         if args.parity {
-            parity_block = Some(parity(&d, &config, &args.analysis, &labels, run_id)?);
+            parity_block = Some(parity(d, config, &args.analysis, &labels, run_id)?);
         }
         let votes: BTreeMap<&str, BTreeMap<&str, bool>> = decided
             .as_ref()
@@ -185,8 +189,8 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
             })
             .unwrap_or_default();
         same_rule.push(system_row(
-            &d,
-            &config,
+            d,
+            config,
             &args.analysis,
             &labels,
             run_id,
@@ -227,7 +231,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
                 _ => None,
             })
             .collect();
-        results["preference"] = preference_block(&prefs, &config, &mut findings)?;
+        results["preference"] = preference_block(&prefs, config, &mut findings)?;
     }
     let parity = parity_block.map(|p| {
         let (wins, n) = (p.tested.iter().filter(|t| t.system_wins).count(), p.tested.len());

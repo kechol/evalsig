@@ -233,3 +233,27 @@ fn queries_name_known_runs_only_and_decode_safely() {
         "{page}"
     );
 }
+
+#[test]
+fn a_new_ledger_line_shows_the_new_data() {
+    let p = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    let d = start(p.path());
+    let path = d
+        .url
+        .trim_start_matches(&format!("http://127.0.0.1:{}", d.port));
+    let host = format!("127.0.0.1:{}", d.port);
+    let before = get(d.port, path, &host);
+    assert!(before.contains("triage-v1") && !before.contains("r-base"));
+    // The page served while the ledger is unchanged comes from the data already read.
+    assert_eq!(get(d.port, path, &host), before);
+    let records = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/records.jsonl");
+    evalsig(p.path())
+        .args(["import", records])
+        .assert()
+        .success();
+    let after = get(d.port, path, &host);
+    assert!(
+        after.contains("triage-v1") && after.contains("r-base"),
+        "{after}"
+    );
+}

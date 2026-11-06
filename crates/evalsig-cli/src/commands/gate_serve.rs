@@ -17,9 +17,9 @@ use serde_json::{Value, json};
 use crate::commands::gate::{Request, Submission, judge_request};
 use crate::referee::Referee;
 use evalsig_project::Error;
-use evalsig_project::http::{Deadline, Slot, same};
 use evalsig_project::envelope::Output;
 use evalsig_project::exit::Exit;
+use evalsig_project::http::{Deadline, Slot, same};
 use evalsig_project::project::io_error;
 
 #[derive(Debug, Clone, clap::Args)]
