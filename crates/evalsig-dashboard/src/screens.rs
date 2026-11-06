@@ -1,19 +1,18 @@
 //! The dashboard's six screens (SPEC §11, D-019). They render the same results the CLI
 //! prints, computed without writing anything: the report and comparison are computed
 //! as `report` and `compare` compute them, never recorded or saved. The data in force
-//! are read once and kept while the project ledger's head is unchanged (D-028).
+//! are read once and kept while the project ledger is unchanged (D-028).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use evalsig_core::config::Config;
 use evalsig_core::records::Record;
-use evalsig_store::ledger;
 use serde_json::{Value, json};
 
 use evalsig_project::data::Data;
 use evalsig_project::envelope::Output;
-use evalsig_project::project::Project;
+use evalsig_project::project::{Project, io_error};
 use evalsig_project::{Error, agree, compare, data, explain, list, report, trend};
 
 use crate::html::{self, esc};
@@ -561,27 +560,40 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     })
 }
 
-/// The data in force, kept with the ledger head they were read at.
+/// The data in force, kept with the ledger's last line when they were read.
 struct Loaded {
-    head: String,
+    last_line: String,
     data: Arc<Data>,
 }
 
-/// The data in force: those already read while the ledger's head is unchanged, else
+/// The ledger's last line. The ledger is append-only and every change to the data in
+/// force appends a line, so the line names the data without parsing the ledger.
+fn last_line(path: &Path) -> Result<String, Error> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text
+            .lines()
+            .rfind(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .to_owned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(io_error(path, &e)),
+    }
+}
+
+/// The data in force: those already read while the ledger's last line is unchanged, else
 /// read again. The configuration is read on every request, since editing it writes no
 /// ledger line.
 fn current(root: &Path, kept: &Mutex<Option<Loaded>>) -> Result<(Arc<Data>, Config), Error> {
     let project = Project::open(root)?;
     let config = project.config()?;
-    let entries = project.entries()?;
-    let head = ledger::head(&entries).to_owned();
+    let last = last_line(&project.ledger_path())?;
     let mut kept = kept.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some(k) = kept.as_ref().filter(|k| k.head == head) {
+    if let Some(k) = kept.as_ref().filter(|k| k.last_line == last) {
         return Ok((k.data.clone(), config));
     }
     let data = Arc::new(data::load(&project)?);
     *kept = Some(Loaded {
-        head,
+        last_line: last,
         data: data.clone(),
     });
     Ok((data, config))
