@@ -58,6 +58,11 @@ impl Project {
         self.dir.join(LEDGER)
     }
 
+    /// The agent-side ledger's lines.
+    pub fn entries(&self) -> Result<Vec<evalsig_store::ledger::Entry>, Error> {
+        evalsig_store::ledger::read(&self.ledger_path()).map_err(Error::store)
+    }
+
     pub fn objects(&self) -> ObjectStore {
         ObjectStore::new(self.dir.join("objects"))
     }

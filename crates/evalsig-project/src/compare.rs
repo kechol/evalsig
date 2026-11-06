@@ -12,8 +12,9 @@ use evalsig_core::preference;
 use evalsig_core::records::{Item, Label, Preference, Record, Run};
 use evalsig_core::replicates;
 use evalsig_core::report::{self, Fill, Prepared};
+use evalsig_core::split::Part;
 use evalsig_core::validity;
-use evalsig_store::ledger::{self, Entry, Kind};
+use evalsig_store::ledger::{Entry, Kind};
 use serde_json::{Value, json};
 
 use crate::Error;
@@ -26,7 +27,7 @@ use crate::envelope::{
 use crate::exit::Exit;
 use crate::project::Project;
 use crate::provenance::{self, item_set_hash};
-use crate::split::{self, Scope, SplitPart};
+use crate::split::{self, Scope};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Request {
@@ -51,7 +52,7 @@ pub struct Request {
     pub sequential: bool,
     /// Compare only the items of this part of the latest `evalsig split`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub split: Option<SplitPart>,
+    pub split: Option<Part>,
     pub dataset: DatasetChecks,
     pub arms: ArmChecks,
 }
@@ -536,10 +537,10 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
     let d = data::load(&project)?;
     let scope = args
         .split
-        .map(|p| split::scope(&project, p.part(), None))
+        .map(|p| split::scope(&project, p, None))
         .transpose()?;
     let mut c = compute(&d, &config, args, scope.as_ref())?;
-    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+    let entries = project.entries()?;
     count_uses(
         &mut c.results,
         &mut c.warnings,

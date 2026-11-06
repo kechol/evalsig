@@ -251,11 +251,8 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         });
     }
     let exit = exit_for(envelope.verdict.as_ref().map(|v| v.code));
-    std::fs::write(
-        &result_path,
-        serde_json::to_string_pretty(&envelope).expect("envelope serializes"),
-    )
-    .map_err(|e| io_error(&result_path, &e))?;
+    std::fs::write(&result_path, envelope.to_pretty_json())
+        .map_err(|e| io_error(&result_path, &e))?;
     // The best moves only once the gate line and the result are written, so a failure
     // before that leaves the earlier best in place.
     if let Some(records) = best_records {

@@ -13,7 +13,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
-use crate::canonical::{CanonicalError, to_canonical_bytes};
+use crate::canonical::CanonicalError;
 use crate::hash::ContentHash;
 use crate::objects::{ObjectError, ObjectStore};
 
@@ -252,7 +252,7 @@ pub fn items_naming(records: &[Record], body: &str) -> BTreeSet<String> {
 
 /// The reference that replaces a purged value: BLAKE3 of its canonical JSON.
 fn purged(v: &Json) -> Result<String, CanonicalError> {
-    Ok(ContentHash::blake3(&to_canonical_bytes(v)?).to_string())
+    Ok(crate::canonical::hash(v)?.to_string())
 }
 
 fn is_ref(v: &str) -> bool {

@@ -9,7 +9,7 @@ use evalsig_adapters::{draft, mapping, maptest};
 use evalsig_core::capabilities;
 use evalsig_core::config::Config;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind};
+use evalsig_store::ledger::Kind;
 use serde_json::json;
 
 use crate::commands::import::{parse_size, read_within};
@@ -228,9 +228,7 @@ fn decide(root: &Path, id: &str, choice: &str, by: &str, path: &Path) -> Result<
     let before = std::fs::read(path).map_err(|e| io_error(path, &e))?;
     let text = std::str::from_utf8(&before).map_err(|_| Error::invalid_input(path, "not UTF-8"))?;
     let mut table: toml::Table = toml::from_str(text).map_err(|e| Error::invalid_input(path, e))?;
-    let seq = ledger::read(&project.ledger_path())
-        .map_err(Error::store)?
-        .len() as u64;
+    let seq = project.entries()?.len() as u64;
     draft::decide(&mut table, id, choice, by, seq).map_err(Error::usage)?;
     let after = toml::to_string(&table).expect("tables serialize");
     let remaining = mapped::compile_text(path, &after)?.undecided;

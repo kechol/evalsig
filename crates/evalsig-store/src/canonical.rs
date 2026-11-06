@@ -264,6 +264,14 @@ pub fn canonicalize(text: &str) -> Result<Vec<u8>, CanonicalError> {
     Canonical::parse(text).map(|v| v.to_bytes())
 }
 
+/// The BLAKE3 reference of a value's canonical bytes, the name evalsig gives a JSON
+/// document (a result, a configuration, an approval, a purged value).
+pub fn hash<T: Serialize + ?Sized>(value: &T) -> Result<crate::hash::ContentHash, CanonicalError> {
+    Ok(crate::hash::ContentHash::blake3(&to_canonical_bytes(
+        value,
+    )?))
+}
+
 /// Canonical bytes of a serializable value.
 pub fn to_canonical_bytes<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, CanonicalError> {
     Canonical::from_serialize(value).map(|v| v.to_bytes())

@@ -1,7 +1,7 @@
 //! `evalsig compare <baseline> <candidate>...`: a paired comparison on common items.
 
+use evalsig_core::split::Part;
 use evalsig_project::compare::Request;
-use evalsig_project::split::SplitPart;
 
 use crate::args::{AnalysisArgs, ArmArgs, DatasetArgs};
 
@@ -59,8 +59,8 @@ impl From<&Args> for Request {
             unpaired: a.unpaired,
             sequential: a.sequential,
             split: a.split.map(|s| match s {
-                SplitArg::Dev => SplitPart::Dev,
-                SplitArg::Validation => SplitPart::Validation,
+                SplitArg::Dev => Part::Dev,
+                SplitArg::Validation => Part::Validation,
             }),
             dataset: a.dataset.into(),
             arms: a.arms.into(),

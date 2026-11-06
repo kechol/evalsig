@@ -271,7 +271,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         redactions: bodies.redactions.clone(),
     })
     .map_err(Error::store)?;
-    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+    let entries = project.entries()?;
     if snapshot::purged(&entries)
         .map_err(Error::store)?
         .contains(&written.snapshot)

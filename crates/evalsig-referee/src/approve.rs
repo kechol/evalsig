@@ -14,7 +14,6 @@ use evalsig_core::power;
 use evalsig_core::records::{Judgment, Label, Record, Run};
 use evalsig_core::report::{self, Fill, Sections};
 use evalsig_core::rules::Rule;
-use evalsig_store::canonical::to_canonical_bytes;
 use evalsig_store::hash::ContentHash;
 use evalsig_store::ledger::{Entry, Kind};
 use serde_json::{Value, json};
@@ -42,8 +41,10 @@ pub struct Request {
     pub referee: Option<PathBuf>,
 }
 
-pub fn canonical_hash(v: &Value) -> Result<String, Error> {
-    Ok(ContentHash::blake3(&to_canonical_bytes(v).map_err(Error::store)?).to_string())
+fn canonical_hash(v: &Value) -> Result<String, Error> {
+    Ok(evalsig_store::canonical::hash(v)
+        .map_err(Error::store)?
+        .to_string())
 }
 
 /// The draft from a project's drafts directory, checked against its hash.

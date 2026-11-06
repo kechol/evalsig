@@ -573,7 +573,7 @@ struct Loaded {
 fn current(root: &Path, kept: &Mutex<Option<Loaded>>) -> Result<(Arc<Data>, Config), Error> {
     let project = Project::open(root)?;
     let config = project.config()?;
-    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+    let entries = project.entries()?;
     let head = ledger::head(&entries).to_owned();
     let mut kept = kept.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(k) = kept.as_ref().filter(|k| k.head == head) {

@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind};
+use evalsig_store::ledger::Kind;
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
@@ -86,18 +86,14 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
             let scope = a
                 .split
                 .map(|p| {
-                    evalsig_project::split::scope(
-                        &project,
-                        p.part(),
-                        saved["results"]["split"].as_str(),
-                    )
+                    evalsig_project::split::scope(&project, p, saved["results"]["split"].as_str())
                 })
                 .transpose()?;
             let mut c = compare::compute(&d, &config, a, scope.as_ref())?;
             // The use count comes from the ledger lines before the one naming this
             // output. A comparison made with --scratch is in no line, so its count
             // cannot be recounted and is taken as saved.
-            let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+            let entries = project.entries()?;
             let recorded = entries.iter().position(|e| {
                 e.outputs
                     .iter()

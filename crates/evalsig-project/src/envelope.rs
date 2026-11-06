@@ -407,6 +407,13 @@ pub struct Envelope {
 }
 
 impl Envelope {
+    /// Pretty JSON with a final newline, as results are printed and saved.
+    pub fn to_pretty_json(&self) -> String {
+        let mut s = serde_json::to_string_pretty(self).expect("envelope serializes");
+        s.push('\n');
+        s
+    }
+
     pub fn new(schema: Schema, results: impl Serialize) -> Self {
         Envelope {
             schema: schema.name().to_owned(),

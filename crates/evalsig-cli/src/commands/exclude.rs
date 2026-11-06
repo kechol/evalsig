@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use evalsig_core::records::Record;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger::{self, Kind};
+use evalsig_store::ledger::Kind;
 use evalsig_store::snapshot::{self, Replacement};
 use serde_json::{Value, json};
 
@@ -80,7 +80,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
 /// The items the agent may use, when a split was made within the referee's
 /// remaining items: the parts of the latest such split.
 fn remaining(project: &Project) -> Result<Option<BTreeSet<String>>, Error> {
-    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+    let entries = project.entries()?;
     for e in entries.iter().rev().filter(|e| e.kind == Kind::Split) {
         if e.summary.get("holdout").is_none_or(Value::is_null) {
             continue;

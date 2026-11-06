@@ -4,33 +4,16 @@
 use std::collections::BTreeSet;
 
 use evalsig_core::split::Part;
-use evalsig_store::ledger::{self, Entry, Kind};
+use evalsig_store::ledger::{Entry, Kind};
 use serde_json::Value;
 
 use crate::Error;
 use crate::project::{Project, hex, io_error, str_set};
 
-/// A part of an agent-side split.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SplitPart {
-    Dev,
-    Validation,
-}
-
-impl SplitPart {
-    pub fn part(self) -> Part {
-        match self {
-            SplitPart::Dev => Part::Dev,
-            SplitPart::Validation => Part::Validation,
-        }
-    }
-}
-
 /// The recorded agent-side splits, oldest first.
 pub fn split_entries(project: &Project) -> Result<Vec<Entry>, Error> {
-    Ok(ledger::read(&project.ledger_path())
-        .map_err(Error::store)?
+    Ok(project
+        .entries()?
         .into_iter()
         .filter(|e| e.kind == Kind::Split)
         .collect())

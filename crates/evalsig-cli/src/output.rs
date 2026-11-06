@@ -24,11 +24,7 @@ pub enum Format {
 pub fn render(output: &Output, format: Format) -> String {
     let e = &output.envelope;
     match format {
-        Format::Json => {
-            let mut s = serde_json::to_string_pretty(e).expect("envelope serializes");
-            s.push('\n');
-            s
-        }
+        Format::Json => e.to_pretty_json(),
         Format::Md => crate::markdown::render(e).unwrap_or_else(|| markdown(e)),
         Format::Junit => junit(e, output.exit),
         Format::Html => {

@@ -34,9 +34,7 @@ impl Request {
 
 /// The hash of canonical results.
 pub fn output_hash(results: &Value) -> Result<ContentHash, Error> {
-    Ok(ContentHash::blake3(
-        &to_canonical_bytes(results).map_err(Error::store)?,
-    ))
+    evalsig_store::canonical::hash(results).map_err(Error::store)
 }
 
 /// The name of an item set (a split, the items a comparison evaluates): the BLAKE3
@@ -86,9 +84,7 @@ pub fn finish(
     let out = fill(project, config, d, envelope, seed, request)?;
     // Save before the ledger names the output, so a recorded output always exists.
     let path = project.reports_dir().join(format!("{}.json", out.hex()));
-    let mut text = serde_json::to_string_pretty(envelope).expect("envelope serializes");
-    text.push('\n');
-    std::fs::write(&path, text).map_err(|e| io_error(&path, &e))?;
+    std::fs::write(&path, envelope.to_pretty_json()).map_err(|e| io_error(&path, &e))?;
     let p = &envelope.provenance;
     let inputs = p.snapshots.iter().chain(&p.config).cloned().collect();
     project.record(

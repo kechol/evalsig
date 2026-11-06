@@ -8,7 +8,6 @@ use evalsig_core::labels::LabelSet;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run};
 use evalsig_core::time::Instant;
 use evalsig_store::hash::ContentHash;
-use evalsig_store::ledger;
 use evalsig_store::objects::ObjectStore;
 use evalsig_store::rows;
 use evalsig_store::snapshot::{self, InForce, Provenance};
@@ -44,7 +43,7 @@ pub fn load(project: &Project) -> Result<Data, Error> {
 
 /// The snapshots in force, as the project's ledger names them.
 pub fn in_force(project: &Project) -> Result<Vec<InForce>, Error> {
-    let entries = ledger::read(&project.ledger_path()).map_err(Error::store)?;
+    let entries = project.entries()?;
     snapshot::in_force(&entries).map_err(Error::store)
 }
 
