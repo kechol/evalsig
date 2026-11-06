@@ -38,7 +38,8 @@ deploy it. The tests named below live in `crates/evalsig-cli/tests/referee_paths
 | Relaying a forged pass | The referee writes results to paths it owns and to its ledger; people read only those | T-089 | `referee_forged_pass_is_not_in_referee_ledger` |
 
 The fine-grained information the referee returns is limited further by the
-Ladder (metrics spec §11.3, T-126), whose defaults await D-015.
+Ladder (metrics spec §11.3, D-015): a value comes back only on a new best,
+rounded to a step fixed at approval.
 
 ## What the referee cannot protect
 

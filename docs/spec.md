@@ -652,7 +652,8 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   agent chooses its next candidate from earlier answers, which is why the answer is kept
   small.
 - **Returned.** The verdict (`pass`, `fail` or a stop), each condition's pass or fail
-  with its metric, rule and approved threshold, and the budget (total, used, remaining).
+  with its metric, rule and approved threshold, the budget (total, used, remaining) and,
+  on a new best only, the Ladder's rounded value.
   The full result stays in the referee's `results/` and ledger.
 - **Not returned.** Intervals, measured values, item results, and warnings that depend on
   labels (kept in the referee ledger).
@@ -661,9 +662,10 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   that). Outputs of a few hundred items give only a weak protection against adaptive use;
   the budget, the α/B level and the withheld values carry it. When the distribution
   drifts, read the result as a guide.
-- **The reuse guard.** `[holdout]` accepts `reuse_guard`, `ladder_k` and `ladder_step`
-  for a rounding scheme that would return a value only when a candidate sets a new best.
-  A gate does not act on them yet (§15).
+- **The reuse guard.** `reuse_guard = "ladder"` (the only value and the default) returns
+  the primary metric's value, rounded to the step η that approval fixes from `ladder_k`
+  (2) or `ladder_step`, only when a candidate beats the best so far by η with its lower
+  bound above 0 ([metrics](metrics.md) §11.3).
 
 ### 8.5 Deployment
 
@@ -962,7 +964,7 @@ them.
 
 | Decision | What happens now |
 |---|---|
-| D-015 Reuse guard defaults (step factor, budget) | The budget (default 5) and the α/B level apply. A gate returns the verdict, each condition's pass or fail and the budget left, never a value; approval fixes no step and no first best, and `reuse_guard`, `ladder_k` and `ladder_step` are accepted in `gate.toml` but unused |
+| D-015 Reuse guard defaults (step factor, budget) (Accepted) | The Ladder with k = 2 and a budget of 5: approval fixes the step η and the first best, and a gate returns a rounded value only on a new best ([metrics](metrics.md) §11.3) |
 | D-016 Whether the `latent` reference (Dawid-Skene) ships (Accepted: not in v1) | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
 | D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human`, and a gate condition `human_parity` with the rule `pass` runs the same test on the holdout ([metrics](metrics.md) §9.4) |
 

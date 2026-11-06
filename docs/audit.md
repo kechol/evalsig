@@ -96,7 +96,7 @@ sealed/          sealed holdout labels, <holdout hash>.age
 approved/        approved conditions, resolved in full, <hash>.toml
 results/         full gate results
 exclusions/      item sets the referee excluded
-state/           lock file and per-holdout label hashes
+state/           lock file, per-holdout label hashes and the Ladder's best candidate
 ```
 
 The referee ledger belongs where the agent cannot write (see

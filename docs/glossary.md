@@ -142,7 +142,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | coverage | `incomplete_coverage` | Whether a candidate's records judge every holdout item. A candidate that leaves any out is refused without spending budget |
 | approved conditions | `approved/<hash>.toml` | Conditions a person approved, with every setting resolved and the holdout's items and baseline pinned by hash. `gate` reads only these |
 | referee home | `EVALSIG_REFEREE` | The directory, owned by the referee's user, that holds the key, the sealed labels, the approved conditions and the referee ledger |
-| Ladder | `reuse_guard`, `ladder_k`, `ladder_step` | A rule for returning a value only on a new best, rounded to a step, to limit what the holdout leaks. Accepted in conditions; returns nothing until D-015 is settled |
+| Ladder | `reuse_guard`, `ladder_k`, `ladder_step` | A rule for returning a value only on a new best, rounded to a step fixed at approval, to limit what the holdout leaks (D-015) |
 | preregistration | `preregister` | Recording gate conditions and hypotheses in the ledger before seeing results. Two steps: a draft (`--draft`, by an agent or a human) and approval (`approve`, referee authority only) |
 | gate | `gate` | Deciding pass or fail under preregistered conditions and returning it as the exit code |
 | snapshot | `snapshot` | An immutable copy of imported data. Identified by its content hash |

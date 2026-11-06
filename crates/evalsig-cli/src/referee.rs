@@ -68,6 +68,22 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
         .map_err(|e| io_error(path, &e))
 }
 
+/// Replace `path` with `bytes`, readable by the referee's user only, so that a reader
+/// sees the old file or the new one and never a part.
+pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    use std::io::Write;
+    let tmp = path.with_extension("tmp");
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(bytes))
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .map_err(|e| io_error(path, &e))
+}
+
 /// `evalsig referee init <dir>`: a new home with a fresh identity.
 pub fn init(dir: &Path) -> Result<Output, CliError> {
     if dir.join(IDENTITY).exists() {

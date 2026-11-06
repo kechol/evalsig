@@ -669,3 +669,73 @@ fn a_parity_condition_passes_a_candidate_that_says_what_people_say() {
     );
     assert_eq!(json(&out)["results"]["conditions"][0]["passed"], false);
 }
+
+#[test]
+fn the_ladder_returns_a_rounded_value_on_a_new_best_only() {
+    let (referee_rows, truth) = three_raters();
+    let w = world_from(&referee_rows, &gate_toml(10, 5), None);
+    let approved = std::fs::read_to_string(
+        w.home
+            .path()
+            .join("approved")
+            .join(format!("{}.toml", w.approved.trim_start_matches("blake3:"))),
+    )
+    .unwrap();
+    let approved: toml::Value = toml::from_str(&approved).unwrap();
+    let step = approved["resolved"]["ladder"]["step"].as_float().unwrap();
+    let first_best = approved["resolved"]["ladder"]["first_best"]
+        .as_float()
+        .unwrap();
+    // A candidate that says what people say on every item beats the baseline.
+    let perfect = |name: &str, k: u32| {
+        candidate(w.agent.path(), name, |rows| {
+            rows[0]["attrs"] = serde_json::json!({ "try": k });
+            for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+                r.as_object_mut().unwrap().remove("missing");
+                r["value"] = truth[r["item_id"].as_str().unwrap()].into();
+            }
+        })
+    };
+    let out = submit(&w, &perfect("perfect.jsonl", 1));
+    let v = json(&out);
+    let ladder = &v["results"]["ladder"];
+    assert_eq!(ladder["metric"], "accuracy", "{v}");
+    assert_eq!(ladder["step"].as_f64().unwrap(), step);
+    // not_worse_than reads the difference to the baseline: 1 − first best, rounded
+    // down to a multiple of the step.
+    let shown = ladder["value"].as_f64().unwrap();
+    let true_gap = 1.0 - first_best;
+    assert!(
+        shown <= true_gap && true_gap - shown < step,
+        "{shown} {true_gap} {step}"
+    );
+    assert!(
+        ((shown / step) - (shown / step).round()).abs() < 1e-9,
+        "{shown} {step}"
+    );
+    // The best is kept, private to the referee, and the value is in the referee ledger.
+    let best = std::fs::read_dir(w.home.path().join("state"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.to_string_lossy().ends_with(".best.jsonl"))
+        .expect("the best candidate is kept");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&best).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+    let gates: Vec<Value> = referee_ledger(&w)
+        .into_iter()
+        .filter(|e| e["kind"] == "gate")
+        .collect();
+    assert!(gates.last().unwrap()["summary"]["ladder_value"].is_string());
+    // The same answers again do not beat the best: no value comes back.
+    let out = submit(&w, &perfect("again.jsonl", 2));
+    let v = json(&out);
+    assert_eq!(v["verdict"]["code"], "pass", "{v}");
+    assert!(v["results"].get("ladder").is_none(), "{v}");
+    // Nor does a candidate below the best.
+    let out = submit(&w, &variant(w.agent.path(), 3));
+    assert!(json(&out)["results"].get("ladder").is_none());
+}

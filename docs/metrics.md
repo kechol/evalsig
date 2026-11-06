@@ -10,8 +10,7 @@ Reference values for most formulas are in `tests/fixtures/reference-values.json`
 Rust implementation matches them within an absolute error of 1e-9. Each section names its
 case, or says "reference case: none".
 
-The `latent` reference is left out of v1 (D-016, §9.2), and the Ladder (D-015, §11.3) is
-not implemented yet; §11.3 says what happens now.
+The `latent` reference is left out of v1 (D-016, §9.2).
 
 ## 0. Conventions
 
@@ -757,8 +756,17 @@ metric's denominator on the holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)),
 baseline's error outside the holdout; e_val = 0.1 and n = 300 give η ≈ 0.052. A
 `ladder_step` below the automatic η fails approval. The first best is the baseline on the
 holdout, which spends no budget. Without a baseline, or for a metric a report does not
-give, there is no step. The gate does not return values yet: it returns only the verdict,
-each condition's pass or fail and the budget left (§11.2). The protection against fitting the holdout rests on the budget, the level
+give, there is no step and no value is ever returned.
+
+- **A new best.** A submission beats the best so far when the lower bound of its paired
+  difference to the best on the primary metric, one-sided at α/B, is above 0 and the
+  difference is at least η. The best is the baseline until a candidate beats it; the
+  referee then keeps that candidate's run and judgments, private to it, as the best.
+- **What comes back.** On a new best only, `results.ladder` holds the metric, η and the
+  value rounded to a multiple of η toward the baseline: the candidate's value for an
+  absolute rule, its difference to the baseline (rounded toward 0) for a difference rule.
+  The referee ledger's `gate` line records the value. Otherwise the answer carries no
+  value, only the verdict, each condition's pass or fail and the budget left (§11.2). The protection against fitting the holdout rests on the budget, the level
 α/B and withholding values; at a few hundred holdout items the Ladder's own theoretical
 guarantee, which needs steps near (ln B / n)^(1/3), would hardly apply (D-015).
 

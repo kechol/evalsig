@@ -307,8 +307,9 @@ evalsig gate submit --approved <hash> --candidate <run> --records <file> \
   decided. `verdict.code` is `pass`, `fail`, `blocked` or `budget_exhausted`.
   `results.conditions` has each condition's pass or fail and `results.budget`
   the `total`, `used` and `remaining` submissions. The answer holds no
-  interval, value, item result or label-dependent warning. Until D-015 (the
-  Ladder defaults) is accepted, the answer never carries a value.
+  interval, item result or label-dependent warning. Only when the candidate
+  beats the best so far by the approved step does `results.ladder` carry the
+  primary metric's value, rounded to that step toward the baseline (D-015).
 - Warnings that can appear are `resubmission` (the same candidate was judged
   before; the earlier answer is returned and no budget is spent) and
   `seal_void` (the referee's identity is readable from the agent's side, so the

@@ -26,7 +26,7 @@ evalsig ledger show --last 5
    - Comparisons are counted. When the `validation_uses` warning appears, tell a person it is time to rebuild the validation split.
    - Try a few well-founded changes rather than many small ones.
 5. Submit to the referee: `evalsig gate submit --approved <hash> --candidate <run> --records <file> --socket <path>` (or `--url` with `--token-file`).
-   - The answer is `pass`, `fail`, `blocked` or `budget_exhausted`, each condition's pass or fail, and the budget left. Intervals and warnings on the holdout are not returned.
+   - The answer is `pass`, `fail`, `blocked` or `budget_exhausted`, each condition's pass or fail, and the budget left. Intervals and warnings on the holdout are not returned. Only a new best brings back `results.ladder`, a value rounded toward the baseline; quote it as rounded.
    - Each submission spends budget. Do not probe the holdout with many small variations.
 6. On `fail` go back to 1. On `budget_exhausted`, or when the validation warning appears, stop and report to a person.
 

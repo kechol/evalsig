@@ -15,7 +15,7 @@ use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
-use evalsig_core::report::{self, Settings};
+use evalsig_core::report::{self, Fill, Settings};
 use evalsig_core::rules::Rule;
 use evalsig_core::validity;
 use evalsig_store::hash::ContentHash;
@@ -138,6 +138,10 @@ struct Answer {
     code: VerdictCode,
     text: String,
     conditions: Vec<Value>,
+    /// The Ladder's rounded value, on a new best only.
+    ladder: Option<Value>,
+    /// The candidate's run and judgments, kept as the new best.
+    best: Option<Vec<Value>>,
 }
 
 /// Judge one submission: the checks, the budget, the conditions, the ledger lines and
@@ -241,6 +245,8 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
                 code: VerdictCode::BudgetExhausted,
                 text: format!("the holdout's budget of {budget} submissions is spent"),
                 conditions: Vec::new(),
+                ladder: None,
+                best: None,
             },
             (budget, used),
         );
@@ -271,31 +277,42 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         )
     });
     let seal_void = referee.seal_void(&project);
-    let gate_line = |verdict: Value, conditions: Value, error: Option<&str>| {
-        referee.record(
-            Kind::Gate,
-            vec![args.approved.clone(), candidate_hash.clone()],
-            vec![],
-            json!({
-                "approved": args.approved,
-                "candidate": candidate_hash,
-                "run": args.candidate,
-                "verdict": verdict,
-                "conditions": conditions,
-                "error": error,
-                "agent_ledger_head": args.agent_ledger_head,
-                "seal_void": seal_void,
-                "withheld_warnings": recorded,
-            }),
-        )
-    };
-    let answer = match answer {
+    let gate_line =
+        |verdict: Value, conditions: Value, error: Option<&str>, ladder: Option<String>| {
+            referee.record(
+                Kind::Gate,
+                vec![args.approved.clone(), candidate_hash.clone()],
+                vec![],
+                json!({
+                    "approved": args.approved,
+                    "candidate": candidate_hash,
+                    "run": args.candidate,
+                    "verdict": verdict,
+                    "conditions": conditions,
+                    "error": error,
+                    "agent_ledger_head": args.agent_ledger_head,
+                    "seal_void": seal_void,
+                    "withheld_warnings": recorded,
+                    "ladder_value": ladder,
+                }),
+            )
+        };
+    let mut answer = match answer {
         Ok(a) => a,
         Err(e) => {
-            gate_line(Value::Null, Value::Null, Some(&e.code))?;
+            gate_line(Value::Null, Value::Null, Some(&e.code), None)?;
             return Err(e);
         }
     };
+    if let Some(best) = answer.best.take() {
+        let text: String = best.iter().map(|r| format!("{r}\n")).collect();
+        crate::referee::replace_private(&best_path(referee, &holdout), text.as_bytes())?;
+    }
+    let ladder_value = answer
+        .ladder
+        .as_ref()
+        .and_then(|l| l["value"].as_f64())
+        .map(|v| format!("{v:.6}"));
     let mut envelope = answer_envelope(&args.approved, &args.candidate, answer, (budget, used));
     gate_line(
         json!(envelope.verdict.as_ref().map(|v| v.code)),
@@ -305,6 +322,7 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
                 .map(|c| c.iter().map(|x| x["passed"].clone()).collect::<Vec<_>>())
         ),
         None,
+        ladder_value,
     )?;
     if seal_void {
         envelope.warnings.push(Warning {
@@ -328,6 +346,8 @@ struct RefereeState {
     d: data::Data,
     held: BTreeSet<String>,
     labels: Vec<Label>,
+    /// The Ladder's best candidate so far, when one has beaten the baseline.
+    best: Option<(Run, Vec<Judgment>)>,
 }
 
 fn referee_state(
@@ -384,11 +404,41 @@ fn referee_state(
         .filter(|l| held.contains(&l.item_id))
         .cloned()
         .collect();
+    let best = match std::fs::read_to_string(best_path(referee, holdout)) {
+        Ok(text) => {
+            let mut run = None;
+            let mut judgments = Vec::new();
+            for line in text.lines() {
+                match Record::from_json(line).map_err(|e| rejected("ladder", e.to_string()))? {
+                    Record::Run(r) => run = Some(r),
+                    Record::Judgment(j) => judgments.push(j),
+                    _ => {}
+                }
+            }
+            run.map(|r| (r, judgments))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io_error(&best_path(referee, holdout), &e)),
+    };
     Ok(RefereeState {
         d,
         held: held.clone(),
         labels,
+        best,
     })
+}
+
+/// The judgments of the holdout's items.
+fn on_holdout<'a>(js: &[&'a Judgment], items: &BTreeMap<&str, &Item>) -> Vec<&'a Judgment> {
+    js.iter()
+        .copied()
+        .filter(|j| items.contains_key(j.item_id.as_str()))
+        .collect()
+}
+
+/// Where the Ladder keeps the best candidate of a holdout, in the referee's state.
+fn best_path(referee: &Referee, holdout: &str) -> std::path::PathBuf {
+    referee.file("state", holdout, "best.jsonl")
 }
 
 fn exit_for(code: Option<VerdictCode>) -> Exit {
@@ -420,6 +470,9 @@ fn answer_envelope(
             "budget": { "total": budget, "used": used, "remaining": budget.saturating_sub(used) },
         }),
     );
+    if let Some(l) = a.ladder {
+        e.results["ladder"] = l;
+    }
     e.verdict = Some(Verdict {
         code: a.code,
         text: a.text,
@@ -433,6 +486,8 @@ fn stopped(code: VerdictCode, text: String) -> Answer {
         code,
         text,
         conditions: Vec::new(),
+        ladder: None,
+        best: None,
     }
 }
 
@@ -645,11 +700,115 @@ fn judge(
             "a condition could not be decided on the holdout",
         ),
     };
+    let (ladder, best) = match base_run {
+        Some(base_run) => ladder(
+            approved,
+            state,
+            (run, judgments),
+            (base_run, &base_judgments),
+            (&items, &labels),
+            &settings,
+            budget,
+            records,
+        )?,
+        None => (None, None),
+    };
     Ok(Answer {
         code,
         text: text.into(),
         conditions: rows,
+        ladder,
+        best,
     })
+}
+
+/// The Ladder (metrics spec §11.3, D-015): a value only on a new best, when the lower
+/// bound of the candidate's paired difference to the best so far, one-sided at α/B, is
+/// above 0 and the difference reaches the approved step; the value is rounded to the
+/// step toward the baseline. The first best is the baseline.
+#[allow(clippy::too_many_arguments)]
+fn ladder(
+    approved: &Value,
+    state: &RefereeState,
+    (run, judgments): (&Run, &[&Judgment]),
+    (base_run, base_judgments): (&Run, &[&Judgment]),
+    (items, labels): (&BTreeMap<&str, &Item>, &[&Label]),
+    settings: &Settings,
+    budget: u32,
+    records: &[Record],
+) -> Result<(Option<Value>, Option<Vec<Value>>), CliError> {
+    let l = &approved["resolved"]["ladder"];
+    let (Some(metric), Some(step), Some(first_best)) = (
+        l["metric"].as_str(),
+        l["step"].as_f64(),
+        l["first_best"].as_f64(),
+    ) else {
+        return Ok((None, None));
+    };
+    let primary = &approved["conditions"][0];
+    let level = primary["level"]
+        .as_f64()
+        .unwrap_or(approved["resolved"]["level"].as_f64().unwrap_or(0.95));
+    let at = Settings {
+        level: gate::interval_level(level, budget, Sided::One),
+        ..settings.clone()
+    };
+    let cand = report::prepare(run, &on_holdout(judgments, items), items, labels, &at)
+        .map_err(CliError::report)?;
+    let stored: Vec<&Judgment>;
+    let best = match &state.best {
+        Some((best_run, best_judgments)) => {
+            stored = best_judgments.iter().collect();
+            report::prepare(best_run, &on_holdout(&stored, items), items, labels, &at)
+        }
+        None => report::prepare(base_run, base_judgments, items, labels, &at),
+    }
+    .map_err(CliError::report)?;
+    let options = Options {
+        level: at.level,
+        bootstrap: at.bootstrap,
+        seed: at.seed,
+        min_effect: BTreeMap::new(),
+        excluded: BTreeSet::new(),
+        scope: None,
+    };
+    // MetricDelta is oriented so that positive is better.
+    let beats = compare::compare(&Baseline::new(&best), &cand, &options)
+        .metrics
+        .iter()
+        .find(|m| m.metric == metric)
+        .and_then(|m| Some(m.ci?.0 > 0.0 && m.delta? >= step))
+        .unwrap_or(false);
+    let Some(id) = cand.metric_ids().into_iter().find(|id| id.name() == metric) else {
+        return Ok((None, None));
+    };
+    let Some(value) = compare::total_ratio(&cand.item_values(id, Fill::Policy)) else {
+        return Ok((None, None));
+    };
+    if !beats {
+        return Ok((None, None));
+    }
+    let rule: GateRule = serde_json::from_value(primary["rule"].clone())
+        .map_err(|e| rejected("invalid_conditions", e.to_string()))?;
+    // A difference rule returns the difference to the baseline, rounded toward 0.
+    let shown = if rule.on_delta() {
+        gate::round_toward(value - first_best, 0.0, step)
+    } else {
+        gate::round_toward(value, first_best, step)
+    };
+    let kept = records
+        .iter()
+        .filter(|r| match r {
+            Record::Run(x) => x.run_id == run.run_id,
+            Record::Judgment(j) => j.run_id == run.run_id,
+            _ => false,
+        })
+        .map(|r| serde_json::to_value(r).expect("records serialize"))
+        .collect();
+    Ok((
+        Some(json!({ "metric": metric, "value": shown, "step": step })),
+        Some(kept),
+    ))
 }
 
 /// The resolved settings, every missing value the worst (SPEC §8.3), and a seed
