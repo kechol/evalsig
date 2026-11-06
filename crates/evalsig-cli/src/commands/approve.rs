@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use evalsig_core::bootstrap::required_resamples;
 use evalsig_core::config::Config;
-use evalsig_core::gate::{Sided, interval_level};
+use evalsig_core::gate::{self, Sided, interval_level};
 use evalsig_core::power;
 use evalsig_core::records::{Judgment, Label, Record};
 use evalsig_core::report;
@@ -160,6 +160,7 @@ pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
         "holdout": args.holdout,
         "budget": budget,
         "per_submission_level": doc["resolved"]["per_submission_level"].as_f64().map(|l| format!("{l:.6}")),
+        "ladder_step": doc["resolved"]["ladder"]["step"].as_f64().map(|s| format!("{s:.6}")),
         "power_at_hypothesis": resolved.power.map(|p| format!("{p:.4}")),
     });
     referee.record(
@@ -266,6 +267,7 @@ fn resolve(
     });
     let mut power = None;
     if let Some(run) = run {
+        settings["ladder"] = json!(ladder(doc, config, d, run, held, positive, decision)?);
         settings["output_type"] = json!(run.output_type);
         settings["levels"] = json!(run.levels);
         settings["value_semantics"] = json!(run.value_semantics());
@@ -357,29 +359,7 @@ fn power_at_hypothesis(
         .collect();
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().collect();
-    let settings = report::Settings {
-        task: doc["task"]
-            .as_str()
-            .unwrap_or(evalsig_core::records::DEFAULT_TASK)
-            .to_owned(),
-        positive,
-        decision,
-        estimand: config.stats.estimand,
-        missing: config.missing_policy(),
-        reference: config.reference.mode,
-        rater_design: config.reference.rater_design,
-        level: config.stats.level,
-        bootstrap: config.stats.bootstrap,
-        seed: config.stats.seed.unwrap_or(0),
-        threshold: None,
-        prevalence: None,
-        by: None,
-        items: false,
-        detail: false,
-        features: false,
-        exact_rates: false,
-        proxy: None,
-    };
+    let settings = baseline_settings(doc, config, positive, decision);
     let r =
         report::build(run, &outside, &d.items(), &labels, &settings).map_err(CliError::report)?;
     let Some(accuracy) = r
@@ -446,4 +426,101 @@ pub fn load(referee: &Referee, approved: &str) -> Result<Value, CliError> {
         )));
     }
     Ok(doc)
+}
+
+/// The settings a baseline is read with at approval, as the gate will read it.
+fn baseline_settings(
+    doc: &Value,
+    config: &Config,
+    positive: Option<Rule>,
+    decision: Option<Rule>,
+) -> report::Settings {
+    report::Settings {
+        task: doc["task"]
+            .as_str()
+            .unwrap_or(evalsig_core::records::DEFAULT_TASK)
+            .to_owned(),
+        positive,
+        decision,
+        estimand: config.stats.estimand,
+        missing: config.missing_policy(),
+        reference: config.reference.mode,
+        rater_design: config.reference.rater_design,
+        level: config.stats.level,
+        bootstrap: config.stats.bootstrap,
+        seed: config.stats.seed.unwrap_or(0),
+        threshold: None,
+        prevalence: None,
+        by: None,
+        items: false,
+        detail: false,
+        features: false,
+        exact_rates: false,
+        proxy: None,
+    }
+}
+
+/// The Ladder's step and first best (metrics spec §11.3, D-015), on the primary
+/// condition's metric: η = max(k·√(ψ̂/n), 1/n), n the metric's denominator on the
+/// holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), e_val the baseline's error outside
+/// the holdout; the first best is the baseline on the holdout. None when there is no
+/// baseline or the metric is not one a report gives.
+#[allow(clippy::too_many_arguments)]
+fn ladder(
+    doc: &Value,
+    config: &Config,
+    d: &Data,
+    run: &evalsig_core::records::Run,
+    held: &BTreeSet<String>,
+    positive: Option<Rule>,
+    decision: Option<Rule>,
+) -> Result<Option<Value>, CliError> {
+    let metric = doc["conditions"][0]["metric"].as_str().unwrap_or_default();
+    let (all, _) = d.labels(None)?;
+    let labels: Vec<&Label> = all.iter().collect();
+    let settings = baseline_settings(doc, config, positive, decision);
+    let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, CliError> {
+        let judgments: Vec<&Judgment> = d
+            .judgments(&run.run_id)
+            .into_iter()
+            .filter(|j| held.contains(&j.item_id) == inside)
+            .collect();
+        let r = report::build(run, &judgments, &d.items(), &labels, &settings)
+            .map_err(CliError::report)?;
+        let higher = report::prepare(run, &judgments, &d.items(), &labels, &settings)
+            .map_err(CliError::report)?
+            .metric_ids()
+            .into_iter()
+            .find(|id| id.name() == metric)
+            .map(|id| id.higher_is_better());
+        Ok(r.metrics
+            .iter()
+            .find(|m| m.metric == metric)
+            .and_then(|m| Some((m.value?, m.n, higher?))))
+    };
+    let (Some((outside, _, higher)), Some((first_best, n, _))) = (on(false)?, on(true)?) else {
+        return Ok(None);
+    };
+    let e_val = if higher { 1.0 - outside } else { outside };
+    let psi = gate::ladder_psi(e_val, n);
+    let k = doc["holdout"]["ladder_k"].as_f64().unwrap_or(2.0);
+    let automatic = gate::ladder_step(k, e_val, n);
+    let step = match doc["holdout"]["ladder_step"].as_f64() {
+        Some(s) if s < automatic => {
+            return Err(rejected(format!(
+                "ladder_step {s} is below the automatic step {automatic:.6}; a finer step would return more than the holdout can tell"
+            )));
+        }
+        Some(s) => s,
+        None => automatic,
+    };
+    Ok(Some(json!({
+        "reuse_guard": "ladder",
+        "metric": metric,
+        "k": k,
+        "step": step,
+        "denominator": n,
+        "psi_hat": psi,
+        "first_best": first_best,
+    })))
 }

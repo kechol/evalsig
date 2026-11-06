@@ -750,11 +750,15 @@ value or item result.
 ### 11.3 Returning less information (Ladder)
 
 The Ladder is a scheme that returns a value only when a candidate beats the best so far by
-a step η, and rounds the value to a multiple of η toward the baseline. It is not
-implemented, and its defaults (the step factor k, the budget and the first best) await
-D-015. Today the gate returns only the verdict, each condition's pass or fail and the
-budget left (§11.2), approval fixes no step or first best, and no value is returned for
-any submission. The protection against fitting the holdout rests on the budget, the level
+a step η, and rounds the value to a multiple of η toward the baseline (D-015). Approval
+fixes the step and the first best on the primary condition's metric (the first
+condition): η = max(k·√(ψ̂/n), 1/n) with k = `ladder_k` (2 by default, at least 1), n the
+metric's denominator on the holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), e_val the
+baseline's error outside the holdout; e_val = 0.1 and n = 300 give η ≈ 0.052. A
+`ladder_step` below the automatic η fails approval. The first best is the baseline on the
+holdout, which spends no budget. Without a baseline, or for a metric a report does not
+give, there is no step. The gate does not return values yet: it returns only the verdict,
+each condition's pass or fail and the budget left (§11.2). The protection against fitting the holdout rests on the budget, the level
 α/B and withholding values; at a few hundred holdout items the Ladder's own theoretical
 guarantee, which needs steps near (ln B / n)^(1/3), would hardly apply (D-015).
 

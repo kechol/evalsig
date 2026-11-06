@@ -276,3 +276,76 @@ fn approval_needs_the_referee_a_seal_and_enough_items() {
         .unwrap();
     assert_eq!(out.status.code(), Some(3));
 }
+
+#[test]
+fn approval_fixes_the_ladder_step_and_refuses_a_finer_one() {
+    let w = world();
+    let out = approve(&w, Some(w.home.path()));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let ladder = &json(&out)["results"]["resolved"]["ladder"];
+    assert_eq!(ladder["reuse_guard"], "ladder");
+    assert_eq!(ladder["metric"], "accuracy");
+    assert_eq!(ladder["k"], 2.0);
+    // Accuracy's denominator is every holdout item.
+    let remaining: Value = serde_json::from_str(
+        &std::fs::read_to_string(w.referee_project.path().join("remaining.json")).unwrap(),
+    )
+    .unwrap();
+    let n = 300.0 - remaining["items"].as_array().unwrap().len() as f64;
+    assert_eq!(ladder["denominator"].as_f64().unwrap(), n);
+    let psi = ladder["psi_hat"].as_f64().unwrap();
+    assert!(psi >= 0.05_f64.max(4.0 / n) && psi <= 1.0, "{ladder}");
+    let step = ladder["step"].as_f64().unwrap();
+    assert!(
+        (step - (2.0 * (psi / n).sqrt()).max(1.0 / n)).abs() < 1e-9,
+        "{ladder}"
+    );
+    let best = ladder["first_best"].as_f64().unwrap();
+    assert!((0.0..=1.0).contains(&best));
+
+    // A step below the automatic one returns more than the holdout can tell.
+    let gate = w.agent.path().join("fine.toml");
+    std::fs::write(
+        &gate,
+        GATE.replace("budget = 5", "budget = 5\nladder_step = 0.001"),
+    )
+    .unwrap();
+    let out = evalsig(w.agent.path())
+        .args(["--format", "json", "preregister", "--draft"])
+        .arg(&gate)
+        .output()
+        .unwrap();
+    let draft = json(&out)["results"]["draft"].as_str().unwrap().to_owned();
+    let out = evalsig(w.referee_project.path())
+        .args([
+            "--format",
+            "json",
+            "preregister",
+            "approve",
+            &draft,
+            "--holdout",
+            &w.holdout,
+            "--from",
+        ])
+        .arg(w.agent.path())
+        .arg("--referee")
+        .arg(w.home.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        json(&out)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("below the automatic step")
+    );
+}

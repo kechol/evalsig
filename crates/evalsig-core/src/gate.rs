@@ -167,9 +167,53 @@ pub fn missing_rate(
     })
 }
 
+/// The Ladder's expected share of items two systems answer differently (metrics spec
+/// §11.3): ψ̂ = max(0.05, 4/n, min(1, 2·e_val)).
+pub fn ladder_psi(e_val: f64, n: f64) -> f64 {
+    (2.0 * e_val).min(1.0).max(4.0 / n).max(0.05)
+}
+
+/// The Ladder's step η = max(k·√(ψ̂/n), 1/n), n the primary condition's denominator.
+pub fn ladder_step(k: f64, e_val: f64, n: f64) -> f64 {
+    (k * (ladder_psi(e_val, n) / n).sqrt()).max(1.0 / n)
+}
+
+/// A value rounded to a multiple of `step` toward `baseline`, so that rounding never
+/// makes the candidate look better than it is.
+pub fn round_toward(value: f64, baseline: f64, step: f64) -> f64 {
+    let k = value / step;
+    let k = if value >= baseline {
+        k.floor()
+    } else {
+        k.ceil()
+    };
+    k * step
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ladder_step_reproduces_the_spec_example() {
+        // e_val = 0.1 and 300 items in the denominator give η ≈ 0.05.
+        let eta = ladder_step(2.0, 0.1, 300.0);
+        assert!((eta - 2.0 * (0.2_f64 / 300.0).sqrt()).abs() < 1e-12);
+        assert!((eta - 0.0516).abs() < 1e-4, "{eta}");
+        // Few items: the floors of ψ̂ and η apply.
+        assert_eq!(ladder_psi(0.0, 300.0), 0.05);
+        // n = 4: ψ̂ = 4/n = 1, so η = √(1/4) = 0.5.
+        assert_eq!(ladder_step(1.0, 0.0, 4.0), 0.5);
+    }
+
+    #[test]
+    fn rounding_moves_toward_the_baseline() {
+        assert!((round_toward(0.837, 0.80, 0.05) - 0.80).abs() < 1e-12);
+        assert!((round_toward(0.763, 0.80, 0.05) - 0.80).abs() < 1e-12);
+        assert!((round_toward(0.912, 0.80, 0.05) - 0.90).abs() < 1e-12);
+        // A difference rounds toward 0.
+        assert!((round_toward(-0.07, 0.0, 0.05) + 0.05).abs() < 1e-12);
+    }
 
     #[test]
     fn rules_never_pass_on_a_point_alone() {
