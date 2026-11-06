@@ -25,6 +25,7 @@ pub mod meta;
 pub mod missing;
 pub mod numeric;
 pub mod paired;
+pub mod parity;
 pub mod power;
 pub mod ppi;
 pub mod preference;

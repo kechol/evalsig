@@ -811,6 +811,80 @@ def newcombe_cases():
     return out
 
 
+def _alt_scores(x, others, scale):
+    if scale == "nominal":
+        return sum(1 for o in others if o == x) / len(others)
+    return -math.sqrt(sum((x - o) ** 2 for o in others) / len(others))
+
+
+def alt_test(humans, system, scale, eps, q=0.05, min_items=30):
+    """The alternative annotator test of D-017, after the authors' reference procedure
+    (Calderon, Reichart and Dror 2025): per human rater j, on the items j and another
+    human labelled, W = 1 when one's agreement with the other humans is at least the
+    other labeller's (ties count for both); scipy's one-sided one-sample t-test of
+    W_j - W_sys against eps, then scipy's Benjamini-Yekutieli adjustment."""
+    tested, skipped = [], {}
+    for j in sorted(humans):
+        d, ws = [], []
+        for item in sorted(humans[j]):
+            if item not in system:
+                continue
+            others = [humans[k][item] for k in sorted(humans) if k != j and item in humans[k]]
+            if not others:
+                continue
+            sj, ss = _alt_scores(humans[j][item], others, scale), _alt_scores(system[item], others, scale)
+            d.append(float(sj >= ss) - float(ss >= sj))
+            ws.append(float(ss >= sj))
+        if len(d) < min_items:
+            skipped[j] = len(d)
+            continue
+        p = stats.ttest_1samp(d, popmean=eps, alternative="less").pvalue
+        tested.append({"rater": j, "items": len(d), "mean_difference": r(np.mean(d)),
+                       "p_value": r(p), "advantage": r(np.mean(ws))})
+    if tested:
+        adj = stats.false_discovery_control([t["p_value"] for t in tested], method="by")
+        for t, a in zip(tested, adj):
+            t["adjusted_p_value"] = r(a)
+            t["system_wins"] = bool(a <= q)
+    omega = sum(t["system_wins"] for t in tested) / len(tested) if tested else None
+    rho = r(np.mean([t["advantage"] for t in tested])) if tested else None
+    verdict = "insufficient_data" if len(tested) < 2 else ("human_parity" if omega >= 0.5 else "below_human")
+    return {"tested": tested, "skipped": skipped, "winning_rate": omega,
+            "advantage_probability": rho, "verdict": verdict}
+
+
+def alt_test_cases():
+    """Synthetic panels (the authors' data carry no licence): 4 raters label 60 items
+    each, and the system is either a fifth rater of the same quality or a weaker one."""
+    rng = np.random.default_rng(20261106)
+    out = []
+
+    def panel(n_items, n_raters, levels, accuracy, system_accuracy):
+        truth = rng.integers(0, levels, n_items)
+        def label(acc):
+            noise = rng.integers(0, levels, n_items)
+            keep = rng.random(n_items) < acc
+            return np.where(keep, truth, noise)
+        humans = {f"human:{chr(97 + k)}": {f"i{i:03d}": float(v) for i, v in enumerate(label(accuracy))}
+                  for k in range(n_raters)}
+        system = {f"i{i:03d}": float(v) for i, v in enumerate(label(system_accuracy))}
+        return humans, system
+
+    for name, items, raters, levels, acc, sys_acc, scale in [
+        ("binary, system as good as a rater", 60, 4, 2, 0.8, 0.8, "nominal"),
+        ("binary, weaker system", 60, 4, 2, 0.8, 0.45, "nominal"),
+        ("four ordered levels, system as good as a rater", 60, 4, 4, 0.7, 0.75, "graded"),
+        ("two raters", 60, 2, 2, 0.85, 0.85, "nominal"),
+        ("too few shared items", 20, 3, 2, 0.8, 0.8, "nominal"),
+    ]:
+        humans, system = panel(items, raters, levels, acc, sys_acc)
+        out.append({"name": name,
+                    "input": {"humans": humans, "system": system, "scale": scale, "epsilon": 0.1},
+                    "source": "scipy (ttest_1samp alternative=less, false_discovery_control method=by)",
+                    "expected": alt_test(humans, system, scale, 0.1)})
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=OUT)
@@ -842,6 +916,7 @@ def main():
             "score": score_cases(),
             "paired_difference": paired_cases(),
             "unpaired_difference": newcombe_cases(),
+            "alt_test": alt_test_cases(),
         },
     }
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

@@ -10,9 +10,9 @@ Reference values for most formulas are in `tests/fixtures/reference-values.json`
 Rust implementation matches them within an absolute error of 1e-9. Each section names its
 case, or says "reference case: none".
 
-The `latent` reference is left out of v1 (D-016, §9.2). Two parts wait on a decision that
-is now accepted and are not implemented yet: the alternative annotator test (D-017, §9.4)
-and the Ladder (D-015, §11.3). Each section says what happens now.
+The `latent` reference is left out of v1 (D-016, §9.2). The Ladder (D-015, §11.3) is not
+implemented yet, and no command runs the alternative annotator test (§9.4) yet. Each
+section says what happens now.
 
 ## 0. Conventions
 
@@ -558,9 +558,30 @@ The overlap of raters and items decides the design, output as `rater_design`.
 ### 9.4 Does the system agree with people as well as people do (alternative annotator test)
 
 The question is whether replacing one human rater with the system keeps agreement with the
-remaining raters (Calderon et al. 2025, `alt_test`). It is not implemented. No command
-computes `human_parity`, and a gate draft with a `human_parity` condition is refused. Its
-parameters (the agreement measure, the default ε and the minimum counts) await D-017.
+remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
+
+- **Per rater.** For each human rater j, on the items j and at least one other human
+  labelled and the system judged, the system and j are each scored by their agreement
+  with the other humans on that item: the share of them with the same label for binary and
+  nominal labels, minus the root-mean-square difference for ordered and score labels.
+  W_sys = 1 when the system's score is at least j's, W_j = 1 when j's is at least the
+  system's; a tie counts for both.
+- **Test.** A one-sided one-sample t-test of d = W_j − W_sys with H0: mean(d) ≥ ε against
+  mean(d) < ε, with n − 1 degrees of freedom. Rejecting H0 means the system wins against
+  j, so the burden of proof is on the system and few items make winning harder. With no
+  spread in d the mean decides alone.
+- **Raters together.** Benjamini-Yekutieli over the tested raters at q = 0.05. The winning
+  rate ω is the share of tested raters the system wins against: `human_parity` when
+  ω ≥ 0.5, `below_human` otherwise. The advantage probability ρ, the mean over raters of
+  mean(W_sys), is reported beside ω for choosing between systems.
+- **Defaults and limits.** ε = 0.1, the paper's value for crowd raters and the strictest of
+  its three (experts 0.2, skilled raters 0.15). A rater sharing fewer than 30 items with
+  other humans is not tested and is listed as skipped; with fewer than two tested raters
+  the verdict is `insufficient_data`. Three or more raters are recommended; with two, each
+  is tested against the other.
+- Reference case: `alt_test`, from scipy's `ttest_1samp` and `false_discovery_control`.
+- No command runs the test yet, and a gate condition on `human_parity` is refused when
+  drafted.
 
 ### 9.5 Human reproducibility
 
