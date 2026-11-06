@@ -101,12 +101,9 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     let mut replaced = Vec::new();
     let mut records_changed = 0;
-    let (mut snapshots, mut read) = (Vec::new(), Vec::new());
     for (old, mut records, prov) in sets {
         let n = content::purge_records(&mut records, &items, &body_ref).map_err(CliError::store)?;
         if n == 0 {
-            snapshots.push(old);
-            read.push(records);
             continue;
         }
         records_changed += n;
@@ -114,8 +111,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
             p.redactions.retain(|r| r.original != body)
         })
         .map_err(CliError::store)?;
-        snapshots.push(r.to);
-        read.push(records);
         doomed.push(old);
         replaced.push(r);
     }
@@ -150,9 +145,6 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, CliError> {
     }
     for p in &reports {
         std::fs::remove_file(p).map_err(|e| io_error(p, &e))?;
-    }
-    if project.cache_path().exists() {
-        project.rebuild_cache(&data::layered(snapshots, read))?;
     }
     Ok(Output::success(envelope))
 }

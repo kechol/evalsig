@@ -6,7 +6,6 @@
       "Edit(./.evalsig/config.toml)",
       "Write(./.evalsig/config.toml)",
       "Bash(evalsig init:*)",
-      "Bash(evalsig rebuild:*)",
       "Bash(evalsig referee:*)",
       "Bash(evalsig preregister approve:*)",
       "Bash(evalsig seal:*)",

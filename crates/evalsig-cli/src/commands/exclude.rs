@@ -129,21 +129,16 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
     store.put(&bytes).map_err(CliError::store)?;
     let mut replaced = Vec::new();
     let mut removed = 0;
-    let (mut snapshots, mut read) = (Vec::new(), Vec::new());
     for (x, mut records) in sets {
         let before = records.len();
         records.retain(|r| item_of(r).is_none_or(|i| !items.contains(i)));
         if records.len() == before {
-            snapshots.push(x.snapshot);
-            read.push(records);
             continue;
         }
         removed += before - records.len();
         let prov = data::provenance_of(&store, &x)?;
         let r = snapshot::replace(&store, x.snapshot, &mut records, prov, |_| {})
             .map_err(CliError::store)?;
-        snapshots.push(r.to);
-        read.push(records);
         replaced.push(r);
     }
     let summary = json!({
@@ -169,9 +164,6 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, CliError> {
         Replacement::outputs(&replaced),
         summary,
     )?;
-    if project.cache_path().exists() {
-        project.rebuild_cache(&data::layered(snapshots, read))?;
-    }
     Ok(Output::success(envelope))
 }
 

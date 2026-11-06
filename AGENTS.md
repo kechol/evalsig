@@ -10,7 +10,7 @@ contributors and to AI coding agents alike.
 | Path | Contents |
 |---|---|
 | `crates/evalsig-core` | Data types, metrics and validity checks. Pure computation, no I/O |
-| `crates/evalsig-store` | Objects, ledgers, SQLite working store, canonicalization and hashing, sealing |
+| `crates/evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing |
 | `crates/evalsig-adapters` | Ingestion adapters (Inspect, promptfoo, declarative mapping) |
 | `crates/evalsig-cli` | The `evalsig` binary, agent output, generated help and Skill |
 | `crates/evalsig-dashboard` | Local web server and SVG rendering |

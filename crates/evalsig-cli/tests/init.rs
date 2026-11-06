@@ -21,7 +21,7 @@ fn init_creates_the_layout_and_a_valid_template() {
     let v = init(dir.path(), &[]);
     assert_eq!(v["schema"], "evalsig.init/1");
     assert_eq!(v["results"]["config"]["state"], "written");
-    for sub in ["objects", "cache", "reports"] {
+    for sub in ["objects", "reports"] {
         assert!(dir.path().join(".evalsig").join(sub).is_dir(), "{sub}");
     }
     let text = std::fs::read_to_string(dir.path().join(".evalsig/config.toml")).unwrap();

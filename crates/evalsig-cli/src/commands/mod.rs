@@ -17,7 +17,6 @@ pub mod migrate;
 pub mod power;
 pub mod preregister;
 pub mod purge;
-pub mod rebuild;
 pub mod recipes;
 pub mod report;
 pub mod schema;

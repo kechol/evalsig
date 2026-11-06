@@ -12,7 +12,7 @@ use crate::exit::Exit;
 pub const DIR: &str = ".evalsig";
 pub const CONFIG: &str = "config.toml";
 pub const LEDGER: &str = "ledger.jsonl";
-pub const SUBDIRS: [&str; 3] = ["objects", "cache", "reports"];
+pub const SUBDIRS: [&str; 2] = ["objects", "reports"];
 
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -44,11 +44,6 @@ impl Project {
         self.dir.join(CONFIG)
     }
 
-    /// The SQLite working copy (derived; `rebuild` recreates it).
-    pub fn cache_path(&self) -> PathBuf {
-        self.dir.join("cache").join("evalsig.db")
-    }
-
     /// Agent-side splits, named by the hash of their validation items.
     pub fn splits_dir(&self) -> PathBuf {
         self.dir.join("splits")
@@ -57,12 +52,6 @@ impl Project {
     /// Saved results, named by their output hash.
     pub fn reports_dir(&self) -> PathBuf {
         self.dir.join("reports")
-    }
-
-    /// Recreate the working copy from the data in force.
-    pub fn rebuild_cache(&self, d: &crate::data::Data) -> Result<(), CliError> {
-        evalsig_store::cache::rebuild(&self.cache_path(), &d.records, &d.snapshots)
-            .map_err(CliError::store)
     }
 
     pub fn ledger_path(&self) -> PathBuf {

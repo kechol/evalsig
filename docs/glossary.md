@@ -150,7 +150,6 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | hash chain / head | `prev`, `ledger anchor` | Each ledger line names the hash of the line before it (`prev`); the head is the last line's hash, which `ledger anchor` prints for keeping elsewhere |
 | actor | `actor`, `EVALSIG_ACTOR` | Who an operation is recorded as in the ledger: `user:<name>` or `agent:<name>` |
 | object | `objects/` | A stored body (snapshot, provenance, content, result) named by the hash of its bytes |
-| working store | `cache/evalsig.db` | A SQLite copy of the data in force, derived from the snapshots; `rebuild` recreates it. Also called the working copy |
 | spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/1`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
 | content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |

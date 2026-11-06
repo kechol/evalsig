@@ -124,8 +124,6 @@ enum Command {
     /// Create a referee home with a new age identity (D-014).
     #[command(subcommand)]
     Referee(RefereeCommand),
-    /// Recreate the SQLite working copy from the canonical snapshots.
-    Rebuild,
     /// The default-tier metrics of one run.
     Report(commands::report::Args),
     /// List the imported runs.
@@ -215,7 +213,6 @@ fn run(cli: &Cli) -> Result<Output, CliError> {
         Command::Power(ref args) => commands::power::power(args),
         Command::Preregister(ref args) => commands::preregister::run(&cli.project, args),
         Command::Purge(ref args) => commands::purge::run(&cli.project, args),
-        Command::Rebuild => commands::rebuild::run(&cli.project),
         Command::Referee(RefereeCommand::Init { ref dir }) => referee::init(dir),
         Command::Report(ref args) => commands::report::run(&cli.project, args),
         Command::Runs => commands::list::runs(&cli.project),

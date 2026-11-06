@@ -14,18 +14,16 @@ model and deployment are in [referee.md](referee.md); the commands and their
 options are in [cli.md](cli.md). Terms follow [glossary.md](glossary.md) and
 decisions are cited as `D-NNN` ([decisions.md](decisions.md)).
 
-## 1. Source of truth and working copy
+## 1. Source of truth
 
 | Layer | Contents | Property |
 |---|---|---|
 | Objects | Snapshots, provenance, configurations and content bodies, each a file named by its hash | Immutable; the only operation that removes one is `purge` |
 | Ledgers | `ledger.jsonl`: an agent-side ledger and a referee ledger (section 4) | Append-only; each line carries the hash of the previous line |
-| Working copy | A SQLite database (D-006) | Derived; `evalsig rebuild` recreates it from the snapshots |
 
-The working copy is not the source of truth because the bytes of a database
-file depend on the engine version and the order of writes, so they cannot be
-hashed stably. Canonical JSON can be defined independently of any library, so
-tools in other languages verify the same hashes.
+Every command reads the data in force from these two layers; there is no
+derived database (D-028). Canonical JSON can be defined independently of any
+library, so tools in other languages verify the same hashes.
 
 ### Canonical bytes (D-005)
 
@@ -62,14 +60,6 @@ tools in other languages verify the same hashes.
 - A set of items (a split, the items a comparison used) is named by the
   BLAKE3 reference of the canonical JSON array of its sorted item IDs (D-022).
 
-### Working copy (D-006)
-
-`.evalsig/cache/evalsig.db` has STRICT tables per record kind plus the list of
-snapshots, triggers that refuse `UPDATE` and `DELETE`, and WAL journaling so
-the dashboard can read while the CLI writes. `evalsig rebuild` builds a new
-database beside the old one from the snapshots the ledger puts in force and
-renames it into place, so a failed rebuild leaves the old copy. Nothing that
-is hashed or verified reads the working copy.
 
 ## 2. Layout
 
@@ -82,7 +72,6 @@ objects/         snapshots, provenance, stored configurations, content bodies
 reports/         saved results, named <output hash>.json
 splits/          dev and validation splits
 drafts/          preregistration drafts
-cache/           working copy (derived; safe to delete)
 ```
 
 The referee's home (D-014), under another authority than the agent's:
@@ -276,8 +265,7 @@ and warns with `secret_in_content`; `--fail-on-secret` makes it stop.
    names the replacements before anything is deleted, so an interrupted purge
    leaves text behind and not data that cannot be loaded.
 3. It deletes the body, its redacted copy if no other record names it, the
-   superseded snapshots and the saved reports that name them, and rebuilds the
-   working copy if one exists.
+   superseded snapshots and the saved reports that name them.
 
 Data loading follows `purge` lines, and importing records that were purged is
 refused. Superseded snapshots remain only as hashes in the ledger. Two
@@ -369,7 +357,7 @@ code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other`;
 | Agent-side ledger | A record of the agent's operations | Proof: the agent can rewrite it |
 | Referee ledger | The same chain, in a place the agent cannot write, with every holdout query, gate result, seal and exclusion | Proof against a referee run with the agent's privileges |
 | `verify` | A saved result recomputes from the stored snapshots and configuration, or the differences are listed | That the ledger is intact, or that an unpurged snapshot is the data the importer meant |
-| Working copy | Nothing: it is rebuilt from the snapshots | |
+
 | Seal | Holdout labels are readable only with the referee's identity, and the sealed file is checkable with the standard age tools | Protection when the agent holds the key, for labels the agent can regenerate, or from a person who can read the plaintext label files before sealing |
 
 Signatures on ledger lines are not implemented.

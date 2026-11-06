@@ -84,15 +84,6 @@ pub enum ContentMode {
     Redact,
 }
 
-/// The working-store engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Engine {
-    /// SQLite (default).
-    #[default]
-    Sqlite,
-}
-
 /// Content storage settings.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -102,8 +93,6 @@ pub struct Store {
     /// Regular expressions whose matches are replaced by `[redacted]` in redact mode.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub redact_patterns: Vec<String>,
-    /// Working-store engine; default `sqlite`.
-    pub engine: Engine,
 }
 
 /// What performance is estimated (metrics spec §6.1).

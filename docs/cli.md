@@ -370,12 +370,6 @@ Create the referee's home: an age identity, the referee ledger and its state
 |---|---|---|---|
 | `<DIR>` (required) |  |  |  |
 
-### `evalsig rebuild`
-
-Recreate the SQLite working copy from the canonical snapshots
-
-No options.
-
 ### `evalsig report`
 
 The default-tier metrics of one run

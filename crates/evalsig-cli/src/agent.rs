@@ -233,7 +233,6 @@ pub const CONTENT_FIELDS: &[(&str, &[&str])] = &[
     ("evalsig.power/1", &[]),
     ("evalsig.preregister/1", &[]),
     ("evalsig.purge/1", &[]),
-    ("evalsig.rebuild/1", &[]),
     ("evalsig.recipes/1", &[]),
     ("evalsig.referee/1", &[]),
     ("evalsig.remaining/1", &[]),

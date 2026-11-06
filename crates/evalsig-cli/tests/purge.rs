@@ -118,7 +118,6 @@ fn purge_removes_the_text_and_keeps_the_ledger_valid() {
         .assert()
         .success();
     std::fs::remove_file(&file).unwrap();
-    evalsig(dir.path()).arg("rebuild").assert().success();
     let before = json(evalsig(dir.path()).args(["report", "r", "--by", "channel"]));
     assert!(!holding(&root, SECRET).is_empty());
 

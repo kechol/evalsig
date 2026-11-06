@@ -362,7 +362,7 @@ an AI agent only reads the draft and asks the person.
 
 A project is a directory with `.evalsig/` (`evalsig init`):
 `config.toml`, `ledger.jsonl` (the agent-side ledger), `objects/` (immutable
-snapshots and bodies), `cache/` (the SQLite working copy), `reports/`, and
+snapshots and bodies), `reports/`, and
 `drafts/` and `splits/` when used. `--project` selects the root.
 
 `config.toml` (D-004) is TOML. Every table rejects unknown keys and suggests the
@@ -372,7 +372,7 @@ canonicalized, so equivalent files hash the same. Tables:
 | Table | Sets |
 |---|---|
 | `[project]` | `name`, the positive definition `positive`, the decision rule `decision`, per-task overrides in `[project.tasks.<task>]` |
-| `[store]` | `content` (`full`, `hash`, `redact`), `redact_patterns`, `engine` (`sqlite`) |
+| `[store]` | `content` (`full`, `hash`, `redact`), `redact_patterns` |
 | `[stats]` | `level` (0.95), `bootstrap` (2000), `seed` (default 0, recorded in every result), `estimand`, `interval` (`auto`, `wilson`, `clopper_pearson`, `jeffreys`, `bootstrap`) |
 | `[missing]` | `worst`, `best` or `drop` per missing reason |
 | `[reference]` | `mode` (`single`, `majority`, `soft`), `rater_design` (`auto`, `nested`, `crossed`) |
@@ -558,7 +558,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 - **Encryption.** The holdout's labels, every revision, are encrypted as an age v1
   file to the referee's X25519 recipient and stored under `sealed/` in the referee
   home. They decrypt with the standard `age` or `rage` tools (D-013). A gate decrypts
-  them in memory; plaintext labels are never written to the working store.
+  them in memory; plaintext labels are never written to disk.
 - **Where it works.** Sealing works when reference labels exist independently of the
   judgment and the agent cannot reproduce them. Items whose references are only from
   models stop a gate; `score` runs have nothing to hide (§8.0).
@@ -724,10 +724,9 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   per RFC 8785 after Unicode NFC, hashed with BLAKE3 as `blake3:<hex>`), bodies stored as
   immutable objects named by the hash of their content, and append-only hash-chained
   ledgers (§8.5). `sha256:` references are also accepted when reading (D-005, D-007).
-- **Working store.** A SQLite database (`.evalsig/cache/evalsig.db`, bundled SQLite) with
-  STRICT tables, triggers that refuse UPDATE and DELETE, and WAL mode so the dashboard can
-  read while the CLI writes. Nothing hashed or verified reads it; `evalsig rebuild`
-  recreates it from the snapshots (D-006).
+- **No derived database.** Commands and the dashboard read the snapshots the ledger puts
+  in force; the dashboard keeps them in memory while the ledger's head is unchanged
+  (D-028).
 - **Large analysis.** `evalsig export --to parquet|csv|jsonl --out <dir>` writes one
   table per record type for tools such as DuckDB, plus per-item report rows on request.
   Exports are derived; verification always runs on the snapshots (D-025).
@@ -782,7 +781,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `preregister`, `gate` | Draft, approve and show conditions; judge a candidate; `gate serve` and `gate submit` (§8.3, §8.5) |
 | `ledger` | Show, verify or anchor a ledger |
 | `verify` | Recompute a saved result |
-| `rebuild` | Recreate the working store from the snapshots |
+
 | `migrate` | Raise the record format of snapshots |
 | `export` | Write Parquet, CSV or canonical JSONL |
 | `purge` | Remove a body and the free-text fields that name it |
@@ -894,13 +893,13 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | Crate | Contents | Main dependencies |
 |---|---|---|
 | `evalsig-core` | Data types, metrics, validity checks. Pure computation, no I/O | statrs, rand_chacha |
-| `evalsig-store` | Objects, ledgers, SQLite working store, canonicalization and hashing, sealing | rusqlite (bundled), blake3, ruzstd, age |
-| `evalsig-adapters` | Ingestion adapters, probe, draft and test of mappings | zip (Deflate only), ruzstd |
+| `evalsig-store` | Objects, ledgers, canonicalization and hashing, sealing | blake3, ruzstd, age |
+| `evalsig-adapters` | Ingestion adapters, probe, draft and test of mappings | zip (Deflate only), ruzstd, rusqlite (bundled, promptfoo databases) |
 | `evalsig-cli` | The `evalsig` binary, agent output, generated help and Skill | clap, jsonschema, parquet |
 | `evalsig-dashboard` | Local web server and SVG rendering | standard library, serde_json |
 
 Dependencies point inwards (D-001). No C code is built into the binary except the
-bundled SQLite (D-006, D-010): Zstandard entries of an Inspect log are taken raw from
+bundled SQLite that reads promptfoo databases (D-010, D-028): Zstandard entries of an Inspect log are taken raw from
 the zip and decompressed with `ruzstd`.
 
 - **Limits on untrusted files.** Readers stop at a limit, so an archive bomb costs at
