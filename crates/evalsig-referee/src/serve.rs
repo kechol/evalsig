@@ -168,8 +168,8 @@ fn listen_socket(path: &Path) -> Result<std::os::unix::net::UnixListener, Error>
 /// The bearer token in the referee home, created (mode 0600) on first use.
 fn token(referee: &Referee) -> Result<String, Error> {
     let p = referee.path(TOKEN);
-    if let Ok(t) = std::fs::read_to_string(&p) {
-        return Ok(t.trim().to_owned());
+    if let Ok(t) = read_token(&p) {
+        return Ok(t);
     }
     let t = evalsig_store::seal::random_token();
     crate::home::write_private(&p, format!("{t}\n").as_bytes())?;
@@ -305,12 +305,14 @@ pub fn submit(request: &Request, to: &Destination) -> Result<Output, Error> {
     Ok(Output { envelope, exit })
 }
 
+/// A bearer token file's token, without its surrounding whitespace.
+fn read_token(path: &Path) -> std::io::Result<String> {
+    Ok(std::fs::read_to_string(path)?.trim().to_owned())
+}
+
 fn token_for(token_file: Option<&Path>) -> Result<String, Error> {
     match token_file {
-        Some(p) => Ok(std::fs::read_to_string(p)
-            .map_err(|e| io_error(p, &e))?
-            .trim()
-            .to_owned()),
+        Some(p) => read_token(p).map_err(|e| io_error(p, &e)),
         None => std::env::var("EVALSIG_GATE_TOKEN")
             .map_err(|_| Error::usage("--url needs --token-file or EVALSIG_GATE_TOKEN")),
     }

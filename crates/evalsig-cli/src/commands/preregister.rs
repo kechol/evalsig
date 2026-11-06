@@ -76,10 +76,15 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
         ),
         (_, Some(Action::Show { approved, referee })) => {
             let r = Referee::open(referee.as_deref())?;
-            let doc = approve::load(&r, approved)?;
+            let approve::Approved {
+                mut conditions,
+                resolved,
+            } = approve::load(&r, approved)?;
+            // As the approved file holds them, resolved section included.
+            conditions.resolved = Some(resolved);
             Ok(Output::success(Envelope::new(
                 Schema::Preregister,
-                json!({ "approved": approved, "conditions": doc.conditions }),
+                json!({ "approved": approved, "conditions": conditions }),
             )))
         }
         (Some(_), None) if agent && !args.yes => Err(Error::usage(

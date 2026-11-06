@@ -146,16 +146,10 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         &project,
         (&args.approved, &approved),
         &entries,
-        &held,
+        held,
     )?;
 
-    let used = entries
-        .iter()
-        .filter(|e| {
-            e.kind == Kind::HoldoutAccess
-                && e.summary.get("holdout").and_then(Value::as_str) == Some(holdout.as_str())
-        })
-        .count() as u64;
+    let used = Referee::accesses(&entries, &holdout);
     if used >= budget {
         let envelope = answer_envelope(
             &args.approved,
@@ -277,7 +271,7 @@ fn referee_state(
     project: &Project,
     (approved_hash, approved): (&str, &Approved),
     entries: &[evalsig_store::ledger::Entry],
-    held: &BTreeSet<String>,
+    held: BTreeSet<String>,
 ) -> Result<RefereeState, Error> {
     let r = &approved.resolved;
     let stale = |what: &str| {
@@ -288,7 +282,7 @@ fn referee_state(
         )
     };
     let d = data::load(project)?;
-    if approve::holdout_items_hash(&d, held)? != r.holdout_items_hash {
+    if approve::holdout_items_hash(&d, &held)? != r.holdout_items_hash {
         return Err(stale("the holdout's items or their attributes changed"));
     }
     if let Some(b) = approved.conditions.compare.baseline.as_deref()
@@ -345,7 +339,7 @@ fn referee_state(
     };
     Ok(RefereeState {
         d,
-        held: held.clone(),
+        held,
         labels,
         best,
     })

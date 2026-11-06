@@ -92,26 +92,21 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
         )));
     }
     let d = data::load(&project)?;
-    let mapping_hash = match &args.mapping {
-        Some(p) => {
-            Some(ContentHash::blake3(&std::fs::read(p).map_err(|e| io_error(p, &e))?).to_string())
-        }
-        None => None,
-    };
+    let mapping_hash = args
+        .mapping
+        .as_deref()
+        .map(|p| -> Result<String, Error> {
+            let bytes = std::fs::read(p).map_err(|e| io_error(p, &e))?;
+            Ok(ContentHash::blake3(&bytes).to_string())
+        })
+        .transpose()?;
     let pins = Pins {
         split_entry: split.hash.clone(),
         seal_entry: seal.hash.clone(),
         holdout: args.holdout.clone(),
         holdout_items_hash: holdout_items_hash(&d, &held)?,
         mapping_hash,
-        holdout_access_so_far: entries
-            .iter()
-            .filter(|e| {
-                e.kind == Kind::HoldoutAccess
-                    && e.summary.get("holdout").and_then(Value::as_str)
-                        == Some(args.holdout.as_str())
-            })
-            .count() as u64,
+        holdout_access_so_far: Referee::accesses(&entries, &args.holdout),
     };
     let approval = Approval {
         doc: &doc,
@@ -331,102 +326,7 @@ impl Approval<'_> {
             false,
         )))
     }
-}
 
-/// The baseline's records, canonical and sorted, by hash.
-pub fn baseline_hash(d: &Data, run: &str) -> Result<String, Error> {
-    evalsig_project::data::records_hash(run_records(&d.records, run))
-}
-
-/// The records of one run: the run and its judgments.
-pub fn run_records<'a>(
-    records: &'a [Record],
-    run: &'a str,
-) -> impl Iterator<Item = &'a Record> + 'a {
-    records.iter().filter(move |r| match r {
-        Record::Run(x) => x.run_id == run,
-        Record::Judgment(j) => j.run_id == run,
-        _ => false,
-    })
-}
-
-/// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
-pub fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, Error> {
-    let items: Vec<Value> = d
-        .items()
-        .into_iter()
-        .filter(|(id, _)| held.contains(*id))
-        .map(|(_, i)| {
-            json!({
-                "item_id": i.item_id,
-                "weight": i.weight,
-                "cluster": i.cluster,
-                "strata": i.strata,
-                "label_inclusion_prob": i.label_inclusion_prob,
-                "input_ref": i.input_ref,
-            })
-        })
-        .collect();
-    canonical_hash(&json!(items))
-}
-
-/// Holdout labels by source, so the approver sees whether people or models made them.
-fn label_provenance(d: &Data, held: &BTreeSet<String>) -> BTreeMap<String, usize> {
-    let mut out = BTreeMap::new();
-    for r in &d.records {
-        if let Record::Label(l) = r
-            && held.contains(&l.item_id)
-        {
-            *out.entry(json!(l.source).as_str().unwrap_or("?").to_owned())
-                .or_insert(0) += 1;
-        }
-    }
-    out
-}
-
-/// `preregister show <approved>`: the approved conditions as gate reads them, checked
-/// against their hash.
-pub fn load(referee: &Referee, approved: &str) -> Result<Approved, Error> {
-    // The hash names a file, and gate serve takes it from the network: only a well-formed
-    // BLAKE3 reference may reach the path.
-    if !approved
-        .parse::<ContentHash>()
-        .is_ok_and(|h| h.to_string().starts_with("blake3:"))
-    {
-        return Err(Error::usage(format!(
-            "{approved:?} is not an approved hash (blake3:<64 hex>)"
-        )));
-    }
-    let path = referee.file("approved", approved, "toml");
-    let text = std::fs::read_to_string(&path)
-        .map_err(|_| Error::usage(format!("no approved conditions {approved}")))?;
-    let doc: Conditions = toml::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
-    if canonical_hash(&doc.to_json())? != approved {
-        return Err(Error::invalid_conditions(format!(
-            "{} was changed after approval",
-            path.display()
-        )));
-    }
-    let resolved = doc.resolved.clone().ok_or_else(|| {
-        Error::invalid_conditions(format!(
-            "{} has no resolved settings; approve the conditions again",
-            path.display()
-        ))
-    })?;
-    Ok(Approved {
-        conditions: doc,
-        resolved,
-    })
-}
-
-/// Approved conditions with the settings approval resolved.
-#[derive(Debug, Clone)]
-pub struct Approved {
-    pub conditions: Conditions,
-    pub resolved: Resolved,
-}
-
-impl Approval<'_> {
     /// The settings a baseline is read with at approval, as the gate will read it.
     fn baseline_settings(
         &self,
@@ -518,4 +418,97 @@ impl Approval<'_> {
             first_best,
         }))
     }
+}
+
+/// The baseline's records, canonical and sorted, by hash.
+pub fn baseline_hash(d: &Data, run: &str) -> Result<String, Error> {
+    evalsig_project::data::records_hash(run_records(&d.records, run))
+}
+
+/// The records of one run: the run and its judgments.
+pub fn run_records<'a>(
+    records: &'a [Record],
+    run: &'a str,
+) -> impl Iterator<Item = &'a Record> + 'a {
+    records.iter().filter(move |r| match r {
+        Record::Run(x) => x.run_id == run,
+        Record::Judgment(j) => j.run_id == run,
+        _ => false,
+    })
+}
+
+/// The holdout items' IDs and the attributes a candidate could rewrite (SPEC §8.3).
+pub fn holdout_items_hash(d: &Data, held: &BTreeSet<String>) -> Result<String, Error> {
+    let items: Vec<Value> = d
+        .items()
+        .into_iter()
+        .filter(|(id, _)| held.contains(*id))
+        .map(|(_, i)| {
+            json!({
+                "item_id": i.item_id,
+                "weight": i.weight,
+                "cluster": i.cluster,
+                "strata": i.strata,
+                "label_inclusion_prob": i.label_inclusion_prob,
+                "input_ref": i.input_ref,
+            })
+        })
+        .collect();
+    canonical_hash(&json!(items))
+}
+
+/// Holdout labels by source, so the approver sees whether people or models made them.
+fn label_provenance(d: &Data, held: &BTreeSet<String>) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for r in &d.records {
+        if let Record::Label(l) = r
+            && held.contains(&l.item_id)
+        {
+            *out.entry(json!(l.source).as_str().unwrap_or("?").to_owned())
+                .or_insert(0) += 1;
+        }
+    }
+    out
+}
+
+/// `preregister show <approved>`: the approved conditions as gate reads them, checked
+/// against their hash.
+pub fn load(referee: &Referee, approved: &str) -> Result<Approved, Error> {
+    // The hash names a file, and gate serve takes it from the network: only a well-formed
+    // BLAKE3 reference may reach the path.
+    if !approved
+        .parse::<ContentHash>()
+        .is_ok_and(|h| h.to_string().starts_with("blake3:"))
+    {
+        return Err(Error::usage(format!(
+            "{approved:?} is not an approved hash (blake3:<64 hex>)"
+        )));
+    }
+    let path = referee.file("approved", approved, "toml");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| Error::usage(format!("no approved conditions {approved}")))?;
+    let mut doc: Conditions = toml::from_str(&text).map_err(|e| Error::invalid_input(&path, e))?;
+    if canonical_hash(&doc.to_json())? != approved {
+        return Err(Error::invalid_conditions(format!(
+            "{} was changed after approval",
+            path.display()
+        )));
+    }
+    let resolved = doc.resolved.take().ok_or_else(|| {
+        Error::invalid_conditions(format!(
+            "{} has no resolved settings; approve the conditions again",
+            path.display()
+        ))
+    })?;
+    Ok(Approved {
+        conditions: doc,
+        resolved,
+    })
+}
+
+/// Approved conditions, and apart from them the settings approval resolved.
+#[derive(Debug, Clone)]
+pub struct Approved {
+    pub conditions: Conditions,
+    pub resolved: Resolved,
 }

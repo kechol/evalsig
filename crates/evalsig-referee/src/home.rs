@@ -243,6 +243,17 @@ impl Referee {
         self.dir.join(LEDGER)
     }
 
+    /// How many submissions the ledger counts against a holdout.
+    pub fn accesses(entries: &[Entry], holdout: &str) -> u64 {
+        entries
+            .iter()
+            .filter(|e| {
+                e.kind == Kind::HoldoutAccess
+                    && e.summary.get("holdout").and_then(Value::as_str) == Some(holdout)
+            })
+            .count() as u64
+    }
+
     pub fn entries(&self) -> Result<Vec<Entry>, Error> {
         if !self.ledger_path().exists() {
             return Ok(Vec::new());
