@@ -336,9 +336,10 @@ fn approval_fixes_the_ladder_step_and_refuses_a_finer_one() {
         .arg(w.home.path())
         .output()
         .unwrap();
+    // D-015: a usage error.
     assert_eq!(
         out.status.code(),
-        Some(3),
+        Some(64),
         "{}",
         String::from_utf8_lossy(&out.stdout)
     );

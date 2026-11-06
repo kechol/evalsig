@@ -182,6 +182,12 @@ pub fn approve(root: &Path, args: &ApproveArgs) -> Result<Output, CliError> {
     );
     envelope.provenance.ledger = Some("referee".into());
     envelope.provenance.snapshots = d.snapshot_ids();
+    if doc["resolved"]["ladder"].is_null() {
+        envelope.warnings.push(Warning {
+            code: "ladder_unavailable".into(),
+            message: "no Ladder step could be fixed (no baseline, or the first condition's metric has no value on both sides of the holdout); the gate will return verdicts only".into(),
+        });
+    }
     if let Some(p) = resolved.power.filter(|p| *p < 0.5) {
         envelope.warnings.push(Warning {
             code: "low_power_at_hypothesis".into(),
@@ -450,7 +456,10 @@ fn baseline_settings(
             .to_owned(),
         positive,
         decision,
-        estimand: config.stats.estimand,
+        estimand: doc["estimand"]
+            .as_str()
+            .and_then(|e| e.parse().ok())
+            .unwrap_or(config.stats.estimand),
         missing: config.missing_policy(),
         reference: config.reference.mode,
         rater_design: config.reference.rater_design,
@@ -473,7 +482,6 @@ fn baseline_settings(
 /// holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), e_val the baseline's error outside
 /// the holdout; the first best is the baseline on the holdout. None when there is no
 /// baseline or the metric is not one a report gives.
-#[allow(clippy::too_many_arguments)]
 fn ladder(
     doc: &Value,
     config: &Config,
@@ -486,7 +494,11 @@ fn ladder(
     let metric = doc["conditions"][0]["metric"].as_str().unwrap_or_default();
     let (all, _) = d.labels(None)?;
     let labels: Vec<&Label> = all.iter().collect();
-    let settings = baseline_settings(doc, config, positive, decision);
+    // On the holdout every missing value is the worst, as the gate will count it.
+    let settings = report::Settings {
+        missing: evalsig_core::missing::MissingPolicy::holdout(),
+        ..baseline_settings(doc, config, positive, decision)
+    };
     let items = d.items();
     // The metric's value, its denominator and its direction, on or off the holdout.
     let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, CliError> {
@@ -512,8 +524,9 @@ fn ladder(
     let k = doc["holdout"]["ladder_k"].as_f64().unwrap_or(2.0);
     let automatic = gate::ladder_step(k, psi, n);
     let step = match doc["holdout"]["ladder_step"].as_f64() {
-        Some(s) if s < automatic => {
-            return Err(rejected(format!(
+        // A step printed at six decimals and copied back is the automatic one.
+        Some(s) if s < automatic - 1e-6 => {
+            return Err(CliError::usage(format!(
                 "ladder_step {s} is below the automatic step {automatic:.6}; a finer step would return more than the holdout can tell"
             )));
         }

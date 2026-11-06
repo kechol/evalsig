@@ -315,17 +315,15 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         }
     };
     let new_best = answer.ladder.take();
-    if let Some(b) = &new_best {
-        crate::referee::replace_private(&best_path(referee, &args.approved), b.records.as_bytes())?;
-    }
     let ladder_value = new_best
         .as_ref()
         .and_then(|b| b.shown["value"].as_f64())
         .map(|v| format!("{v:.6}"));
     let mut envelope = answer_envelope(&args.approved, &args.candidate, answer, (budget, used));
-    if let Some(b) = new_best {
+    let best_records = new_best.map(|b| {
         envelope.results["ladder"] = b.shown;
-    }
+        b.records
+    });
     gate_line(
         json!(envelope.verdict.as_ref().map(|v| v.code)),
         json!(
@@ -348,6 +346,11 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         serde_json::to_string_pretty(&envelope).expect("envelope serializes"),
     )
     .map_err(|e| io_error(&result_path, &e))?;
+    // The best moves only once the gate line and the result are written, so a failure
+    // before that leaves the earlier best in place.
+    if let Some(records) = best_records {
+        crate::referee::replace_private(&best_path(referee, &args.approved), records.as_bytes())?;
+    }
     Ok(Output { envelope, exit })
 }
 
@@ -864,11 +867,7 @@ fn evidence(
     items: &BTreeMap<&str, &Item>,
     labels: &[&Label],
 ) -> Result<Option<Evidence>, CliError> {
-    let cand_j: Vec<&Judgment> = judgments
-        .iter()
-        .copied()
-        .filter(|j| items.contains_key(j.item_id.as_str()))
-        .collect();
+    let cand_j = on_holdout(judgments, items);
     if metric == "missing_rate" {
         // Every missing judgment counts, whatever its reason (SPEC §8.3).
         let missing = cand_j.iter().filter(|j| j.missing.is_some()).count() as u64;

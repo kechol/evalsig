@@ -581,7 +581,9 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
 - **Where it runs.** `agree --parity --run <run>` tests that run against the human raters;
   the verdict is the envelope's, and the setting `agree.parity_epsilon` changes ε. A run
   with a decision rule is compared on decisions (positive when most of its replicates
-  are), with the labels' positive definition; a run without one, on its values. With two
+  are), with the labels' positive definition; a run without one, on its values. A missing
+  judgment that the missing policy counts as the worst agrees with no human (in a gate,
+  every missing judgment). With two
   tested raters the output warns `two_human_raters`. In a gate, a `human_parity` condition
   with the rule `pass` runs the test on the holdout's items against the sealed human
   labels, with its `value` as ε (fixed at approval from `agree.parity_epsilon` when left
@@ -753,10 +755,12 @@ a step η, and rounds the value to a multiple of η toward the baseline (D-015).
 fixes the step and the first best on the primary condition's metric (the first
 condition): η = max(k·√(ψ̂/n), 1/n) with k = `ladder_k` (2 by default, at least 1), n the
 metric's denominator on the holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), e_val the
-baseline's error outside the holdout; e_val = 0.1 and n = 300 give η ≈ 0.052. A
-`ladder_step` below the automatic η fails approval. The first best is the baseline on the
-holdout, which spends no budget. Without a baseline, or for a metric a report does not
-give, there is no step and no value is ever returned.
+baseline's error outside the holdout; e_val = 0.1 and n = 300 give η ≈ 0.052. These are
+read with every missing value the worst, as the gate reads the holdout. A `ladder_step`
+below the automatic η is a usage error. The first best is the baseline on the holdout,
+which spends no budget. Without a baseline, or for a metric with no value on both sides of
+the holdout, there is no step, approval warns `ladder_unavailable`, and no value is ever
+returned.
 
 - **A new best.** A submission beats the best so far when the lower bound of its paired
   difference to the best on the primary metric, one-sided at α/B, is above 0 and the

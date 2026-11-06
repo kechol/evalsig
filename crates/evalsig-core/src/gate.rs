@@ -181,13 +181,15 @@ pub fn ladder_step(k: f64, psi: f64, n: f64) -> f64 {
 /// A value rounded to a multiple of `step` toward `baseline`, so that rounding never
 /// makes the candidate look better than it is.
 pub fn round_toward(value: f64, baseline: f64, step: f64) -> f64 {
+    // A value on the grid stays there whatever the last bit of the division says.
+    const TOLERANCE: f64 = 1e-9;
     let k = value / step;
     let k = if value >= baseline {
-        k.floor()
+        (k + TOLERANCE).floor()
     } else {
-        k.ceil()
+        (k - TOLERANCE).ceil()
     };
-    k * step
+    (k * step * 1e10).round() / 1e10
 }
 
 #[cfg(test)]
@@ -213,6 +215,9 @@ mod tests {
         assert!((round_toward(0.912, 0.80, 0.05) - 0.90).abs() < 1e-12);
         // A difference rounds toward 0.
         assert!((round_toward(-0.07, 0.0, 0.05) + 0.05).abs() < 1e-12);
+        // A value on the grid keeps its step, and the result carries no float noise.
+        assert_eq!(round_toward(0.3, 0.0, 0.1), 0.3);
+        assert_eq!(round_toward(0.85, 0.5, 0.05), 0.85);
     }
 
     #[test]

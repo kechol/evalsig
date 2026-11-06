@@ -1264,6 +1264,21 @@ impl Prepared<'_> {
             .collect()
     }
 
+    /// Items with a missing judgment that the missing policy counts as the worst.
+    pub fn missing_worst(&self) -> BTreeSet<String> {
+        self.units
+            .iter()
+            .filter(|u| {
+                u.replicates.iter().any(|r| {
+                    r.is_err_and(|reason| {
+                        self.settings.missing.policy(reason) == crate::missing::Policy::Worst
+                    })
+                })
+            })
+            .map(|u| u.item_id.clone())
+            .collect()
+    }
+
     /// Each item's judged value under the missing policy and its reference share.
     pub fn judged(&self) -> BTreeMap<String, (f64, Option<f64>)> {
         let calc = self.calc();

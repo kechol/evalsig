@@ -112,12 +112,22 @@ pub fn of_run(prepared: &Prepared<'_>, labels: &[&Label], epsilon: f64, q: f64) 
                 .insert(l.item_id.clone(), v);
         }
     }
+    // A missing judgment the policy counts as the worst agrees with nobody: infinity
+    // matches no label and is farthest from every value.
+    let worst = prepared.missing_worst();
     let system = prepared
         .judged()
         .into_iter()
-        .map(|(item, (v, _))| match scale {
-            Scale::Nominal => (item, f64::from(u8::from(v >= 0.5))),
-            Scale::Graded => (item, v),
+        .map(|(item, (v, _))| {
+            let v = if worst.contains(&item) {
+                f64::INFINITY
+            } else {
+                match scale {
+                    Scale::Nominal => f64::from(u8::from(v >= 0.5)),
+                    Scale::Graded => v,
+                }
+            };
+            (item, v)
         })
         .collect();
     test(&humans, &system, scale, epsilon, q)
@@ -254,6 +264,30 @@ fn benjamini_yekutieli(p: &[f64]) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn infinity_agrees_with_nobody_on_either_scale() {
+        // The raters agree, so each one's agreement with the others is 1.
+        let others = [1.0, 1.0, 1.0];
+        let humans: BTreeMap<String, BTreeMap<String, f64>> = ["a", "b", "c"]
+            .iter()
+            .zip(others)
+            .map(|(r, v)| {
+                (
+                    (*r).to_owned(),
+                    (0..40).map(|i| (format!("i{i}"), v)).collect(),
+                )
+            })
+            .collect();
+        // A system whose every judgment is missing loses to each rater on every item.
+        let system: BTreeMap<String, f64> =
+            (0..40).map(|i| (format!("i{i}"), f64::INFINITY)).collect();
+        for scale in [Scale::Nominal, Scale::Graded] {
+            let p = test(&humans, &system, scale, EPSILON, Q);
+            assert_eq!(p.verdict, ParityVerdict::BelowHuman, "{scale:?}");
+            assert!(p.tested.iter().all(|t| !t.system_wins), "{scale:?}");
+        }
+    }
 
     #[test]
     fn adjustment_keeps_order_and_caps_at_one() {

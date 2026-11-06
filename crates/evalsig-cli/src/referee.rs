@@ -78,6 +78,10 @@ pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
         _ => {}
     }
     write_private(&tmp, bytes)?;
+    // On disk before it replaces the old file, so a crash cannot leave a short one.
+    std::fs::File::open(&tmp)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| io_error(&tmp, &e))?;
     std::fs::rename(&tmp, path).map_err(|e| io_error(path, &e))
 }
 
