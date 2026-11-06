@@ -7,7 +7,9 @@ use crate::Error;
 use crate::envelope::{Envelope, Output, Schema, VerdictCode};
 use crate::exit::Exit;
 
-pub const GLOSSARY: &str = include_str!("../../../docs/glossary.md");
+/// `docs/glossary.md`, copied into the crate so a packaged crate builds; a test keeps
+/// the copy equal to it.
+pub const GLOSSARY: &str = include_str!("../glossary.md");
 
 /// The glossary rows whose identifiers include `name`: (section, term, identifiers,
 /// meaning).
@@ -76,4 +78,27 @@ pub fn run(name: &str) -> Result<Output, Error> {
         Schema::Explain,
         json!({ "name": name, "matches": matches }),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `EVALSIG_UPDATE_DOCS=1` copies docs/glossary.md over the crate's copy.
+    #[test]
+    fn the_embedded_glossary_is_docs_glossary() {
+        let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/glossary.md");
+        // A packaged crate has no docs/ beside it.
+        let Ok(text) = std::fs::read_to_string(docs) else {
+            return;
+        };
+        if std::env::var_os("EVALSIG_UPDATE_DOCS").is_some() {
+            std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/glossary.md"), &text).unwrap();
+            return;
+        }
+        assert!(
+            text == GLOSSARY,
+            "docs/glossary.md changed; run with EVALSIG_UPDATE_DOCS=1 to copy it into the crate"
+        );
+    }
 }

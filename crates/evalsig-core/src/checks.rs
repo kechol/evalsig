@@ -37,9 +37,6 @@ pub struct CheckSpec {
     pub override_flag: Option<&'static str>,
     /// What `gate` does instead, when it differs from the default.
     pub gate: Option<&'static str>,
-    /// The maintainers' planning task that implements the check (not published).
-    #[serde(skip)]
-    pub delivered_by: &'static str,
 }
 
 const fn spec(
@@ -48,7 +45,6 @@ const fn spec(
     default: Action,
     override_flag: Option<&'static str>,
     gate: Option<&'static str>,
-    delivered_by: &'static str,
 ) -> CheckSpec {
     CheckSpec {
         code,
@@ -56,7 +52,6 @@ const fn spec(
         default,
         override_flag,
         gate,
-        delivered_by,
     }
 }
 
@@ -69,7 +64,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Always,
         None,
         None,
-        "T-038",
     ),
     spec(
         "unexplained_missing",
@@ -77,7 +71,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         Some("--allow-unexplained-missing"),
         Some("stop"),
-        "T-039",
     ),
     spec(
         "mixed_grader",
@@ -85,7 +78,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         Some("--allow-mixed-grader"),
         Some("stop (exit 3)"),
-        "T-039",
     ),
     spec(
         "unpaired_items",
@@ -95,7 +87,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Some(
             "a candidate that leaves holdout items out is refused (exit 3) before any budget is spent",
         ),
-        "T-039",
     ),
     spec(
         "input_changed",
@@ -103,7 +94,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Exclude,
         Some("--allow-input-change"),
         Some("stop"),
-        "T-039",
     ),
     spec(
         "missing_rate_differs",
@@ -111,7 +101,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-039",
     ),
     spec(
         "replicates_as_independent",
@@ -119,7 +108,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Forbidden,
         None,
         None,
-        "T-038",
     ),
     spec(
         "mixed_output_type",
@@ -127,7 +115,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         None,
         Some("stop (exit 3)"),
-        "T-039",
     ),
     spec(
         "identical_replicates",
@@ -135,7 +122,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         Some("stop"),
-        "T-039",
     ),
     spec(
         "run_variance_exceeds_delta",
@@ -143,7 +129,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-039",
     ),
     spec(
         "split_crosses_cluster",
@@ -151,7 +136,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         None,
         None,
-        "T-083",
     ),
     spec(
         "verification_bias_suspected",
@@ -159,7 +143,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-039",
     ),
     spec(
         "position_bias",
@@ -167,7 +150,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-058",
     ),
     spec(
         "no_swapped_pairs",
@@ -175,7 +157,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-058",
     ),
     spec(
         "comparison_graph_disconnected",
@@ -183,7 +164,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-058",
     ),
     spec(
         "latent_reference_unidentified",
@@ -191,7 +171,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-055",
     ),
     spec(
         "adjudication_in_agreement",
@@ -199,7 +178,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Forbidden,
         None,
         None,
-        "T-039",
     ),
     spec(
         "gate_min_items",
@@ -207,7 +185,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         None,
         Some("exit 4"),
-        "T-125",
     ),
     spec(
         "conditions_not_approved",
@@ -215,7 +192,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         None,
         Some("exit 3; draft again and get approval"),
-        "T-086",
     ),
     spec(
         "budget_exhausted",
@@ -223,7 +199,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Stop,
         None,
         Some("exit 2"),
-        "T-125",
     ),
     spec(
         "model_only_holdout_reference",
@@ -231,7 +206,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Report,
         None,
         Some("stop"),
-        "T-125",
     ),
     spec(
         "secret_in_content",
@@ -239,7 +213,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         Some("--fail-on-secret"),
         None,
-        "T-039",
     ),
     spec(
         "model_derived_reference",
@@ -247,7 +220,6 @@ pub const CHECKS: [CheckSpec; 23] = [
         Action::Warn,
         None,
         None,
-        "T-039",
     ),
 ];
 
@@ -344,80 +316,48 @@ mod tests {
     use super::*;
 
     /// SPEC §7 row by row, with metrics spec §10's check after the pairwise ones: code,
-    /// default action, override flag, delivering task.
-    const EXPECTED: [(&str, Action, Option<&str>, &str); 23] = [
-        ("missing_counted", Action::Always, None, "T-038"),
+    /// default action, override flag.
+    const EXPECTED: [(&str, Action, Option<&str>); 23] = [
+        ("missing_counted", Action::Always, None),
         (
             "unexplained_missing",
             Action::Stop,
             Some("--allow-unexplained-missing"),
-            "T-039",
         ),
-        (
-            "mixed_grader",
-            Action::Stop,
-            Some("--allow-mixed-grader"),
-            "T-039",
-        ),
-        ("unpaired_items", Action::Report, None, "T-039"),
+        ("mixed_grader", Action::Stop, Some("--allow-mixed-grader")),
+        ("unpaired_items", Action::Report, None),
         (
             "input_changed",
             Action::Exclude,
             Some("--allow-input-change"),
-            "T-039",
         ),
-        ("missing_rate_differs", Action::Warn, None, "T-039"),
-        (
-            "replicates_as_independent",
-            Action::Forbidden,
-            None,
-            "T-038",
-        ),
-        ("mixed_output_type", Action::Stop, None, "T-039"),
-        ("identical_replicates", Action::Warn, None, "T-039"),
-        ("run_variance_exceeds_delta", Action::Warn, None, "T-039"),
-        ("split_crosses_cluster", Action::Stop, None, "T-083"),
-        ("verification_bias_suspected", Action::Warn, None, "T-039"),
-        ("position_bias", Action::Warn, None, "T-058"),
-        ("no_swapped_pairs", Action::Warn, None, "T-058"),
-        ("comparison_graph_disconnected", Action::Warn, None, "T-058"),
-        ("latent_reference_unidentified", Action::Warn, None, "T-055"),
-        (
-            "adjudication_in_agreement",
-            Action::Forbidden,
-            None,
-            "T-039",
-        ),
-        ("gate_min_items", Action::Stop, None, "T-125"),
-        ("conditions_not_approved", Action::Stop, None, "T-086"),
-        ("budget_exhausted", Action::Stop, None, "T-125"),
-        (
-            "model_only_holdout_reference",
-            Action::Report,
-            None,
-            "T-125",
-        ),
-        (
-            "secret_in_content",
-            Action::Warn,
-            Some("--fail-on-secret"),
-            "T-039",
-        ),
-        ("model_derived_reference", Action::Warn, None, "T-039"),
+        ("missing_rate_differs", Action::Warn, None),
+        ("replicates_as_independent", Action::Forbidden, None),
+        ("mixed_output_type", Action::Stop, None),
+        ("identical_replicates", Action::Warn, None),
+        ("run_variance_exceeds_delta", Action::Warn, None),
+        ("split_crosses_cluster", Action::Stop, None),
+        ("verification_bias_suspected", Action::Warn, None),
+        ("position_bias", Action::Warn, None),
+        ("no_swapped_pairs", Action::Warn, None),
+        ("comparison_graph_disconnected", Action::Warn, None),
+        ("latent_reference_unidentified", Action::Warn, None),
+        ("adjudication_in_agreement", Action::Forbidden, None),
+        ("gate_min_items", Action::Stop, None),
+        ("conditions_not_approved", Action::Stop, None),
+        ("budget_exhausted", Action::Stop, None),
+        ("model_only_holdout_reference", Action::Report, None),
+        ("secret_in_content", Action::Warn, Some("--fail-on-secret")),
+        ("model_derived_reference", Action::Warn, None),
     ];
 
     #[test]
-    fn every_spec_check_is_registered_with_its_default_override_and_task() {
+    fn every_spec_check_is_registered_with_its_default_and_override() {
         assert_eq!(CHECKS.len(), EXPECTED.len());
-        for (spec, (code, action, flag, task)) in CHECKS.iter().zip(EXPECTED) {
+        for (spec, (code, action, flag)) in CHECKS.iter().zip(EXPECTED) {
             assert_eq!(
-                (
-                    spec.code,
-                    spec.default,
-                    spec.override_flag,
-                    spec.delivered_by
-                ),
-                (code, action, flag, task)
+                (spec.code, spec.default, spec.override_flag),
+                (code, action, flag)
             );
         }
         let mut codes: Vec<_> = CHECKS.iter().map(|c| c.code).collect();
