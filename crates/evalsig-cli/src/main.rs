@@ -320,10 +320,32 @@ fn requested_format(args: &[std::ffi::OsString]) -> Format {
     Format::Text
 }
 
-fn report_error(err: &Error, format: Format) -> ExitCode {
-    let text = match format {
-        Format::Json => err.to_json(),
-        _ => err.to_text(),
+/// How an error reaches standard error.
+#[derive(Clone, Copy)]
+enum ErrorStyle {
+    /// Agent mode: compact JSON, quoted values withheld unless content was asked for.
+    Agent {
+        include_content: bool,
+    },
+    Json,
+    Text,
+}
+
+impl ErrorStyle {
+    fn of(agent: bool, include_content: bool, json: bool) -> Self {
+        match (agent, json) {
+            (true, _) => ErrorStyle::Agent { include_content },
+            (false, true) => ErrorStyle::Json,
+            (false, false) => ErrorStyle::Text,
+        }
+    }
+}
+
+fn emit_error(err: &Error, style: ErrorStyle) -> ExitCode {
+    let text = match style {
+        ErrorStyle::Agent { include_content } => agent::error_json(err, include_content),
+        ErrorStyle::Json => err.to_json(),
+        ErrorStyle::Text => err.to_text(),
     };
     let _ = std::io::stderr().write_all(text.as_bytes());
     ExitCode::from(err.exit.code())
@@ -355,23 +377,25 @@ fn main() -> ExitCode {
                 requested_format_given(&args),
                 std::io::stdout().is_terminal(),
             );
-            if agent_mode {
-                let text = agent::error_json(&err, has("--include-content"));
-                let _ = std::io::stderr().write_all(text.as_bytes());
-                return ExitCode::from(err.exit.code());
-            }
-            if format == Format::Json {
-                return report_error(&err, format);
-            }
-            let _ = std::io::stderr().write_all(message.as_bytes());
-            return ExitCode::from(Exit::Usage.code());
+            return match ErrorStyle::of(
+                agent_mode,
+                has("--include-content"),
+                format == Format::Json,
+            ) {
+                // clap's own message, with the usage line it adds.
+                ErrorStyle::Text => {
+                    let _ = std::io::stderr().write_all(message.as_bytes());
+                    ExitCode::from(Exit::Usage.code())
+                }
+                style => emit_error(&err, style),
+            };
         }
     };
     let format_given = requested_format_given(&args);
     if cli.agent && format_given {
-        return report_error(
+        return emit_error(
             &Error::usage("--agent prints JSON; leave out --format"),
-            Format::Json,
+            ErrorStyle::Json,
         );
     }
     let agent_mode = agent::wanted(
@@ -385,11 +409,12 @@ fn main() -> ExitCode {
         include_content: cli.include_content,
     });
     // `help --json` describes the parser for programs, so its errors are JSON too.
-    let format = if agent_mode || matches!(cli.command, Command::Help { json: true, .. }) {
-        Format::Json
-    } else {
-        cli.format
-    };
+    let help_json = matches!(cli.command, Command::Help { json: true, .. });
+    let style = ErrorStyle::of(
+        agent_mode,
+        cli.include_content,
+        help_json || cli.format == Format::Json,
+    );
     match run(&cli, mode) {
         Ok(Printed::Raw(text)) => {
             let _ = std::io::stdout().write_all(text.as_bytes());
@@ -404,16 +429,11 @@ fn main() -> ExitCode {
                     t.push('\n');
                     t
                 }
-                None => output::render(&out, format),
+                None => output::render(&out, cli.format),
             };
             let _ = std::io::stdout().write_all(text.as_bytes());
             ExitCode::from(out.exit.code())
         }
-        Err(err) if mode.is_some() => {
-            let text = agent::error_json(&err, cli.include_content);
-            let _ = std::io::stderr().write_all(text.as_bytes());
-            ExitCode::from(err.exit.code())
-        }
-        Err(err) => report_error(&err, format),
+        Err(err) => emit_error(&err, style),
     }
 }
