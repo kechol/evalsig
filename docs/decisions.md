@@ -20,7 +20,7 @@ after the entry is `Accepted`.
 
 ## D-001 Workspace layout, toolchain and baseline dependencies
 
-- Status: Accepted
+- Status: Superseded by D-029
 - Date: 2026-11-03
 - Context: evalsig needs a pure, separately publishable statistics library and
   several I/O-heavy front ends. Most tasks need the same few general-purpose
@@ -337,7 +337,7 @@ after the entry is `Accepted`.
 
 ## D-006 Working store: SQLite
 
-- Status: Accepted
+- Status: Superseded by D-028
 - Date: 2026-11-03
 - Context: The dashboard and interactive queries need indexed tables, while the
   canonical data are JSONL snapshots whose bytes are hashed. The working store
@@ -971,3 +971,96 @@ after the entry is `Accepted`.
   artifact to the workflow run without a key to guard).
 - Consequences: a release needs a pushed tag and GitHub's attestation
   service, so the first verifiable artifacts come from that external step.
+
+## D-028 No SQLite working copy
+
+- Status: Accepted
+- Date: 2026-11-06
+- Supersedes: D-006
+- Context: D-006 kept a SQLite copy of the data in force so the dashboard
+  could query indexed tables. D-019 then settled that the dashboard reads
+  the canonical snapshots and never opens the copy. Since then nothing reads
+  it: `import`, `purge` and `exclude` keep it current and `rebuild` prints
+  its row counts. It costs the one piece of C code in the store (D-010) and
+  a maintenance step in every command that replaces snapshots.
+- Decision:
+  - There is no working copy. `.evalsig/` holds `config.toml`, the ledger,
+    `objects/`, `reports/` and the directories commands create on demand;
+    `init` no longer creates `cache/`.
+  - `evalsig rebuild` is removed. `purge` and `exclude` replace snapshots
+    and write their ledger lines, with no further step.
+  - The dashboard reads the data in force once and keeps it while the
+    project ledger's head is unchanged, so a page does not reread the
+    snapshots on every request.
+  - `evalsig-store` no longer depends on `rusqlite`. `evalsig-adapters`
+    keeps it, read-only, for promptfoo databases (SPEC §13.1).
+- Alternatives: keeping the copy for later interactive queries (not taken:
+  no consumer exists, and Parquet export serves analyses elsewhere); keeping
+  `rebuild` as a no-op (not taken: v1 is unreleased, so nothing depends on
+  the command).
+- Consequences: the bundled SQLite stays in the binary only through the
+  promptfoo adapter. Anything that needs indexed queries later decides its
+  own store.
+
+## D-029 Application and referee crates
+
+- Status: Accepted
+- Date: 2026-11-06
+- Supersedes: D-001
+- Context: D-001 placed everything between the stores and the command line
+  in the binary crate. The dashboard therefore reaches the analyses by
+  rebuilding command-line arguments and parsing them with clap, and the
+  referee's code, which the threat model (SPEC §8.0) bounds, is spread
+  through the binary with the rest.
+- Decision:
+  - A Cargo workspace under `crates/` with seven members:
+    `evalsig-core` (types, metrics, validity checks; no I/O),
+    `evalsig-store` (objects, ledgers, canonicalization, hashing, sealing),
+    `evalsig-adapters` (ingestion),
+    `evalsig-project` (the `.evalsig/` project: data in force, settings
+    resolution, provenance and ledger lines, import, the analyses each
+    command computes, validation against the published JSON Schemas, and
+    the loopback HTTP primitives both servers share),
+    `evalsig-referee` (the referee's home, approval, the gate, the Ladder,
+    sealing and `gate serve`),
+    `evalsig-dashboard` (screens, HTML and SVG, the dashboard server) and
+    `evalsig-cli` (binary `evalsig`: argument parsing, rendering, agent
+    mode and wiring).
+  - Dependencies point inwards: `core` depends on no other member; `store`
+    and `adapters` may depend on `core`; `project` on `core`, `store` and
+    `adapters`; `referee` and `dashboard` on `project` and below; `cli` on
+    everything. `referee` and `dashboard` do not depend on each other.
+  - Only `evalsig-cli` depends on `clap`. Library crates take typed
+    requests, not command-line words.
+  - Rust edition, toolchain pinning and MSRV are as in D-001, and so is the
+    baseline dependency set: `serde`, `serde_json`, `toml` and `thiserror`
+    in any member; `clap` and `anyhow` in the binary; the test-only crates.
+- Alternatives: one application crate for project and referee together (not
+  taken: the referee crate is the boundary a security review reads); keeping
+  the layers as modules of the binary (not taken: the dashboard and a later
+  MCP server need a library API).
+- Consequences: the project and referee crates return `CliError`-shaped
+  errors through their own error type, which the binary renders; the
+  dashboard depends on `evalsig-project` rather than on the CLI's JSON alone.
+
+## D-030 The recorded request of a saved result
+
+- Status: Accepted
+- Date: 2026-11-06
+- Context: `provenance.request` says what `verify` recomputes (D-008, audit
+  spec §5). It was the serialized command-line arguments of `report` and
+  `compare`, so renaming a flag changed the saved form, and the library
+  could not build a request without clap.
+- Decision:
+  - `request` is `{"command": "report" | "compare", "args": {...}}`, where
+    `args` is a request type of `evalsig-project` with its own serde names.
+    The command line converts its arguments into that type; the dashboard
+    builds it directly.
+  - `verify` recomputes `report` and `compare` results, the two commands
+    that save results under `reports/`. Other commands do not save results
+    and carry no `request`.
+- Alternatives: saving results of `trend`, `agree` and `check` too (not
+  taken for v1: none of them is a decision that a later reader has to
+  reproduce, and each would add a saved file per run).
+- Consequences: a new command that saves results adds a variant to the
+  request type and to `verify` in the same change.
