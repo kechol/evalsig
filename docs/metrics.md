@@ -757,7 +757,8 @@ condition): η = max(k·√(ψ̂/n), 1/n) with k = `ladder_k` (2 by default, at 
 metric's denominator on the holdout and ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), e_val the
 baseline's error outside the holdout; e_val = 0.1 and n = 300 give η ≈ 0.052. These are
 read with every missing value the worst, as the gate reads the holdout. A `ladder_step`
-below the automatic η is a usage error. The first best is the baseline on the holdout,
+below the automatic η is a usage error, since a finer step would return detail below the
+standard error of the difference. The first best is the baseline on the holdout,
 which spends no budget. Without a baseline, or for a metric with no value on both sides of
 the holdout, there is no step, approval warns `ladder_unavailable`, and no value is ever
 returned.
@@ -772,7 +773,12 @@ returned.
   value rounded to a multiple of η toward the baseline: the candidate's value for an
   absolute rule, its difference to the baseline (rounded toward 0) for a difference rule.
   The referee ledger's `gate` line records the value. Otherwise the answer carries no
-  value, only the verdict, each condition's pass or fail and the budget left (§11.2). The protection against fitting the holdout rests on the budget, the level
+  value, only the verdict, each condition's pass or fail and the budget left (§11.2).
+- **How much one answer reveals.** At most 1 bit for the verdict, 1 bit per condition
+  and, on a new best only, about log2(1/η) bits for the rounded value (about 4 bits at
+  η ≈ 0.05). The gate returns nothing beyond this.
+
+The protection against fitting the holdout rests on the budget, the level
 α/B and withholding values; at a few hundred holdout items the Ladder's own theoretical
 guarantee, which needs steps near (ln B / n)^(1/3), would hardly apply (D-015).
 

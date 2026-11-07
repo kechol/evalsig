@@ -222,6 +222,13 @@ When a command's output and the Skill disagree, the output is right.
 The Skill is one Agent Skill named `evalsig`, written by the binary from
 copies embedded at build time and stamped with the binary's version.
 
+It stays one Skill so that the improvement loop's prohibitions (never look at
+the holdout, never rewrite the gate conditions) load whenever evalsig is used.
+Split into an analysis Skill and an improvement Skill, a request to improve a
+system could load only the analysis one and miss them. The detailed steps sit
+in `references/`, read only when needed, so the always-loaded `SKILL.md`
+stays short.
+
 | File | Read when |
 |---|---|
 | `SKILL.md` | Every time evalsig is used: the import, validity-check, analysis and reporting steps, how to quote verdicts, and what never to do |
@@ -264,7 +271,25 @@ protection itself is the referee.
 
 ## 4. MCP
 
-There is no MCP server in v1 (D-018). If one is built, its tools are generated from the same command definitions as `help --json`.
+There is no MCP server in v1 (D-018): an agent with a shell has the CLI and
+the Skill, and an MCP server would add tool definitions to maintain beside
+the CLI and to load into every conversation.
+
+A server becomes worth building when evaluators want to ask about local
+results from a client without a shell, such as a chat app, or when an
+organisation allows agents MCP tools only. It is then built within these
+limits:
+
+- `evalsig mcp` over stdio, with tools generated from the same command
+  definitions as `help --json`.
+- Read-only: `report`, `compare`, `power`, `explain` and `ledger_read`, with
+  `report` and `compare` reading the dev and validation splits only, plus
+  `gate_submit`, which forwards to `gate serve` like `gate submit` does. The
+  Skill text is offered as resources.
+- No tool returns holdout contents.
+- MCP does not separate authority: the server runs as the agent's OS user.
+  The holdout stays protected by `gate serve` running with the referee's
+  privileges (§5.2), not by the server.
 
 ## 5. The improvement loop and the referee
 
