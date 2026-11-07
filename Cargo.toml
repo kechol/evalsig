@@ -8,6 +8,10 @@ edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/kechol/evalsig"
+homepage = "https://github.com/kechol/evalsig"
+readme = "README.md"
+keywords = ["evaluation", "llm", "statistics", "signal-detection", "benchmark"]
+categories = ["development-tools::testing", "science"]
 authors = ["The evalsig contributors"]
 
 [workspace.dependencies]
