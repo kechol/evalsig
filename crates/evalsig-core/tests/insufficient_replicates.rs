@@ -39,8 +39,8 @@ fn records() -> Vec<Record> {
         .collect()
 }
 
-#[test]
-fn replicates_the_policy_drops_do_not_count_toward_k() {
+/// The report of `records()` under an estimand.
+fn report_with(estimand: Estimand) -> report::Report {
     let rs = records();
     let run = rs
         .iter()
@@ -75,7 +75,7 @@ fn replicates_the_policy_drops_do_not_count_toward_k() {
         positive: Some(Rule::Equals(Value::Bool(true))),
         decision: None,
         threshold: None,
-        estimand: Estimand::Any(3),
+        estimand,
         missing: MissingPolicy::default(),
         reference: ReferenceMode::Soft,
         rater_design: RaterDesign::Auto,
@@ -87,9 +87,26 @@ fn replicates_the_policy_drops_do_not_count_toward_k() {
         exact_rates: false,
         proxy: None,
     };
-    let r = report::build(run, &judgments, &items, &labels, &settings).unwrap();
+    report::build(run, &judgments, &items, &labels, &settings).unwrap()
+}
+
+#[test]
+fn replicates_the_policy_drops_do_not_count_toward_k() {
+    let r = report_with(Estimand::Any(3));
     // Four items keep two usable replicates, so any@3 scores the other six.
     let accuracy = r.metrics.iter().find(|m| m.metric == "accuracy").unwrap();
     assert_eq!(accuracy.n, 6.0);
     assert_eq!(r.n_insufficient_replicates, 4);
+}
+
+#[test]
+fn a_rate_of_one_keeps_an_interval_of_width() {
+    // Every replicate is right, so every bootstrap resample would give 1: the exact
+    // interval on the effective number of items is shown instead (metrics spec §1).
+    let r = report_with(Estimand::SingleShot);
+    let accuracy = r.metrics.iter().find(|m| m.metric == "accuracy").unwrap();
+    assert_eq!(accuracy.value, Some(1.0));
+    assert_eq!(accuracy.interval, "clopper_pearson");
+    let (lo, hi) = accuracy.ci.unwrap();
+    assert!(lo < 0.75 && hi == 1.0, "{lo} {hi}");
 }

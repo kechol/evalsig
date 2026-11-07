@@ -130,7 +130,10 @@ Every interval function returns the vacuous [0, 1] when n = 0.
 
 - **What reports show.** A displayed rate (accuracy, H, F, precision, `pass_rate`,
   `rate_at_least`) gets a Wilson interval when every unit is one item with weight 1, one
-  replicate and an integral contribution, and a cluster bootstrap (§8) otherwise.
+  replicate and an integral contribution, and a cluster bootstrap (§8) otherwise. Where
+  the bootstrap cannot give an interval with meaning, at a rate of 0 or 1 (every
+  resample is the same) or with fewer than five units, the rate takes the exact interval
+  on the effective number of items described next.
 - **What pass/fail decisions use.** In `gate` and `check` the same rates take the exact
   Clopper-Pearson interval on the effective number of items: n_eff = (Σ d_c)² / Σ d_c²,
   with d_c the summed denominators of cluster c (an item without a cluster is its own).
@@ -154,7 +157,7 @@ Every interval function returns the vacuous [0, 1] when n = 0.
 | Metric | Replicates, clusters or weights | Method |
 |---|---|---|
 | one rate | none | Wilson (display), Clopper-Pearson (`gate`, `check`) |
-| one rate | present | cluster bootstrap (display), Clopper-Pearson on n_eff (`gate`, `check`) |
+| one rate | present | cluster bootstrap (display; Clopper-Pearson on n_eff at a rate of 0 or 1 or below five units), Clopper-Pearson on n_eff (`gate`, `check`) |
 | paired difference of rates (accuracy, H, F, `pass_rate`, `rate_at_least`) | none, and every arm's items independent | Tango score interval (§7) |
 | paired difference of rates | present | cluster bootstrap (§8) |
 | any other paired difference (`precision`, `mean_score`), win rate, a difference of unpaired rates with clusters | n/a | bootstrap |
@@ -164,7 +167,8 @@ Every interval function returns the vacuous [0, 1] when n = 0.
 | AUC | soft or weighted reference, or an AUC of 0 or 1 | cluster bootstrap |
 
 - A bootstrap interval needs at least 5 resampling units (clusters, or items without
-  clusters). With fewer, no interval is given and the method is `too_few_units`.
+  clusters). With fewer, a rate takes the exact interval on n_eff and any other metric
+  gets no interval, with the method `too_few_units`.
 - A gate draft that names an interval method other than `auto` is refused at drafting.
 
 ## 2. Signal detection metrics of binary decisions

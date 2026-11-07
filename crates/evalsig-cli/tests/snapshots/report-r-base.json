@@ -10,8 +10,11 @@
     "level": 0.95,
     "metrics": [
       {
-        "ci": null,
-        "interval": "too_few_units",
+        "ci": [
+          0.0014520527,
+          0.9999446972
+        ],
+        "interval": "clopper_pearson",
         "metric": "accuracy",
         "missing_bounds": [
           0.6,
@@ -25,8 +28,11 @@
         "value": 0.6
       },
       {
-        "ci": null,
-        "interval": "too_few_units",
+        "ci": [
+          0.025,
+          1.0
+        ],
+        "interval": "clopper_pearson",
         "metric": "hit_rate",
         "missing_bounds": [
           1.0,
@@ -40,8 +46,11 @@
         "value": 1.0
       },
       {
-        "ci": null,
-        "interval": "too_few_units",
+        "ci": [
+          0.000385581,
+          0.999614419
+        ],
+        "interval": "clopper_pearson",
         "metric": "false_alarm_rate",
         "missing_bounds": [
           0.0,
@@ -55,8 +64,11 @@
         "value": 0.5
       },
       {
-        "ci": null,
-        "interval": "too_few_units",
+        "ci": [
+          0.025,
+          1.0
+        ],
+        "interval": "clopper_pearson",
         "metric": "precision",
         "n": 1.0,
         "rater_spread": [
@@ -130,15 +142,6 @@
         "upper_bound": 0.95
       }
     },
-    "run": "r-base",
-    "sdt": {
-      "assumption": "equal_variance_normal",
-      "criterion": -0.3372448751,
-      "dprime": 0.6744897502
-    },
-    "seed": 20261029,
-    "task": "default",
-    "value_semantics": "decision",
     "roc": {
       "auc": 1.0,
       "ci": null,
@@ -159,7 +162,16 @@
           1.0
         ]
       ]
-    }
+    },
+    "run": "r-base",
+    "sdt": {
+      "assumption": "equal_variance_normal",
+      "criterion": -0.3372448751,
+      "dprime": 0.6744897502
+    },
+    "seed": 20261029,
+    "task": "default",
+    "value_semantics": "decision"
   },
   "warnings": [
     {
@@ -197,7 +209,7 @@
       },
       "command": "report"
     },
-    "output": "blake3:6fd12b2426cfa4d64d4ed6e96dd26584ee7f087833a1ef1c07bcabbd8934aa6a"
+    "output": "blake3:01664a2560af041c66d2ad0c498a2d69f41a7d4114499b39998378aab208afaf"
   },
   "truncated": null
 }

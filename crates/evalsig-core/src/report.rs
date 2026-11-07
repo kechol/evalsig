@@ -1082,8 +1082,11 @@ impl Calc<'_> {
         } else {
             None
         };
-        // Wilson when every unit is one item with unit weight and an integral
-        // contribution; otherwise the cluster bootstrap.
+        // A rate: Wilson when every unit is one item with unit weight and an integral
+        // contribution; otherwise the cluster bootstrap, except where it cannot give an
+        // interval with meaning (a rate of 0 or 1, where every resample is the same, or
+        // fewer than five units) and where pass or fail is decided: there the exact
+        // interval on the effective number of items. Other metrics: the bootstrap.
         let integral = point_parts
             .iter()
             .flatten()
@@ -1092,9 +1095,23 @@ impl Calc<'_> {
             .iter()
             .all(|u| u.weight == 1.0 && u.cluster == u.item_id && u.replicates.len() <= 1);
         let rate = self.binary || which == Values::AtLeast;
+        let mut clusters: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        for (i, u) in units.iter().enumerate() {
+            clusters.entry(u.cluster.as_str()).or_default().push(i);
+        }
+        let groups: Vec<Vec<usize>> = clusters.into_values().collect();
+        // Only units that carry the metric's denominator can move the ratio.
+        let carrying = groups
+            .iter()
+            .filter(|g| g.iter().any(|&i| point_parts[i].is_some_and(|p| p.1 > 0.0)))
+            .count();
+        let at_edge = value.is_some_and(|v| v == 0.0 || v == 1.0);
+        let exact = rate
+            && (self.settings.exact_rates
+                || (!(integral && independent) && (at_edge || carrying < bootstrap::MIN_UNITS)));
         let (ci, interval, resamples) = if value.is_none() {
             (None, "none", None)
-        } else if rate && self.settings.exact_rates {
+        } else if exact {
             // The effective number of items is Kish's over the clusters' denominators:
             // the item count when every item is its own cluster with unit weight, the
             // cluster count when clusters are equal.
@@ -1122,16 +1139,6 @@ impl Calc<'_> {
                 None,
             )
         } else {
-            let mut clusters: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-            for (i, u) in units.iter().enumerate() {
-                clusters.entry(u.cluster.as_str()).or_default().push(i);
-            }
-            let groups: Vec<Vec<usize>> = clusters.into_values().collect();
-            // Only units that carry the metric's denominator can move the ratio.
-            let carrying = groups
-                .iter()
-                .filter(|g| g.iter().any(|&i| point_parts[i].is_some_and(|p| p.1 > 0.0)))
-                .count();
             if carrying < bootstrap::MIN_UNITS {
                 return Metric {
                     metric,

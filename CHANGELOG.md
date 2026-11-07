@@ -41,6 +41,11 @@ longer reproduces.
 
 ### Fixed
 
+- `report`: a rate with replicates, clusters or weights at 0 or 1, or with fewer than
+  five units, takes the exact interval on the effective number of items instead of a
+  bootstrap interval of zero width or none.
+
+
 - Exact bounds on millions of judgments no longer hang: above a total shape of 1e5 the
   Beta quantile bisects the distribution function (D-036).
 
