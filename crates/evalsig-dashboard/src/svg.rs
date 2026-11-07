@@ -8,7 +8,7 @@ use evalsig_core::config::Language;
 use evalsig_core::numeric::{norm_cdf, norm_pdf};
 use serde_json::Value;
 
-use crate::html::esc;
+use crate::html::{esc, shown, signed};
 use crate::i18n::T;
 
 const W: f64 = 720.0;
@@ -74,6 +74,16 @@ pub fn range(rows: &[Row<'_>], zero: bool) -> Option<(f64, f64)> {
     Some((lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05))
 }
 
+/// The smallest and largest of `values`, `None` when there are none.
+fn extent(values: impl IntoIterator<Item = f64>) -> Option<(f64, f64)> {
+    let (lo, hi) = values
+        .into_iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| {
+            (l.min(v), h.max(v))
+        });
+    lo.is_finite().then_some((lo, hi))
+}
+
 /// Each row's point and interval on one axis, with a dashed line at 0 when `zero`
 /// (differences), and the numbers written beside each row.
 pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
@@ -91,33 +101,28 @@ pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> Strin
         let z = x(0.0);
         let _ = write!(
             s,
-            "<line x1=\"{z:.1}\" y1=\"0\" x2=\"{z:.1}\" y2=\"{h}\" class=\"guide\" stroke=\"#999\" stroke-dasharray=\"3 3\"/>"
+            "<line class=\"chance\" x1=\"{z:.1}\" y1=\"0\" x2=\"{z:.1}\" y2=\"{h}\"/>"
         );
     }
-    let shown = |v: &Value| match f(v) {
-        Some(n) if zero => format!("{n:+.4}"),
-        Some(n) => format!("{n:.4}"),
+    let written = |v: &Value| match f(v) {
+        Some(n) if zero => signed(n),
+        Some(n) => shown(n),
         None => "–".to_owned(),
     };
     for (i, r) in rows.iter().enumerate() {
         let y = PAD / 2.0 + ROW * i as f64 + ROW / 2.0;
         let label = esc(&r.label);
+        let (v, lo, hi) = (num(r.point), num(&r.ci[0]), num(&r.ci[1]));
         let _ = write!(
             s,
-            "<g class=\"row\" data-label=\"{label}\" data-value=\"{}\" data-lo=\"{}\" data-hi=\"{}\"><title>{label}: {} [{}, {}]</title><text x=\"{}\" y=\"{:.1}\" text-anchor=\"end\" font-size=\"12\">{label}</text>",
-            num(r.point),
-            num(&r.ci[0]),
-            num(&r.ci[1]),
-            num(r.point),
-            num(&r.ci[0]),
-            num(&r.ci[1]),
+            "<g class=\"row s1\" data-label=\"{label}\" data-value=\"{v}\" data-lo=\"{lo}\" data-hi=\"{hi}\"><title>{label}: {v} [{lo}, {hi}]</title><text class=\"label\" x=\"{}\" y=\"{:.1}\" text-anchor=\"end\">{label}</text>",
             LEFT - 8.0,
             y + 4.0
         );
         if let (Some(a), Some(b)) = (f(&r.ci[0]), f(&r.ci[1])) {
             let _ = write!(
                 s,
-                "<line x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" class=\"mark\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
+                "<line class=\"line\" x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\"/>",
                 x(a),
                 x(b)
             );
@@ -125,18 +130,18 @@ pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> Strin
         if let Some(p) = f(r.point) {
             let _ = write!(
                 s,
-                "<circle cx=\"{:.1}\" cy=\"{y:.1}\" r=\"4\" class=\"mark\" fill=\"#3b6ea5\"/>",
+                "<circle class=\"dot\" cx=\"{:.1}\" cy=\"{y:.1}\" r=\"4\"/>",
                 x(p)
             );
         }
         let _ = write!(
             s,
-            "<text x=\"{}\" y=\"{:.1}\" font-size=\"12\" class=\"value\">{} [{}, {}]</text></g>",
+            "<text class=\"value\" x=\"{}\" y=\"{:.1}\">{} [{}, {}]</text></g>",
             W - VALUES + 12.0,
             y + 4.0,
-            shown(r.point),
-            shown(&r.ci[0]),
-            shown(&r.ci[1])
+            written(r.point),
+            written(&r.ci[0]),
+            written(&r.ci[1])
         );
     }
     s.push_str("</svg>");
@@ -175,15 +180,8 @@ pub fn curve(
     axes: (&str, &str),
     range: (f64, f64),
 ) -> String {
-    let fr = Frame {
-        x: range,
-        y: range,
-        left: 56.0,
-        top: 12.0,
-        w: 300.0,
-        h: 300.0,
-    };
-    let (width, height) = (380.0, fr.top + fr.h + 44.0);
+    let fr = Frame::square(range);
+    let (width, height) = (Frame::SQUARE_WIDTH, fr.height(0));
     let mut s = format!(
         "<svg class=\"{}\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\">",
         esc(class)
@@ -191,14 +189,7 @@ pub fn curve(
     let t = ticks(range.0, range.1, 5);
     fr.axes(&mut s, &t, &t, axes);
     if diagonal {
-        let _ = write!(
-            s,
-            "<line class=\"chance\" x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"/>",
-            fr.px(range.0),
-            fr.py(range.0),
-            fr.px(range.1),
-            fr.py(range.1)
-        );
+        fr.chance(&mut s);
     }
     let line: Vec<(f64, f64)> = points.iter().map(|p| (p.x, p.y)).collect();
     let _ = write!(
@@ -246,15 +237,9 @@ pub fn zroc(roc: &Value, lang: Language) -> String {
         return String::new();
     };
     let reported = pts(&z.iter().map(|p| (&p[0], &p[1])).collect::<Vec<_>>());
-    let (lo, hi) = reported
-        .iter()
-        .flat_map(|p| [p.x, p.y])
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| {
-            (l.min(v), h.max(v))
-        });
-    if !lo.is_finite() {
+    let Some((lo, hi)) = extent(reported.iter().flat_map(|p| [p.x, p.y])) else {
         return String::new();
-    }
+    };
     let pad = ((hi - lo) * 0.1).max(0.25);
     curve(
         "zroc",
@@ -332,6 +317,44 @@ struct Frame {
 }
 
 impl Frame {
+    /// The square plot of the curves and ROC space, `range` on both axes.
+    fn square(range: (f64, f64)) -> Frame {
+        Frame {
+            x: range,
+            y: range,
+            left: 56.0,
+            top: 12.0,
+            w: 300.0,
+            h: 300.0,
+        }
+    }
+
+    /// The width of a drawing around a square plot.
+    const SQUARE_WIDTH: f64 = 380.0;
+
+    /// The height of a drawing around this plot with `n` legend rows under it.
+    fn height(&self, n: usize) -> f64 {
+        self.top + self.h + 44.0 + 20.0 * n as f64
+    }
+
+    /// The baseline of the `i`th legend row under this plot.
+    fn legend_y(&self, i: usize) -> f64 {
+        self.top + self.h + 52.0 + 20.0 * i as f64
+    }
+
+    /// The dashed diagonal from the low corner to the high one: chance, or perfect
+    /// calibration.
+    fn chance(&self, s: &mut String) {
+        let _ = write!(
+            s,
+            "<line class=\"chance\" x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"/>",
+            self.px(self.x.0),
+            self.py(self.y.0),
+            self.px(self.x.1),
+            self.py(self.y.1)
+        );
+    }
+
     fn px(&self, v: f64) -> f64 {
         self.left + (v - self.x.0) / (self.x.1 - self.x.0) * self.w
     }
@@ -503,13 +526,14 @@ pub fn sdt_model(sdt: &Value, lang: Language) -> String {
     let (m0, m1) = (fr.px(0.0), fr.px(d));
     let _ = write!(
         s,
-        "<line class=\"bracket\" x1=\"{m0:.1}\" y1=\"{top:.1}\" x2=\"{m1:.1}\" y2=\"{top:.1}\"/><line class=\"bracket\" x1=\"{m0:.1}\" y1=\"{:.1}\" x2=\"{m0:.1}\" y2=\"{:.1}\"/><line class=\"bracket\" x1=\"{m1:.1}\" y1=\"{:.1}\" x2=\"{m1:.1}\" y2=\"{:.1}\"/><text class=\"note\" x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\">d′ = {d:.4}</text>",
+        "<line class=\"bracket\" x1=\"{m0:.1}\" y1=\"{top:.1}\" x2=\"{m1:.1}\" y2=\"{top:.1}\"/><line class=\"bracket\" x1=\"{m0:.1}\" y1=\"{:.1}\" x2=\"{m0:.1}\" y2=\"{:.1}\"/><line class=\"bracket\" x1=\"{m1:.1}\" y1=\"{:.1}\" x2=\"{m1:.1}\" y2=\"{:.1}\"/><text class=\"note\" x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\">d′ = {}</text>",
         top - 4.0,
         top + 4.0,
         top - 4.0,
         top + 4.0,
         (m0 + m1) / 2.0,
-        top - 6.0
+        top - 6.0,
+        shown(d)
     );
     let kx = fr.px(k);
     let _ = write!(
@@ -519,7 +543,7 @@ pub fn sdt_model(sdt: &Value, lang: Language) -> String {
         fr.py(0.0),
         kx + 4.0,
         fr.py(0.43),
-        esc(&T::CriterionAt.fill(lang, &format!("{c:.4}")))
+        esc(&T::CriterionAt.fill(lang, &shown(c)))
     );
     fr.axes(
         &mut s,
@@ -545,8 +569,13 @@ pub fn sdt_model(sdt: &Value, lang: Language) -> String {
 /// The rates (F′, H′) that d′ and c fix under the equal-variance model: the criterion
 /// sits at d′/2 + c, so F′ = 1 − Φ(d′/2 + c) and H′ = 1 − Φ(c − d′/2).
 fn model_rates(d: f64, c: f64) -> (f64, f64) {
-    let k = d / 2.0 + c;
-    (1.0 - norm_cdf(k), 1.0 - norm_cdf(k - d))
+    rates_at(d / 2.0 + c, d)
+}
+
+/// The rates (F, H) with the criterion at `l` on the decision axis and the signal d′
+/// away from the noise: F = 1 − Φ(l), H = 1 − Φ(l − d′).
+fn rates_at(l: f64, d: f64) -> (f64, f64) {
+    (1.0 - norm_cdf(l), 1.0 - norm_cdf(l - d))
 }
 
 /// One run in ROC space: its label and its `sdt` detail as reported.
@@ -567,16 +596,8 @@ pub fn roc_space(runs: &[RocRun<'_>], lang: Language) -> String {
     if runs.is_empty() {
         return String::new();
     }
-    let fr = Frame {
-        x: (0.0, 1.0),
-        y: (0.0, 1.0),
-        left: 56.0,
-        top: 12.0,
-        w: 300.0,
-        h: 300.0,
-    };
-    let width = 380.0;
-    let height = fr.top + fr.h + 44.0 + 20.0 * runs.len() as f64;
+    let fr = Frame::square((0.0, 1.0));
+    let (width, height) = (Frame::SQUARE_WIDTH, fr.height(runs.len()));
     let mut s = format!(
         "<svg class=\"roc-space\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>{}</title>",
         esc(T::RocSpace.text(lang))
@@ -588,21 +609,11 @@ pub fn roc_space(runs: &[RocRun<'_>], lang: Language) -> String {
         &grid,
         (T::FalseAlarmRate.text(lang), T::HitRate.text(lang)),
     );
-    let _ = write!(
-        s,
-        "<line class=\"chance\" x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"/>",
-        fr.px(0.0),
-        fr.py(0.0),
-        fr.px(1.0),
-        fr.py(1.0)
-    );
+    fr.chance(&mut s);
     for (i, (r, d, c)) in runs.iter().enumerate() {
         // The criterion sweeps the decision axis; F = 1 − Φ(λ), H = 1 − Φ(λ − d′).
         let iso: Vec<(f64, f64)> = (0..=200)
-            .map(|j| {
-                let l = -6.0 + (d.max(0.0) + 12.0) * j as f64 / 200.0;
-                (1.0 - norm_cdf(l), 1.0 - norm_cdf(l - d))
-            })
+            .map(|j| rates_at(-6.0 + (d.max(0.0) + 12.0) * j as f64 / 200.0, *d))
             .collect();
         let (fp, hp) = model_rates(*d, *c);
         let (dv, cv) = (num(&r.sdt["dprime"]), num(&r.sdt["criterion"]));
@@ -618,9 +629,9 @@ pub fn roc_space(runs: &[RocRun<'_>], lang: Language) -> String {
         legend(
             &mut s,
             fr.left,
-            fr.top + fr.h + 52.0 + 20.0 * i as f64,
+            fr.legend_y(i),
             &format!("swatch {}", series(i)),
-            &format!("{}: d′ {d:.4}, c {c:.4}", r.label),
+            &format!("{}: d′ {}, c {}", r.label, shown(*d), shown(*c)),
         );
     }
     s.push_str("</svg>");
@@ -635,9 +646,8 @@ pub struct Bar<'a> {
     pub series: &'static str,
 }
 
-/// Horizontal bars from 0 on the axis `range`, each value written beside its bar, with a
-/// dashed reference line and its label.
-pub fn bars(rows: &[Bar<'_>], range: (f64, f64), reference: Option<(f64, &str)>) -> String {
+/// Horizontal bars from 0 on the axis `range`, each value written beside its bar.
+pub fn bars(rows: &[Bar<'_>], range: (f64, f64)) -> String {
     if rows.is_empty() {
         return String::new();
     }
@@ -657,13 +667,11 @@ pub fn bars(rows: &[Bar<'_>], range: (f64, f64), reference: Option<(f64, &str)>)
     for (i, b) in rows.iter().enumerate() {
         let y = fr.top + ROW * i as f64;
         let label = esc(&b.label);
-        let shown = f(b.value).map_or_else(|| "–".to_owned(), |v| format!("{v:.4}"));
+        let v = num(b.value);
         let _ = write!(
             s,
-            "<g class=\"{}\" data-label=\"{label}\" data-value=\"{}\"><title>{label}: {}</title><text x=\"{}\" y=\"{:.1}\" text-anchor=\"end\" font-size=\"12\">{label}</text>",
+            "<g class=\"{}\" data-label=\"{label}\" data-value=\"{v}\"><title>{label}: {v}</title><text class=\"label\" x=\"{}\" y=\"{:.1}\" text-anchor=\"end\">{label}</text>",
             b.series,
-            num(b.value),
-            num(b.value),
             LEFT - 8.0,
             y + ROW / 2.0 + 4.0
         );
@@ -680,20 +688,10 @@ pub fn bars(rows: &[Bar<'_>], range: (f64, f64), reference: Option<(f64, &str)>)
         }
         let _ = write!(
             s,
-            "<text class=\"value\" x=\"{}\" y=\"{:.1}\" font-size=\"12\">{shown}</text></g>",
+            "<text class=\"value\" x=\"{}\" y=\"{:.1}\">{}</text></g>",
             W - VALUES + 12.0,
-            y + ROW / 2.0 + 4.0
-        );
-    }
-    if let Some((v, text)) = reference {
-        let x = fr.px(v);
-        let _ = write!(
-            s,
-            "<line class=\"criterion\" x1=\"{x:.1}\" y1=\"{}\" x2=\"{x:.1}\" y2=\"{:.1}\"/><text class=\"note\" x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\">{}</text>",
-            fr.top,
-            fr.top + fr.h,
-            fr.top + fr.h + 40.0,
-            esc(text)
+            y + ROW / 2.0 + 4.0,
+            crate::html::number(b.value)
         );
     }
     fr.axes(&mut s, &ticks(range.0, range.1, 5), &[], ("", ""));
@@ -719,18 +717,12 @@ pub fn lines(series_: &[Line<'_>], titles: (&str, &str)) -> String {
                 .map(move |y| (*x, y))
         })
         .collect();
-    if all.is_empty() {
+    let (Some((xl, xh)), Some((yl, yh))) = (
+        extent(all.iter().map(|p| p.0)),
+        extent(all.iter().map(|p| p.1)),
+    ) else {
         return String::new();
-    }
-    let fold = |g: fn(&(f64, f64)) -> f64| {
-        all.iter()
-            .map(g)
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| {
-                (l.min(v), h.max(v))
-            })
     };
-    let (xl, xh) = fold(|p| p.0);
-    let (yl, yh) = fold(|p| p.1);
     let pad = ((yh - yl) * 0.1).max(0.01);
     let fr = Frame {
         x: (xl, if xh > xl { xh } else { xl + 1.0 }),
@@ -741,7 +733,7 @@ pub fn lines(series_: &[Line<'_>], titles: (&str, &str)) -> String {
         h: 220.0,
     };
     let width = 680.0;
-    let height = fr.top + fr.h + 44.0 + 20.0 * series_.len() as f64;
+    let height = fr.height(series_.len());
     let mut s = format!(
         "<svg class=\"lines\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\">"
     );
@@ -774,17 +766,12 @@ pub fn lines(series_: &[Line<'_>], titles: (&str, &str)) -> String {
         let label = esc(&l.label);
         for (x, v, ci) in &l.points {
             if let Some(y) = f(v) {
+                let (v, lo, hi) = (num(v), num(&ci[0]), num(&ci[1]));
                 let _ = write!(
                     s,
-                    "<circle class=\"dot\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"3.5\" data-x=\"{x}\" data-value=\"{}\" data-lo=\"{}\" data-hi=\"{}\"><title>{label}, {x}: {} [{}, {}]</title></circle>",
+                    "<circle class=\"dot\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"3.5\" data-x=\"{x}\" data-value=\"{v}\" data-lo=\"{lo}\" data-hi=\"{hi}\"><title>{label}, {x}: {v} [{lo}, {hi}]</title></circle>",
                     fr.px(*x),
-                    fr.py(y),
-                    num(v),
-                    num(&ci[0]),
-                    num(&ci[1]),
-                    num(v),
-                    num(&ci[0]),
-                    num(&ci[1])
+                    fr.py(y)
                 );
             }
         }
@@ -792,7 +779,7 @@ pub fn lines(series_: &[Line<'_>], titles: (&str, &str)) -> String {
         legend(
             &mut s,
             fr.left,
-            fr.top + fr.h + 52.0 + 20.0 * i as f64,
+            fr.legend_y(i),
             &format!("swatch {}", series(i)),
             &l.label,
         );
@@ -874,7 +861,6 @@ mod tests {
                 series: "s1",
             }],
             (0.0, 1.0),
-            None,
         );
         assert!(b.contains("data-value=\"0.5493\""), "{b}");
         let (v, ci) = (json!(0.6), json!([0.4, 0.8]));

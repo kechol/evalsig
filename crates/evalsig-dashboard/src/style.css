@@ -2,7 +2,7 @@
  * The dashboard's design system, inlined into every page (the Content-Security-Policy
  * allows inline styles and nothing else). Rules take every colour from the tokens below,
  * and every length from the scale where a step fits. Colour tokens name what a colour is
- * for; a state is coloured only through a tone class (positive, negative, warning, info,
+ * for; a state is coloured only through a tone class (positive, negative, warning,
  * neutral), which html.rs chooses.
  */
 :root {
@@ -13,8 +13,7 @@
   --text-xs: 12px;
   --text-sm: 13px;
   --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
+  --text-xl: 22px;
   --weight-medium: 500;
   --weight-strong: 600;
 
@@ -35,7 +34,6 @@
   --canvas: light-dark(#fafafa, #0b0b0d);
   --surface: light-dark(#ffffff, #141417);
   --hover: light-dark(#f4f4f5, #1d1d21);
-  --active: light-dark(#ececef, #26262b);
   --edge-strong: light-dark(#d4d4d8, #3f3f46);
   --divider: light-dark(#e8e8eb, #26262b);
   --text: light-dark(#18181b, #f4f4f5);
@@ -61,9 +59,6 @@
   --warning-fg: light-dark(#b45309, #fcd34d);
   --warning-bg: light-dark(#fffaeb, #2b2010);
   --warning-solid: light-dark(#d97706, #fbbf24);
-  --info-fg: light-dark(#1d4ed8, #93c5fd);
-  --info-bg: light-dark(#eff6ff, #15213a);
-  --info-solid: light-dark(#2563eb, #60a5fa);
   --neutral-fg: light-dark(#52525b, #d4d4d8);
   --neutral-bg: light-dark(#f4f4f5, #232327);
   --neutral-solid: light-dark(#71717a, #a1a1aa);
@@ -84,11 +79,6 @@
   --tone-fg: var(--warning-fg);
   --tone-bg: var(--warning-bg);
   --tone-solid: var(--warning-solid);
-}
-.info {
-  --tone-fg: var(--info-fg);
-  --tone-bg: var(--info-bg);
-  --tone-solid: var(--info-solid);
 }
 .neutral {
   --tone-fg: var(--neutral-fg);
@@ -180,7 +170,7 @@ main {
 
 h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: var(--weight-strong);
   line-height: 1.3;
   letter-spacing: -0.015em;
@@ -392,7 +382,7 @@ dd {
   color: var(--muted);
 }
 
-/* Charts: data marks in the chart colour, guides and labels from the tokens. */
+/* Charts: marks in their series colour, guides and labels from the tokens. */
 svg {
   max-width: 100%;
   height: auto;
@@ -406,18 +396,8 @@ svg text.value {
   fill: var(--muted);
 }
 
-svg line.mark,
-svg polyline.mark {
-  stroke: var(--chart);
-}
 
-svg circle.mark {
-  fill: var(--chart);
-}
 
-svg .guide {
-  stroke: var(--chart-guide);
-}
 
 /*
  * Series: s1, s2 and s3 for runs, systems and graders in order, s0 for people and for
@@ -490,6 +470,8 @@ svg .grid {
 svg .tick,
 svg .legend,
 svg .note,
+svg .label,
+svg .value,
 svg .axis-title {
   font-size: 12px;
 }

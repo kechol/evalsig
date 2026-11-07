@@ -828,7 +828,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   (`default-src 'none'`). It reads the snapshots and never writes.
 - **Rendering.** Pages and charts are rendered on the server from the CLI's result JSON:
   HTML through an escaping writer, charts as SVG. The displayed numbers are the CLI's,
-  written as the Markdown output writes them (four decimals, whole numbers as they are),
+  written with four decimals (whole numbers as they are, differences with their sign),
   and every table cell and plotted point keeps the exact value in a `data-*` attribute.
   The browser computes nothing and loads nothing from outside. No JavaScript is used;
   folding uses `<details>`. Every page, the static one included, carries one stylesheet

@@ -265,7 +265,7 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
     assert!(page.contains("href=\"trend?run=triage-v2\""), "{page}");
     // The comparison draws both runs in ROC space, and the discrimination screen the
     // equal-variance model with the d′ and c that report prints.
-    assert_eq!(page.matches("class=\"dot\"").count(), 2, "{page}");
+    assert_eq!(page.matches("data-dprime=").count(), 2, "{page}");
     let report: Value = serde_json::from_slice(
         &evalsig_json(p.path())
             .args(["report", "triage-v2"])

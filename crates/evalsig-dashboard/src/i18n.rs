@@ -71,6 +71,10 @@ pub enum T {
     Pairs,
     BetweenRaters,
     Source,
+    ItemsWithReplicates,
+    PairwiseDisagreement,
+    ItemsWithAnyDisagreement,
+    UpperBound,
     Dprime,
     Criterion,
     Gained,
@@ -200,6 +204,12 @@ impl T {
             T::Pairs => ("Pairs", "組数"),
             T::BetweenRaters => ("Between raters", "評価者の間"),
             T::Source => ("Source", "由来"),
+            T::ItemsWithReplicates => ("Items with replicates", "反復のある item 数"),
+            T::PairwiseDisagreement => ("Pairwise disagreement", "組ごとの不一致"),
+            T::ItemsWithAnyDisagreement => {
+                ("Items with any disagreement", "不一致のある item の割合")
+            }
+            T::UpperBound => ("Upper bound", "上限"),
             T::Dprime => ("d′ (sensitivity)", "d′（弁別力）"),
             T::Criterion => ("c (criterion)", "c（判定基準）"),
             T::Gained => ("Gained", "増えた"),
@@ -267,6 +277,12 @@ impl T {
     /// The text in `lang` with its `{}` replaced by `value`.
     pub fn fill(self, lang: Language, value: &str) -> String {
         self.text(lang).replacen("{}", value, 1)
+    }
+
+    /// The text in `lang`, escaped, with its `{}` replaced by `html`, markup the caller
+    /// has escaped already.
+    pub fn fill_html(self, lang: Language, html: &str) -> String {
+        crate::html::esc(self.text(lang)).replacen("{}", html, 1)
     }
 }
 
