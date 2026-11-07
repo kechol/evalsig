@@ -1,6 +1,6 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://evalsig.dev/schema/gate/1",
+ "$id": "urn:evalsig:schema:gate:1",
  "title": "evalsig gate conditions (gate.toml as JSON, gate/1)",
  "description": "Drafted by an agent or a person with preregister --draft; only conditions a person approves with preregister approve, with the referee's authority, take effect. Approval resolves every setting not given here, pins names (the baseline run, the split) to hashes and writes approved/<hash>.toml; gate reads only that copy and never the project's config.toml.",
  "type": "object",
