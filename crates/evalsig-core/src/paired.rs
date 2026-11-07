@@ -7,7 +7,7 @@
 use serde::Serialize;
 use statrs::distribution::{Binomial, Discrete, DiscreteCDF};
 
-use crate::numeric::sum;
+use crate::numeric::{norm_cdf, sum};
 
 /// Discordant counts of a paired binary outcome (correct, or positive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
@@ -83,6 +83,18 @@ pub fn tango(d: Discordant, z: f64) -> Option<(f64, f64)> {
         root(-z, point, 1.0 - eps)
     };
     Some((lower, upper))
+}
+
+/// The two-sided p-value of Tango's score test of p_B − p_A = 0, the test the
+/// interval of [`tango`] inverts: 2(1 − Φ(|b − c| / √(b + c))), 1 without discordant
+/// pairs.
+pub fn tango_p(d: Discordant) -> f64 {
+    let discordant = (d.only_a + d.only_b) as f64;
+    if discordant == 0.0 {
+        return 1.0;
+    }
+    let z = (d.only_b as f64 - d.only_a as f64).abs() / discordant.sqrt();
+    (2.0 * norm_cdf(-z)).min(1.0)
 }
 
 /// McNemar's exact test on the discordant counts: the two-sided exact binomial

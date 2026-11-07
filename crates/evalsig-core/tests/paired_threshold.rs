@@ -1,6 +1,6 @@
 //! Paired comparison of a score run read at a threshold (metrics spec §1.1, §7): the
-//! share at or above t is a rate of 0/1 items, so it takes Tango's interval and the exact
-//! McNemar test like accuracy, although a score run has no decision rule.
+//! share at or above t is a rate of 0/1 items, so it takes Tango's interval and score test
+//! like accuracy, although a score run has no decision rule.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,7 +73,7 @@ fn parts(records: &[Record]) -> (Run, Vec<Judgment>, Vec<Item>) {
 }
 
 #[test]
-fn rate_at_least_takes_tango_and_exact_mcnemar() {
+fn rate_at_least_takes_tangos_interval_and_score_test() {
     // Baseline 5 of 8 at or above 0.5, candidate 7 of 8: two items only the candidate
     // passes, none only the baseline.
     let a = run("a", &[0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1]);
@@ -100,10 +100,10 @@ fn rate_at_least_takes_tango_and_exact_mcnemar() {
         .find(|m| m.metric == "rate_at_least")
         .unwrap();
     assert_eq!(m.interval, "tango");
-    assert_eq!(m.p_method, "mcnemar_exact");
+    assert_eq!(m.p_method, "tango_score");
     assert!((m.delta.unwrap() - 0.25).abs() < 1e-12);
-    // 2 * P(X = 0), X ~ Binomial(2, 1/2).
-    assert!((m.p_value.unwrap() - 0.5).abs() < 1e-12);
+    // 2(1 − Φ(2 / √2)).
+    assert!((m.p_value.unwrap() - 0.157299).abs() < 1e-6);
     // Tango's score interval for b = 2, c = 0, n = 8 at 95%, solved independently
     // with scipy's brentq on the constrained-MLE score statistic.
     let (lo, hi) = m.ci.unwrap();

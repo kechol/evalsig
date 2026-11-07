@@ -383,9 +383,11 @@ The metrics compared are those both arms support: accuracy, H, F, precision, `pa
   c (A right, B wrong) and n paired items. Otherwise a paired cluster bootstrap that
   resamples the same clusters in both arms and recomputes the ratio of totals in each.
   Precision and mean score use the bootstrap. Reference case: `paired_difference`.
-- **p-value.** For the Tango case, the exact two-sided McNemar test: 2·P(X ≤ min(b, c)),
-  X ~ Binomial(b + c, ½), capped at 1. Otherwise the bootstrap p-value of §8. Reference
-  case: `mcnemar`.
+- **p-value.** For the Tango case, the two-sided score test that Tango's interval
+  inverts, at a difference of 0: 2(1 − Φ(|b − c| / √(b + c))), and 1 when b + c = 0
+  (`tango_score`). The interval excludes 0 exactly when this p-value is below
+  1 − level, so the verdict and the p-value agree. Otherwise the bootstrap p-value of §8.
+  Reference case: `paired_difference`.
 - **Transition table.** The weighted counts of items that became hits (reference positive,
   judged positive in B only), lost hits, became false alarms and stopped being false
   alarms. A soft reference contributes s and 1 − s, so the counts are real numbers. A
@@ -489,8 +491,8 @@ situations get different treatment.
   configured B is lower. At B = 2000 the Monte Carlo spread of
   the 0.0025 quantile is 0.15 standard errors of the difference. Under the null, with
   300 items 3% of them discordant, the one-sided percentile lower bound at α = 0.0025 is
-  above 0 in 0.35% of samples against 0.06% for the exact McNemar test, which is why
-  paired rates take Tango and McNemar where they apply (§7)
+  above 0 in 0.35% of samples, above the nominal 0.25%, against 0.11% for Tango's score
+  test, which is why paired rates take Tango's interval and test where they apply (§7)
   (`scripts/sim_percentile_tail.py`).
 - **p-value.** The differences are centred on 0 by subtracting the observed difference;
   the p-value is (1 + number of resampled differences at least as far from 0 as the observed
@@ -559,7 +561,7 @@ votes.
 | AUC | AUC_soft (§3.1), bootstrap interval |
 | d′, c | from H and F as in §2 |
 | expected cost, likelihood ratios | items weighted s_i and 1 − s_i (§4, §5) |
-| McNemar, transition table | bootstrap p-value; real-number counts (§7) |
+| Tango's interval and score test, transition table | bootstrap interval and p-value; real-number counts (§7) |
 | `ceiling` | mean(max(s_i, 1 − s_i)) |
 | missing values | §0.1.1 |
 

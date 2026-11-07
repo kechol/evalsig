@@ -785,7 +785,8 @@ def paired_cases():
         lo, hi = tango_interval(b, c, n)
         out.append({"input": {"b": b, "c": c, "n": n},
                     "source": f"scipy {scipy.__version__} (Tango 1998 score interval; constrained MLE as a numerical root)",
-                    "expected": {"difference": r((b - c) / n), "tango95": [r(lo), r(hi)]}})
+                    "expected": {"difference": r((b - c) / n), "tango95": [r(lo), r(hi)],
+                                 "score_p": r(min(1.0, 2.0 * stats.norm.sf(abs(b - c) / math.sqrt(b + c))))}})
     return out
 
 

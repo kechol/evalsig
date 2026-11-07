@@ -1,7 +1,8 @@
-//! Paired and unpaired differences and McNemar's test against the reference values.
+//! Paired and unpaired differences, Tango's score test and McNemar's test against the
+//! reference values.
 
 use evalsig_core::interval::{Z95, newcombe};
-use evalsig_core::paired::{Discordant, mcnemar, tango};
+use evalsig_core::paired::{Discordant, mcnemar, tango, tango_p};
 mod common;
 
 use common::{cases, close};
@@ -26,6 +27,11 @@ fn tango_intervals_match() {
         let (lo, hi) = tango(d, Z95).unwrap();
         close(lo, &c["expected"]["tango95"][0], &format!("tango low {i}"));
         close(hi, &c["expected"]["tango95"][1], &format!("tango high {i}"));
+        close(
+            tango_p(d),
+            &c["expected"]["score_p"],
+            &format!("score p {i}"),
+        );
     }
 }
 

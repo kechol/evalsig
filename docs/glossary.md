@@ -98,7 +98,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 |---|---|---|
 | confidence interval | `ci` | The uncertainty range of an estimate. 95% by default |
 | one-sided upper bound | `upper_bound` | A value the rate is at most, at the stated level. Used by gates |
-| paired comparison | — | Comparing two arms on the same items. McNemar's test, paired bootstrap |
+| paired comparison | — | Comparing two arms on the same items. Tango's score interval and test, paired bootstrap |
 | estimand | `estimand` | Which performance is estimated. Default `single_shot` (one production run); also `majority@k`, `any@k`, `all@k` |
 | mean score / rate at least | `mean_score`, `rate_at_least` | Metrics usable without reference labels: the mean judgment value and the share at or above t |
 | pass rate | `pass_rate` | For a binary score run, the share of judgments that pass. No reference labels are involved |

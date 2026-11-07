@@ -226,7 +226,7 @@ fn fractional_references_send_paired_tests_to_the_bootstrap() {
             .unwrap()
             .independent()
     };
-    // McNemar needs 0/1 references; soft shares make the counts weighted.
+    // Tango's interval needs 0/1 references; soft shares make the counts weighted.
     assert!(!independent(ReferenceMode::Soft));
     assert!(independent(ReferenceMode::Single));
 }

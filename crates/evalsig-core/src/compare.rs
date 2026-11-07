@@ -41,7 +41,7 @@ pub struct MetricDelta {
     pub missing_bounds: Option<(f64, f64)>,
     /// Two-sided p-value of the difference; `None` when the test could not be run.
     pub p_value: Option<f64>,
-    /// Test behind `p_value`: `mcnemar_exact`, `welch_t`, `bootstrap` or `none`.
+    /// Test behind `p_value`: `tango_score`, `welch_t`, `bootstrap` or `none`.
     pub p_method: &'static str,
     /// Verdict on the difference given its interval and the minimum effect.
     pub verdict: Verdict,
@@ -309,13 +309,7 @@ fn metric_delta(
         };
         let ci = paired::tango(d, norm_ppf(0.5 + o.level / 2.0))
             .map(|(lo, hi)| if sign > 0.0 { (lo, hi) } else { (-hi, -lo) });
-        (
-            ci,
-            "tango",
-            None,
-            Some(paired::mcnemar(only_a, only_b).0),
-            "mcnemar_exact",
-        )
+        (ci, "tango", None, Some(paired::tango_p(d)), "tango_score")
     } else if carrying(pa).min(carrying(pb)) < bootstrap::MIN_UNITS {
         TOO_FEW_UNITS
     } else {

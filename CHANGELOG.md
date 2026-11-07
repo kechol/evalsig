@@ -32,6 +32,9 @@ longer reproduces.
   text in Japanese; verdicts, warnings and glossary meanings stay English.
 - Dashboard design tokens retuned to neutral greys, underlined tabs and lighter tables.
 - `trend` without `occurred_at` hints at adding it.
+- `compare`: the p-value of a paired rate is the score test that Tango's interval
+  inverts (`p_method = "tango_score"`), so it agrees with the verdict; it was the exact
+  McNemar test, which disagreed with the interval when few items were discordant.
 
 - Gate (D-034): the difference rules are `better_by` and `not_worse_than`, both on the
   difference oriented so that positive is better, both strict, with margins of at least
@@ -56,7 +59,7 @@ longer reproduces.
   before, both arms read the latest import's item records and the check never fired.
 
 - `compare` and `gate`: a score run read at a threshold (`rate_at_least`) takes Tango's
-  interval and the exact McNemar test like the other paired rates, not the bootstrap.
+  interval and score test like the other paired rates, not the bootstrap.
 - `compare`, `report` and `gate`: a bootstrap interval needs five units that carry the
   metric's denominator, so positives in a few clusters no longer give the hit rate a
   zero-width interval or a gate pass.
