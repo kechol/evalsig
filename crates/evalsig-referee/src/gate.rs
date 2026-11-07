@@ -13,7 +13,7 @@ use evalsig_core::config::Estimand;
 use evalsig_core::gate::{self, Evidence, Outcome, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
-use evalsig_core::parity::{self, ParityVerdict};
+use evalsig_core::parity::{self, Adjustment, ParityVerdict};
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
 use evalsig_core::report::{self, Fill, Sections, Settings};
 use evalsig_core::validity;
@@ -601,8 +601,8 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
             ..h.settings.clone()
         };
         let evidence = if c.metric == "human_parity" {
-            // The raters are tested together at the submission's level α/B, so the
-            // budget keeps its error rate (metrics spec §9.4, §11.1).
+            // Holm at the submission's level α/B bounds the chance of a false
+            // human_parity, so the budget keeps its error rate (metrics spec §9.4, §11.1).
             let p = report::prepare(
                 j.run,
                 &on_holdout(j.judgments, &h.items),
@@ -618,7 +618,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
                 )
             })?;
             let alpha = (1.0 - level) / f64::from(h.budget);
-            match parity::of_run(&p, &h.labels, epsilon, alpha).verdict {
+            match parity::of_run(&p, &h.labels, epsilon, alpha, Adjustment::Holm).verdict {
                 ParityVerdict::HumanParity => Some(Evidence::Verdict(true)),
                 ParityVerdict::BelowHuman => Some(Evidence::Verdict(false)),
                 ParityVerdict::InsufficientData => None,

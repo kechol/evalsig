@@ -1258,3 +1258,25 @@ after the entry is `Accepted`.
 - Consequences: a records file holding a rater's vote and adjudication of one item now
   imports, and only `single` reads the adjudication.
 
+## D-038 A gate adjusts the raters of `human_parity` by Holm
+
+- Status: Accepted
+- Date: 2026-11-08
+- Context: D-017 adjusts the raters of the alternative annotator test by
+  Benjamini-Yekutieli at q, after the paper. A gate ran the same procedure at α/B and
+  counted it as a test at that level, but Benjamini-Yekutieli bounds the expected share
+  of raters wrongly beaten, not the chance of a false `human_parity`: with 20 raters at
+  the margin that chance is 0.112 at q = 0.05, and above q from about 11 raters.
+- Decision:
+  - In a gate, the p-values of the raters tested together are adjusted by Holm at the
+    submission's level α/B. A false `human_parity` needs at least one rater wrongly
+    beaten, and Holm bounds that chance at α/B under any dependence.
+  - `agree --parity` keeps Benjamini-Yekutieli at q = 0.05 (D-017). The output names
+    the adjustment (`adjustment`).
+- Alternatives: Bonferroni (not taken: Holm has the same guarantee and wins more
+  often); keeping Benjamini-Yekutieli and stating the weaker guarantee (not taken: the
+  gate's promise that an ineffective candidate passes with probability at most α would
+  not hold for parity conditions); a test of ω itself, such as a binomial test on the
+  winning share (not taken: raters share items, so their wins are not independent).
+- Consequences: a gate's `human_parity` is harder to pass than `agree --parity` on the
+  same data when there are many raters, and a pass carries the gate's guarantee.

@@ -612,9 +612,11 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
   mean(d) < ε, with n − 1 degrees of freedom. Rejecting H0 means the system wins against
   j, so the burden of proof is on the system and few items make winning harder. With no
   spread in d the mean decides alone.
-- **Raters together.** Benjamini-Yekutieli over the tested raters at q = 0.05. The winning
-  rate ω is the share of tested raters the system wins against: `human_parity` when
-  ω ≥ 0.5, `below_human` otherwise. The advantage probability ρ, the mean over raters of
+- **Raters together.** Benjamini-Yekutieli over the tested raters at q = 0.05, as in the
+  paper: the expected share of raters the system is wrongly said to beat is at most q.
+  The winning rate ω is the share of tested raters the system wins against:
+  `human_parity` when ω ≥ 0.5, `below_human` otherwise. The chance of a false
+  `human_parity` is not bounded by q and grows with the number of raters. The advantage probability ρ, the mean over raters of
   mean(W_sys), is reported beside ω for choosing between systems.
 - **Defaults and limits.** ε = 0.1, the paper's value for crowd raters and the strictest of
   its three (experts 0.2, skilled raters 0.15). A rater sharing fewer than 30 items with
@@ -631,9 +633,10 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
   tested raters the output warns `two_human_raters`. In a gate, a `human_parity` condition
   with the rule `pass` runs the test on the holdout's items against the sealed human
   labels, with its `value` as ε (fixed at approval from `agree.parity_epsilon` when left
-  out) and the raters adjusted together at the submission's level α/B instead of q =
-  0.05, so the budget keeps its error rate; `insufficient_data` leaves the condition
-  undecided.
+  out) and the raters adjusted together by Holm at the submission's level α/B. Holm keeps
+  the chance of wrongly beating any rater at α/B, and a false `human_parity` needs at
+  least one such win, so the budget keeps its error rate (§11.1) (D-038);
+  `insufficient_data` leaves the condition undecided.
 
 ### 9.5 Human reproducibility
 

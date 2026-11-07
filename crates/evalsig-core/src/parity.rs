@@ -3,8 +3,8 @@
 //!
 //! For each human rater j, on the items j and at least one other human labelled, the
 //! system and j are each scored by their agreement with the other humans. The system
-//! wins against j when a one-sided t-test rejects "the system is worse by ε or more";
-//! Benjamini-Yekutieli controls the raters tested together.
+//! wins against j when a one-sided t-test rejects "the system is worse by ε or more".
+//! The raters tested together are adjusted by Benjamini-Yekutieli, or by Holm in a gate.
 
 use std::collections::BTreeMap;
 
@@ -12,12 +12,13 @@ use serde::Serialize;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 use crate::numeric::{mean, sum, variance};
+use crate::paired::holm;
 use crate::records::{Label, LabelKind, Source};
 use crate::report::Prepared;
 
 /// The default ε, the paper's value for crowd raters and the strictest of its three.
 pub const EPSILON: f64 = 0.1;
-/// The false discovery rate over the raters tested, outside a gate.
+/// The level of the adjusted p-values outside a gate.
 pub const Q: f64 = 0.05;
 /// Raters sharing fewer items with the other humans are not tested.
 pub const MIN_ITEMS: usize = 30;
@@ -32,6 +33,18 @@ pub enum Scale {
     Graded,
 }
 
+/// How the p-values of the raters tested together are adjusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Adjustment {
+    /// Benjamini-Yekutieli: the expected share of raters wrongly beaten is at most q,
+    /// as in the paper. A false `human_parity` can be more likely than q.
+    BenjaminiYekutieli,
+    /// Holm: the chance of beating any rater wrongly is at most q, so a false
+    /// `human_parity`, which needs at least one, is too. A gate uses it.
+    Holm,
+}
+
 /// The test against one human rater.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RaterTest {
@@ -43,7 +56,7 @@ pub struct RaterTest {
     pub mean_difference: f64,
     /// The one-sided p-value of H0: mean difference ≥ ε.
     pub p_value: f64,
-    /// The Benjamini-Yekutieli adjusted p-value over the tested raters.
+    /// The adjusted p-value over the tested raters.
     pub adjusted_p_value: f64,
     /// Whether the system wins against this rater.
     pub system_wins: bool,
@@ -68,8 +81,10 @@ pub enum ParityVerdict {
 pub struct Parity {
     /// The margin the system may trail a human by.
     pub epsilon: f64,
-    /// The false discovery rate.
+    /// The level the adjusted p-values are compared with.
     pub q: f64,
+    /// How the p-values are adjusted.
+    pub adjustment: Adjustment,
     /// The raters tested.
     pub tested: Vec<RaterTest>,
     /// Raters left out, with the items they share with other humans.
@@ -86,7 +101,13 @@ pub struct Parity {
 /// adjudications are not raters). A run with a decision rule is compared on decisions,
 /// nominally, positive when most of its replicates are, with the labels read by the
 /// positive definition; one without, on its values, graded.
-pub fn of_run(prepared: &Prepared<'_>, labels: &[&Label], epsilon: f64, q: f64) -> Parity {
+pub fn of_run(
+    prepared: &Prepared<'_>,
+    labels: &[&Label],
+    epsilon: f64,
+    q: f64,
+    adjustment: Adjustment,
+) -> Parity {
     let scale = match (prepared.rule(), prepared.positive()) {
         (Some(_), Some(_)) => Scale::Nominal,
         _ => Scale::Graded,
@@ -130,7 +151,7 @@ pub fn of_run(prepared: &Prepared<'_>, labels: &[&Label], epsilon: f64, q: f64) 
             (item, v)
         })
         .collect();
-    test(&humans, &system, scale, epsilon, q)
+    test(&humans, &system, scale, epsilon, q, adjustment)
 }
 
 /// Each labeller's values by item: `humans[rater][item]`, `system[item]`.
@@ -140,6 +161,7 @@ pub fn test(
     scale: Scale,
     epsilon: f64,
     q: f64,
+    adjustment: Adjustment,
 ) -> Parity {
     let score = |x: f64, others: &[f64]| -> f64 {
         match scale {
@@ -190,7 +212,11 @@ pub fn test(
             mean(w_sys.iter().copied()).expect("items exist"),
         ));
     }
-    let adjusted = benjamini_yekutieli(&unadjusted.iter().map(|t| t.3).collect::<Vec<_>>());
+    let raw: Vec<f64> = unadjusted.iter().map(|t| t.3).collect();
+    let adjusted = match adjustment {
+        Adjustment::BenjaminiYekutieli => benjamini_yekutieli(&raw),
+        Adjustment::Holm => holm(&raw).expect("t-test p-values lie in [0, 1]"),
+    };
     let tested: Vec<RaterTest> = unadjusted
         .into_iter()
         .zip(adjusted)
@@ -223,6 +249,7 @@ pub fn test(
     Parity {
         epsilon,
         q,
+        adjustment,
         tested,
         skipped,
         winning_rate,
@@ -283,7 +310,14 @@ mod tests {
         let system: BTreeMap<String, f64> =
             (0..40).map(|i| (format!("i{i}"), f64::INFINITY)).collect();
         for scale in [Scale::Nominal, Scale::Graded] {
-            let p = test(&humans, &system, scale, EPSILON, Q);
+            let p = test(
+                &humans,
+                &system,
+                scale,
+                EPSILON,
+                Q,
+                Adjustment::BenjaminiYekutieli,
+            );
             assert_eq!(p.verdict, ParityVerdict::BelowHuman, "{scale:?}");
             assert!(p.tested.iter().all(|t| !t.system_wins), "{scale:?}");
         }
@@ -295,6 +329,48 @@ mod tests {
         let c = 1.0 + 0.5 + 1.0 / 3.0;
         assert!((a[0] - 0.01 * 3.0 * c).abs() < 1e-12);
         assert!(a[0] <= a[1] && a[1] <= a[2] && a[2] <= 1.0);
+    }
+
+    #[test]
+    fn a_gate_adjusts_the_raters_by_holm() {
+        // Three raters who disagree on a few items each, and a system that follows the
+        // first: each rater gets a different p-value.
+        let humans: BTreeMap<String, BTreeMap<String, f64>> = (0..3)
+            .map(|r| {
+                let items = (0..40)
+                    .map(|i| (format!("i{i}"), f64::from(u8::from(i % (r + 4) == 0))))
+                    .collect();
+                (format!("h{r}"), items)
+            })
+            .collect();
+        let system = humans["h0"].clone();
+        let raw = |p: &Parity| p.tested.iter().map(|t| t.p_value).collect::<Vec<_>>();
+        let adjusted = |p: &Parity| {
+            p.tested
+                .iter()
+                .map(|t| t.adjusted_p_value)
+                .collect::<Vec<_>>()
+        };
+        let by = test(
+            &humans,
+            &system,
+            Scale::Nominal,
+            EPSILON,
+            Q,
+            Adjustment::BenjaminiYekutieli,
+        );
+        let h = test(
+            &humans,
+            &system,
+            Scale::Nominal,
+            EPSILON,
+            Q,
+            Adjustment::Holm,
+        );
+        assert_eq!(h.tested.len(), 3);
+        assert_eq!(adjusted(&by), benjamini_yekutieli(&raw(&by)));
+        assert_eq!(adjusted(&h), holm(&raw(&h)).unwrap());
+        assert_eq!(h.adjustment, Adjustment::Holm);
     }
 
     #[test]
@@ -310,7 +386,14 @@ mod tests {
         short.get_mut("h2").unwrap().retain(|k, _| k.len() < 3);
         let system = (0..40).map(|i| (format!("i{i}"), 1.0)).collect();
         // h2 labelled 10 items, so neither rater shares 30 with another human.
-        let p = test(&short, &system, Scale::Nominal, EPSILON, Q);
+        let p = test(
+            &short,
+            &system,
+            Scale::Nominal,
+            EPSILON,
+            Q,
+            Adjustment::BenjaminiYekutieli,
+        );
         assert_eq!(p.verdict, ParityVerdict::InsufficientData);
         assert!(p.tested.is_empty());
         assert_eq!((p.skipped["h1"], p.skipped["h2"]), (10, 10));

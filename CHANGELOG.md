@@ -36,6 +36,10 @@ longer reproduces.
   inverts (`p_method = "tango_score"`), so it agrees with the verdict; it was the exact
   McNemar test, which disagreed with the interval when few items were discordant.
 
+- Gate (D-038): a `human_parity` condition adjusts the raters by Holm at the
+  submission's level, so a false parity is as unlikely as the budget promises;
+  `agree --parity` keeps Benjamini-Yekutieli and names the adjustment it used.
+
 - Gate (D-034): the difference rules are `better_by` and `not_worse_than`, both on the
   difference oriented so that positive is better, both strict, with margins of at least
   0; `delta_lower_bound_at_least` and `delta_upper_bound_at_most` are gone. A difference

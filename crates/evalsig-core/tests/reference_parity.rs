@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use evalsig_core::parity::{self, Scale};
+use evalsig_core::parity::{self, Adjustment, Scale};
 use serde_json::Value;
 
 mod common;
@@ -40,6 +40,7 @@ fn alt_test_cases_match() {
             scale,
             i["epsilon"].as_f64().unwrap(),
             parity::Q,
+            Adjustment::BenjaminiYekutieli,
         );
         let e = &c["expected"];
         assert_eq!(

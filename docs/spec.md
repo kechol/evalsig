@@ -1002,7 +1002,7 @@ them.
 |---|---|
 | D-015 Reuse guard defaults (step factor, budget) (Accepted) | The Ladder with k = 2 and a budget of 5: approval fixes the step η and the first best, and a gate returns a rounded value only on a new best ([metrics](metrics.md) §11.3) |
 | D-016 Whether the `latent` reference (Dawid-Skene) ships (Accepted: not in v1) | `--reference latent` and `reference.mode = "latent"` are recognised and refused ("not available in this version"); `soft` is the default and the output states its estimand. Per-rater error rates are not reported |
-| D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human`, and a gate condition `human_parity` with the rule `pass` runs the same test on the holdout ([metrics](metrics.md) §9.4) |
+| D-017 Parameters of the alternative annotator test (Accepted) | `agree --parity --run <run>` gives `human_parity` or `below_human`, and a gate condition `human_parity` with the rule `pass` runs the same test on the holdout, with the raters adjusted by Holm (D-038; [metrics](metrics.md) §9.4) |
 
 ## 16. Security
 

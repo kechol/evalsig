@@ -329,6 +329,7 @@ fn parity(
         labels,
         config.agree.parity_epsilon,
         parity::Q,
+        parity::Adjustment::BenjaminiYekutieli,
     ))
 }
 
