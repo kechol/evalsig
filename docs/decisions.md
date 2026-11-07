@@ -731,8 +731,8 @@ after the entry is `Accepted`.
 - Status: Accepted
 - Date: 2026-11-03
 - Context: Holdout labels must be encrypted so only the referee can read them,
-  in a format people can check without evalsig (SPEC §8.2, audit §7). The
-  crate survey (`research/rust-crates.md` §4) chose the `age` crate for its
+  in a format people can check without evalsig (SPEC §8.2, audit §7). A
+  survey of the encryption crates chose the `age` crate for its
   specified format, which the Go reference implementation and the `rage` CLI
   read, over `hpke` or `crypto_box`, whose file format evalsig would have to
   invent.
