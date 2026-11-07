@@ -534,7 +534,8 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   already in its environment (D-022).
 - **Unit.** Whole clusters (`item.cluster`, else the item), so items of one document
   never land on both sides. A user assignment that splits a cluster is refused
-  (`split_crosses_cluster`).
+  (`split_crosses_cluster`). A time or random split of items that all share one
+  cluster is refused, since validation or the holdout would be empty.
 - **Methods.** `time` (the latest clusters, by their earliest `occurred_at`, go to
   the later part), `random` (seeded, optionally stratified by a named stratum) and
   an assignment file (`assign`, agent-side only). The default is `time` when every

@@ -85,6 +85,8 @@ longer reproduces.
   interval left by rounding.
 - `agree`: within- and between-rater disagreement (`variability`) counts human labels
   only; model, consensus and external labels no longer enter it.
+- `split` and `split --holdout`: a time or random split of items that all share one
+  cluster is refused instead of giving an empty validation part or holdout.
 - `power`: out-of-range settings are usage errors, `--half-width 0` no longer loops, the
   exact power at ψ = 1 is finite, and `--gate` reads the level an approval resolved.
 - `import --mapping`: an integral float such as `3.0` is the ordinal level it spells.

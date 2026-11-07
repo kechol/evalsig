@@ -62,6 +62,9 @@ pub enum SplitError {
     /// There are no items to split.
     #[error("there are no items to split")]
     Empty,
+    /// Every item is in one cluster, so a time or random split leaves one side empty.
+    #[error("all items are in one cluster, so one side of the split would be empty")]
+    OneCluster,
 }
 
 /// Item IDs of each part, sorted.
@@ -100,6 +103,9 @@ pub fn split(
     let mut clusters: BTreeMap<&str, Vec<&Item>> = BTreeMap::new();
     for i in &usable {
         clusters.entry(i.cluster_key()).or_default().push(i);
+    }
+    if clusters.len() == 1 && !matches!(method, Method::Assign(_)) {
+        return Err(SplitError::OneCluster);
     }
     let parts: BTreeMap<&str, Part> = match method {
         Method::Assign(map) => {
@@ -306,6 +312,25 @@ mod tests {
         };
         let a = split(&refs, None, &method, 0.4).unwrap();
         assert!(a.dev.contains(&"i18".to_owned()) && a.dev.contains(&"i19".to_owned()));
+    }
+
+    #[test]
+    fn items_all_in_one_cluster_are_refused() {
+        let mut s = sample();
+        for i in &mut s {
+            i.cluster = Some("doc".into());
+        }
+        let refs: Vec<&Item> = s.iter().collect();
+        let random = Method::Random {
+            seed: 3,
+            stratum: None,
+        };
+        for method in [Method::Time, random] {
+            assert_eq!(
+                split(&refs, None, &method, 0.3),
+                Err(SplitError::OneCluster)
+            );
+        }
     }
 
     #[test]
