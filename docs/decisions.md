@@ -290,7 +290,7 @@ after the entry is `Accepted`.
 
 ## D-009 Numerical dependencies
 
-- Status: Accepted
+- Status: Superseded by D-036
 - Date: 2026-11-03
 - Context: Every interval and test needs normal and Beta distribution
   functions accurate to the 1e-9 reference tolerance, and every resampling
@@ -1206,4 +1206,33 @@ after the entry is `Accepted`.
   record per run in the layering (not taken: everything else reads one item per ID).
 - Consequences: two runs imported with different item records for the same IDs now
   give `input_changed` and are compared on the unchanged items only.
+
+## D-036 Numerical dependencies, with a bisected Beta quantile for large shapes
+
+- Status: Accepted
+- Date: 2026-11-07
+- Supersedes: D-009
+- Context: D-009 kept no fallback for statrs's Beta inverse because it matched the
+  reference values. For a total shape above about 7.26e6 its Newton iteration
+  overflows and never returns, so an exact bound on millions of judgments (a
+  `missing_rate` condition in `check` or `gate`) hung.
+- Decision:
+  - `statrs` (default features off, `std` only) provides the normal and Beta
+    distribution functions. Up to a total shape of 1e5, `beta_ppf` uses statrs's
+    inverse, which matches the exact and Jeffreys interval reference values within
+    1e-9; above it, `beta_ppf` bisects statrs's distribution function to the
+    resolution of a double, at most 200 halvings.
+  - `rand_chacha` (default features off) provides ChaCha20, seeded with
+    `seed_from_u64` from the configured or recorded seed. Uniform integers use
+    Lemire's unbiased method and uniform doubles take 53 bits, both written in
+    evalsig, so no distribution code of `rand` is involved.
+  - Sums run in a fixed iteration order with Neumaier compensation, so results do
+    not depend on threads or map order.
+  - A test pins the first ChaCha20 outputs and a derived mean for a fixed seed; it
+    passes on macOS and on Linux.
+- Alternatives: a normal approximation for large shapes (not taken: Beta(1, n), the
+  bound at no events, is far from normal); writing the special functions ourselves
+  (not taken: statrs meets the tolerance and is widely used).
+- Consequences: upgrading `statrs` or `rand_chacha` requires the reference and pinned
+  tests, including the large-shape quantile test, to pass unchanged.
 

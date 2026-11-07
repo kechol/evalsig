@@ -447,7 +447,7 @@ equal-variance normal assumption it names beside them ([metrics](metrics.md) §2
   reports Holm-adjusted p-values for the deciding metric and notes that a best
   candidate's estimate is biased upwards (`selected_after_comparison`).
 - **Random numbers** come from ChaCha20 seeded from the recorded seed, so a result
-  repeats on every platform. Sums run in a fixed order (D-009).
+  repeats on every platform. Sums run in a fixed order (D-036).
 
 ## 7. Validity checks
 
@@ -950,7 +950,7 @@ the zip and decompressed with `ruzstd`.
   (nightly toolchain; its own workspace).
 - **Numerics.** The normal and Beta functions come from statrs and match the reference
   values to 1e-9; ChaCha20 is seeded with `seed_from_u64` and Lemire's unbiased integer
-  method (D-009).
+  method (D-036).
 - **`evalsig-core` is a separate library**, so other Rust tools can embed the statistics.
 
 ### 13.2 Tests

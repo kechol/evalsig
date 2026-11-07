@@ -1,4 +1,4 @@
-//! Numerical foundations (D-009): the seeded random number generator, fixed-order
+//! Numerical foundations (D-036): the seeded random number generator, fixed-order
 //! summation and the distribution functions every metric uses.
 
 use rand_chacha::ChaCha20Rng;
@@ -133,21 +133,58 @@ fn standard_normal() -> Normal {
     Normal::new(0.0, 1.0).expect("standard normal parameters are valid")
 }
 
-/// Beta(a, b) quantile. statrs's inverse of the regularized incomplete beta function
-/// matches the reference values within 1e-9 (D-009), so no fallback is kept.
+/// The total shape above which `beta_ppf` bisects; statrs's inverse stops returning
+/// from about 7.26e6.
+const BISECT_SHAPE: f64 = 1e5;
+
+/// Beta(a, b) quantile. Up to a total shape of `BISECT_SHAPE`, statrs's inverse, which
+/// matches the reference values within 1e-9; above it, bisection on statrs's distribution
+/// function, because the inverse's Newton iteration overflows and never ends for large
+/// shapes (D-036).
 pub fn beta_ppf(p: f64, a: f64, b: f64) -> f64 {
     assert!(
         (0.0..=1.0).contains(&p) && a > 0.0 && b > 0.0,
         "beta_ppf({p}, {a}, {b})"
     );
-    Beta::new(a, b)
-        .expect("shape parameters are positive")
-        .inverse_cdf(p)
+    let beta = Beta::new(a, b).expect("shape parameters are positive");
+    if a + b <= BISECT_SHAPE {
+        return beta.inverse_cdf(p);
+    }
+    if p == 0.0 || p == 1.0 {
+        return p;
+    }
+    // 200 halvings reach the resolution of a double even for quantiles near 0.
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..200 {
+        let mid = lo + (hi - lo) / 2.0;
+        if mid <= lo || mid >= hi {
+            break;
+        }
+        if beta.cdf(mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_beta_quantile_returns_for_large_shapes() {
+        // Beta(1, n) has the quantile 1 − (1 − p)^(1/n): the exact upper bound at no events.
+        for n in [2e5, 7.26e6, 5e7] {
+            let q = beta_ppf(0.975, 1.0, n);
+            let exact = 1.0 - 0.025f64.powf(1.0 / n);
+            assert!((q - exact).abs() < 1e-12, "{n}: {q} {exact}");
+        }
+        let beta = Beta::new(500.5, 7e6).unwrap();
+        let q = beta_ppf(0.01, 500.5, 7e6);
+        assert!((beta.cdf(q) - 0.01).abs() < 1e-9, "{q}");
+    }
 
     #[test]
     fn the_generator_repeats_from_its_seed() {

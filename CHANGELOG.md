@@ -41,6 +41,9 @@ longer reproduces.
 
 ### Fixed
 
+- Exact bounds on millions of judgments no longer hang: above a total shape of 1e5 the
+  Beta quantile bisects the distribution function (D-036).
+
 - `compare` (D-035): each run's item inputs come from its own imports, so items whose
   `input_ref` changed between the arms are left out and reported as `input_changed`;
   before, both arms read the latest import's item records and the check never fired.

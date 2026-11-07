@@ -43,13 +43,14 @@ The `latent` reference is left out of v1 (D-016, §9.2).
 - **Level and direction.** The default is a two-sided 95% interval (`level = 0.95`). Each
   gate condition states `sided` (`one` or `two`) (§11.1).
 - **Interval method.** §1.1 chooses it. No command reads the `interval` setting.
-- **Quantiles.** Normal and Beta quantiles come from `statrs` in double precision (D-009).
-- **Random numbers.** ChaCha20 seeded from a `u64` seed (D-009). Uniform integers use
+- **Quantiles.** Normal and Beta quantiles come from `statrs` in double precision; above
+  a total shape of 1e5 the Beta quantile bisects the distribution function (D-036).
+- **Random numbers.** ChaCha20 seeded from a `u64` seed (D-036). Uniform integers use
   Lemire's unbiased method and uniform doubles take 53 bits, both written in evalsig. Every
   output that used randomness records its seed.
 - **Rounding and determinism.** Numbers in an output are rounded to 10 decimal places.
   Sums use Neumaier compensation in a fixed iteration order, so results do not depend on
-  threads or map order (D-009).
+  threads or map order (D-036).
 
 ### 0.1 Missing values
 
