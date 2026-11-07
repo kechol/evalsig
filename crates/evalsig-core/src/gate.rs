@@ -1,10 +1,14 @@
 //! The gate's rules (SPEC §8.3 "Rules", metrics spec §11.1). Every rule reads an
 //! interval or a verdict; none reads a point estimate alone. A delta is
-//! candidate − baseline on the metric's own scale.
+//! candidate − baseline on the metric's own scale, except for `not_worse_than`, which
+//! reads it oriented so that positive is better.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::interval::{clopper_pearson, clopper_pearson_upper};
+use crate::records::Judgment;
 
 /// A condition rule of a gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,7 +22,8 @@ pub enum Rule {
     DeltaLowerBoundAtLeast,
     /// The delta's interval has an upper bound of at most `value`.
     DeltaUpperBoundAtMost,
-    /// Non-inferiority: the delta's lower bound is at least `value` (a negative margin).
+    /// Non-inferiority: the lower bound of the delta, oriented so that positive is better,
+    /// is at least `value` (a negative margin).
     NotWorseThan,
     /// A verdict metric such as `human_parity`.
     Pass,
@@ -139,19 +144,34 @@ pub fn overall(outcomes: &[Outcome]) -> Option<bool> {
     }
 }
 
-/// The missing rate on the holdout, every missing judgment counted whatever its
-/// reason, with the exact interval at the condition's two-sided `interval_level`
-/// (one-sided conditions read its upper end).
+/// The events and the size of the missing rate's exact interval: the item is the
+/// counting unit (metrics spec §0), so an item contributes its share of missing
+/// judgments and replicates never add to the count. `counts` says which judgments
+/// are missing.
+pub fn missing_counts(judgments: &[&Judgment], counts: impl Fn(&Judgment) -> bool) -> (f64, f64) {
+    let mut per_item: BTreeMap<&str, (f64, f64)> = BTreeMap::new();
+    for j in judgments {
+        let (missing, all) = per_item.entry(j.item_id.as_str()).or_default();
+        *missing += f64::from(u8::from(counts(j)));
+        *all += 1.0;
+    }
+    let shares = per_item.values().map(|(missing, all)| missing / all);
+    (shares.sum(), per_item.len() as f64)
+}
+
+/// The missing rate on the holdout from `missing_counts`, with the exact interval at
+/// the condition's two-sided `interval_level` (one-sided conditions read its upper
+/// end).
 pub fn missing_rate(
-    missing: u64,
-    judgments: u64,
+    missing: f64,
+    items: f64,
     interval_level: f64,
     sided: Sided,
 ) -> Option<Evidence> {
-    if judgments == 0 {
+    if items <= 0.0 {
         return None;
     }
-    let (k, n) = (missing as f64, judgments as f64);
+    let (k, n) = (missing, items);
     let (lo, hi) = match sided {
         // The upper end of the two-sided interval at 2L − 1 is the one-sided bound at L.
         Sided::One => (

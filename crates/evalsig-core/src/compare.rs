@@ -196,7 +196,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
         .collect::<BTreeSet<_>>()
         .len();
     let n_unpaired = (union - in_both.len()) as u64;
-    let independent = a.independent() && b.independent() && a.rule().is_some();
+    let independent = a.independent() && b.independent();
     let system_missing = a.system_missing().0 + b.system_missing().0 > 0;
     let metrics = ids
         .iter()
@@ -254,10 +254,10 @@ fn metric_delta(
     // Bounds pair a worst-filled arm with a best-filled one: against the candidate
     // and in its favour.
     let oriented = |x: &BTreeMap<String, ItemValue>, y: &BTreeMap<String, ItemValue>| {
-        let both: Vec<&str> = items
-            .iter()
-            .copied()
-            .filter(|i| x.contains_key(*i) && y.contains_key(*i))
+        let both: Vec<&str> = x
+            .keys()
+            .map(String::as_str)
+            .filter(|i| o.counts(i) && y.contains_key(*i))
             .collect();
         ratio(x, &both)
             .zip(ratio(y, &both))
@@ -278,6 +278,13 @@ fn metric_delta(
     for i in &items {
         clusters.entry(pa[*i].cluster.as_str()).or_default().push(i);
     }
+    // Clusters that carry an arm's denominator: the others cannot move that arm's ratio.
+    let carrying = |v: &BTreeMap<String, ItemValue>| {
+        clusters
+            .values()
+            .filter(|is| is.iter().any(|i| v[*i].denominator > 0.0))
+            .count()
+    };
     let inference = if delta.is_none() {
         NO_INFERENCE
     } else if independent && integral && id.is_paired_proportion() {
@@ -309,7 +316,7 @@ fn metric_delta(
             Some(paired::mcnemar(only_a, only_b).0),
             "mcnemar_exact",
         )
-    } else if clusters.len() < bootstrap::MIN_UNITS {
+    } else if carrying(pa).min(carrying(pb)) < bootstrap::MIN_UNITS {
         TOO_FEW_UNITS
     } else {
         // Paired cluster bootstrap: one draw of clusters serves both arms. Each
@@ -477,7 +484,8 @@ fn unpaired_delta(
         }
     } else {
         let (ca, cb) = (cluster_totals(&pa), cluster_totals(&pb));
-        if ca.len() < bootstrap::MIN_UNITS || cb.len() < bootstrap::MIN_UNITS {
+        let carrying = |c: &[[f64; 2]]| c.iter().filter(|t| t[1] > 0.0).count();
+        if carrying(&ca) < bootstrap::MIN_UNITS || carrying(&cb) < bootstrap::MIN_UNITS {
             TOO_FEW_UNITS
         } else {
             // The arms are independent, so each draws its own clusters.

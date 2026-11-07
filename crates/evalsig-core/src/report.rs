@@ -625,7 +625,14 @@ pub fn from_prepared(
         Estimand::SingleShot => 0,
         Estimand::Majority(k) | Estimand::Any(k) | Estimand::All(k) => units
             .iter()
-            .filter(|u| u.replicates.len() < k as usize)
+            .filter(|u| {
+                let usable = u
+                    .replicates
+                    .iter()
+                    .filter(|r| r.err().is_none_or(|m| s.missing.policy(m) != Policy::Drop))
+                    .count();
+                usable < k as usize
+            })
             .count(),
     };
     let reference = p.positive.map(|_| ReferenceInfo {
@@ -643,7 +650,7 @@ pub fn from_prepared(
             .map(|u| ItemRow {
                 item_id: u.item_id.clone(),
                 reference: u.reference,
-                judged: calc.item_value(u, |_| None).map(|(v, _)| v),
+                judged: calc.item_value(u, |_| None),
                 replicates: u.replicates.len(),
                 missing: u.replicates.iter().filter_map(|r| r.err()).collect(),
             })
@@ -819,9 +826,8 @@ type Part = (f64, f64);
 
 impl Calc<'_> {
     /// The item's value under the estimand, with missing replicates filled for a metric
-    /// whose worst replicate value is `worst(unit)`; also whether a system-side
-    /// replicate was missing.
-    fn item_value(&self, u: &Unit, worst: impl Fn(&Unit) -> Option<f64>) -> Option<(f64, bool)> {
+    /// whose worst replicate value is `worst(unit)`.
+    fn item_value(&self, u: &Unit, worst: impl Fn(&Unit) -> Option<f64>) -> Option<f64> {
         self.item_value_bound(u, &worst, Fill::Policy, Values::Judged)
     }
 
@@ -831,7 +837,7 @@ impl Calc<'_> {
         worst: &dyn Fn(&Unit) -> Option<f64>,
         bound: Fill,
         which: Values,
-    ) -> Option<(f64, bool)> {
+    ) -> Option<f64> {
         let binary = self.binary || which == Values::AtLeast;
         let (lo, hi) = if binary { (0.0, 1.0) } else { self.score_range };
         let reps = match which {
@@ -841,13 +847,11 @@ impl Calc<'_> {
         let w = worst(u).unwrap_or(lo);
         let b = if w == lo { hi } else { lo };
         let mut values = Vec::new();
-        let mut system_missing = false;
         for r in reps {
             match r {
                 Ok(v) => values.push(*v),
                 Err(reason) => {
                     let system = reason.side() == Side::System;
-                    system_missing |= system;
                     let policy = match (bound, system) {
                         (Fill::Worst, true) => Policy::Worst,
                         (Fill::Best, true) => Policy::Best,
@@ -868,7 +872,7 @@ impl Calc<'_> {
         } else {
             mean(values.iter().copied())?
         };
-        Some((v, system_missing))
+        Some(v)
     }
 
     /// How a metric fills and counts items.
@@ -992,7 +996,7 @@ impl Calc<'_> {
             .iter()
             .map(|u| {
                 self.item_value_bound(u, &*d.worst, bound, d.values)
-                    .map(|(v, _)| (d.part)(u, v))
+                    .map(|v| (d.part)(u, v))
             })
             .collect()
     }
@@ -1049,11 +1053,15 @@ impl Calc<'_> {
             let p = units
                 .iter()
                 .map(|u| {
+                    let reps = match which {
+                        Values::Judged => &u.replicates,
+                        Values::AtLeast => &u.at_least,
+                    };
+                    any_system |= reps
+                        .iter()
+                        .any(|r| r.is_err_and(|reason| reason.side() == Side::System));
                     self.item_value_bound(u, worst, bound, which)
-                        .map(|(v, sys)| {
-                            any_system |= sys;
-                            part(u, v)
-                        })
+                        .map(|v| part(u, v))
                 })
                 .collect();
             (p, any_system)
@@ -1119,7 +1127,12 @@ impl Calc<'_> {
                 clusters.entry(u.cluster.as_str()).or_default().push(i);
             }
             let groups: Vec<Vec<usize>> = clusters.into_values().collect();
-            if groups.len() < bootstrap::MIN_UNITS {
+            // Only units that carry the metric's denominator can move the ratio.
+            let carrying = groups
+                .iter()
+                .filter(|g| g.iter().any(|&i| point_parts[i].is_some_and(|p| p.1 > 0.0)))
+                .count();
+            if carrying < bootstrap::MIN_UNITS {
                 return Metric {
                     metric,
                     value,
@@ -1293,14 +1306,16 @@ impl Prepared<'_> {
             .collect()
     }
 
-    /// Each item's judged value under the missing policy and its reference share.
+    /// Each item's judged value under the missing policy, with a system-side gap filled
+    /// as accuracy fills it, and its reference share.
     pub fn judged(&self) -> BTreeMap<String, (f64, Option<f64>)> {
         let calc = self.calc();
         self.units
             .iter()
             .filter_map(|u| {
-                calc.item_value(u, |_| None)
-                    .map(|(v, _)| (u.item_id.clone(), (v, u.reference)))
+                let worst = |u: &Unit| u.reference.map(|s| if s >= 0.5 { 0.0 } else { 1.0 });
+                calc.item_value(u, worst)
+                    .map(|v| (u.item_id.clone(), (v, u.reference)))
             })
             .collect()
     }

@@ -54,15 +54,22 @@ pub fn threshold_costs(
 }
 
 /// The threshold with the least expected cost (the lower one on a tie).
+///
+/// Costs that are equal in exact arithmetic differ in their last digits, so a cost within
+/// 1e-12 of the largest matrix entry counts as the least.
 pub fn optimal_threshold(
     pos_by_level: &[f64],
     neg_by_level: &[f64],
     matrix: &[[f64; 2]; 2],
     prevalence: f64,
 ) -> Option<(usize, f64)> {
-    threshold_costs(pos_by_level, neg_by_level, matrix, prevalence)?
-        .into_iter()
-        .min_by(|a, b| a.1.total_cmp(&b.1))
+    let costs = threshold_costs(pos_by_level, neg_by_level, matrix, prevalence)?;
+    let least = costs.iter().map(|c| c.1).min_by(f64::total_cmp)?;
+    let scale = matrix
+        .iter()
+        .flatten()
+        .fold(0.0, |m: f64, c| m.max(c.abs()));
+    costs.into_iter().find(|c| c.1 <= least + 1e-12 * scale)
 }
 
 /// The matrix with C_FP = 1, C_FN = r and no cost for correct decisions.
@@ -124,11 +131,13 @@ pub fn difference_sensitivity(
         binary_cost(a.0, a.1, &m, prevalence) - binary_cost(b.0, b.1, &m, prevalence)
     };
     let (at_low, at_high) = (diff(lo), diff(hi));
+    // Differences equal in exact arithmetic differ from 0 in their last digits.
+    let tie = |d: f64| d.abs() <= 1e-12 * lo.abs().max(hi.abs()).max(1.0);
     DifferenceSensitivity {
         at_low,
         at_high,
         // A tie at either end is no change of sign.
-        sign_changes: at_low * at_high < 0.0,
+        sign_changes: !tie(at_low) && !tie(at_high) && (at_low < 0.0) != (at_high < 0.0),
     }
 }
 

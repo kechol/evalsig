@@ -39,7 +39,7 @@ interval = "auto"                     # replicates mean a bootstrap; the referee
 
 [[conditions]]
 metric = "hit_rate"
-rule = "not_worse_than"               # the lower end of the difference's interval is at least -0.05 (non-inferiority)
+rule = "not_worse_than"               # the lower end of the difference's interval, positive being better, is at least -0.05 (non-inferiority)
 value = -0.05                         # a narrow margin such as -0.01 does not pass on a few hundred items even when true
 sided = "one"
 interval = "auto"

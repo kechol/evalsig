@@ -148,7 +148,11 @@ fn too_few_units_give_insufficient_data() {
     let v = json(evalsig(dir.path()).args(["compare", "r-base", "r-cand"]));
     assert_eq!(v["verdict"]["code"], "insufficient_data");
     assert_eq!(v["results"]["metrics"][0]["interval"], "too_few_units");
-    assert_eq!(v["next"], serde_json::json!([]));
+    // Half the items moved and the difference is 0.4: the sizing of `power` applies.
+    assert_eq!(
+        v["next"][0]["command"],
+        "evalsig power --delta 0.4 --discordance 0.5"
+    );
 }
 
 #[test]

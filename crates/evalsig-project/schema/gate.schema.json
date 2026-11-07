@@ -482,11 +482,12 @@
      "description": "The referee configuration's handling per missing reason, for validation"
     },
     "level": {
-     "type": "number"
+     "type": "number",
+     "description": "The level of a condition that names none"
     },
     "per_submission_level": {
      "type": "number",
-     "description": "1 - (1 - level)/B, two-sided"
+     "description": "1 - (1 - L)/B, two-sided, with L the primary condition's level (level when it names none)"
     },
     "bootstrap": {
      "type": "integer",

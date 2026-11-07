@@ -14,7 +14,9 @@ fn log_factorials(n: usize) -> Vec<f64> {
 }
 
 fn ln_pmf(lf: &[f64], k: usize, n: usize, p: f64) -> f64 {
-    lf[n] - lf[k] - lf[n - k] + k as f64 * p.ln() + (n - k) as f64 * (1.0 - p).ln()
+    // 0 · ln 0 = 0, so p = 0 or 1 keeps the certain outcome's probability at 1.
+    let xlogy = |x: usize, y: f64| if x == 0 { 0.0 } else { x as f64 * y.ln() };
+    lf[n] - lf[k] - lf[n - k] + xlogy(k, p) + xlogy(n - k, 1.0 - p)
 }
 
 /// Items for an exact one-sided 95% bound below u with no event, ⌈ln α / ln(1 − u)⌉,
@@ -33,12 +35,15 @@ fn wilson_halfwidth(k: f64, n: f64, z: f64) -> f64 {
 }
 
 /// The smallest n whose two-sided Wilson interval at rate p has half-width ≤ w; above
-/// 200 items the search steps by n/200.
+/// 200 items the search steps by n/200. `u64::MAX` when no count that fits reaches w.
 pub fn n_for_halfwidth(p: f64, w: f64, level: f64) -> u64 {
     let z = norm_ppf(0.5 + level / 2.0);
     let mut n: u64 = 2;
     while wilson_halfwidth((p * n as f64).round_ties_even(), n as f64, z) > w {
-        n += if n < 200 { 1 } else { (n / 200).max(1) };
+        match n.checked_add(if n < 200 { 1 } else { (n / 200).max(1) }) {
+            Some(next) => n = next,
+            None => return u64::MAX,
+        }
     }
     n
 }
@@ -344,5 +349,19 @@ mod tests {
         assert_eq!(with_design_effect(100, 3.0, 0.5), 200);
         let p = gate_pass_probability(530, p10, p01, 0.05, 20);
         assert!(p > 0.7 && p < 0.9, "{p}");
+    }
+
+    #[test]
+    fn every_pair_discordant_is_a_point_mass_not_nan() {
+        // ψ = 1, p10 = 0.75: the power is P(Binomial(100, 0.75) rejects), 0.9998529257
+        // from scipy, and the exact size is 28.
+        let p = mcnemar_power(100, 0.75, 0.25, 0.05, false);
+        assert!((p - 0.999_852_925_701_64).abs() < 1e-9, "{p}");
+        assert_eq!(mcnemar_n_exact(0.75, 0.25, 0.8, 0.05, false), Some(28));
+    }
+
+    #[test]
+    fn a_half_width_no_count_can_reach_is_the_largest_count() {
+        assert_eq!(n_for_halfwidth(0.5, 0.0, 0.95), u64::MAX);
     }
 }

@@ -167,11 +167,12 @@ fn submissions_over_the_socket_and_http_get_the_gate_answer() {
     assert!(gates[0]["summary"]["agent_ledger_head"].is_string());
     assert_eq!(gates[2]["summary"]["error"], "does_not_match_approval");
     assert_eq!(accesses(&w), 3);
+    // Two answers and the refusal.
     assert_eq!(
         std::fs::read_dir(w.home.path().join("results"))
             .unwrap()
             .count(),
-        2
+        3
     );
 }
 

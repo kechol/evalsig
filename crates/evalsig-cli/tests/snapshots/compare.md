@@ -11,7 +11,7 @@
 | false_alarm_rate | 0.2278 | 0.1631 | +0.0647 | +0.0195 to +0.1138 | `improved` |
 | precision | 0.5938 | 0.6699 | +0.0762 | +0.0177 to +0.1386 | `improved` |
 
-New hits 9 · lost hits 6.50 · new false alarms 7 · cleared false alarms 18.50
+New hits 9 · lost hits 6.50 · new false alarms 7 · cleared false alarms 20.50
 
 Comparison 1 on this split.
 

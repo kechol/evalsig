@@ -104,7 +104,8 @@ pub fn render(e: &Envelope) -> Option<String> {
 fn metric_table(s: &mut String, metrics: &Value, level: f64) {
     let _ = writeln!(
         s,
-        "| Metric | Value | {level:.0}% interval | If missing were worst / best | n |"
+        "| Metric | Value | {}% interval | Range if missing were worst or best | n |",
+        (level * 10.0).round() / 10.0
     );
     s.push_str("|---|---:|---|---|---:|\n");
     for m in metrics.as_array().into_iter().flatten() {

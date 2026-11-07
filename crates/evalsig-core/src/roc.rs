@@ -7,7 +7,7 @@
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::bootstrap::{self, MIN_UNITS};
-use crate::numeric::{Rng, norm_ppf, sum, variance};
+use crate::numeric::{Rng, Running, norm_ppf, sum, variance};
 
 /// ψ(x, y): 1 if the positive scores higher, ½ on a tie, 0 below.
 pub fn psi(x: f64, y: f64) -> f64 {
@@ -50,7 +50,7 @@ pub fn auc(pos: &[Weighted], neg: &[Weighted]) -> Option<f64> {
 pub fn roc_points(pos: &[Weighted], neg: &[Weighted]) -> Vec<(f64, f64)> {
     let total = |xs: &[Weighted]| sum(xs.iter().map(|x| x.weight));
     let (tp, tn) = (total(pos), total(neg));
-    if tp <= 0.0 || tn <= 0.0 {
+    if tp <= 0.0 || tn <= 0.0 || pos.iter().chain(neg).any(|x| x.score.is_nan()) {
         return Vec::new();
     }
     // One sweep from the strongest score, accumulating each score's weights.
@@ -61,19 +61,18 @@ pub fn roc_points(pos: &[Weighted], neg: &[Weighted]) -> Vec<(f64, f64)> {
         .collect();
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     let mut out = vec![(0.0, 0.0)];
-    let (mut hits, mut alarms, mut start) = (Vec::new(), Vec::new(), 0);
+    let (mut hits, mut alarms, mut start) = (Running::default(), Running::default(), 0);
     while start < scored.len() {
         let end = start
             + scored[start..]
                 .iter()
                 .take_while(|x| x.0 == scored[start].0)
                 .count();
-        hits.extend(scored[start..end].iter().map(|x| x.1));
-        alarms.extend(scored[start..end].iter().map(|x| x.2));
-        out.push((
-            sum(alarms.iter().copied()) / tn,
-            sum(hits.iter().copied()) / tp,
-        ));
+        for x in &scored[start..end] {
+            hits.add(x.1);
+            alarms.add(x.2);
+        }
+        out.push((alarms.total() / tn, hits.total() / tp));
         start = end;
     }
     if out.last() != Some(&(1.0, 1.0)) {
@@ -98,6 +97,9 @@ pub struct SoftItem {
 /// i = j included with ψ = ½. Sorted by score, each item's positive mass meets the
 /// negative mass of every lower score, and half of its own score's, in O(n log n).
 pub fn auc_soft(items: &[SoftItem]) -> Option<f64> {
+    if items.iter().any(|x| x.score.is_nan()) {
+        return None;
+    }
     let mut sorted: Vec<&SoftItem> = items.iter().collect();
     sorted.sort_by(|a, b| a.score.total_cmp(&b.score));
     let pos = |x: &SoftItem| x.weight * x.share;
@@ -371,28 +373,37 @@ pub struct Bin {
 }
 
 /// The Brier score and the 10 equal-width reliability bins that hold scores, for
-/// scores in [0, 1] against references y (a soft share or 0/1).
-pub fn calibration(scores: &[f64], y: &[f64]) -> Option<(f64, Vec<Bin>)> {
+/// scores in [0, 1] against references y (a soft share or 0/1), with item `weights`.
+/// A bin's `n` counts items; its mean score and positive share are weighted.
+pub fn calibration(scores: &[f64], y: &[f64], weights: &[f64]) -> Option<(f64, Vec<Bin>)> {
     if scores.is_empty()
         || scores.len() != y.len()
+        || scores.len() != weights.len()
         || scores.iter().any(|p| !(0.0..=1.0).contains(p))
     {
         return None;
     }
-    let brier = sum(scores.iter().zip(y).map(|(p, t)| (p - t) * (p - t))) / scores.len() as f64;
+    let brier = sum(scores
+        .iter()
+        .zip(y)
+        .zip(weights)
+        .map(|((p, t), w)| w * (p - t) * (p - t)))
+        / sum(weights.iter().copied());
     let bins = (0..10)
         .filter_map(|b| {
-            let members: Vec<(f64, f64)> = scores
+            let members: Vec<(f64, f64, f64)> = scores
                 .iter()
                 .zip(y)
-                .filter(|(p, _)| ((*p * 10.0) as usize).min(9) == b)
-                .map(|(p, t)| (*p, *t))
+                .zip(weights)
+                .filter(|((p, _), _)| ((**p * 10.0) as usize).min(9) == b)
+                .map(|((p, t), w)| (*p, *t, *w))
                 .collect();
+            let total = sum(members.iter().map(|m| m.2));
             (!members.is_empty()).then(|| Bin {
                 bin: b,
                 n: members.len(),
-                mean_score: sum(members.iter().map(|m| m.0)) / members.len() as f64,
-                positive_share: sum(members.iter().map(|m| m.1)) / members.len() as f64,
+                mean_score: sum(members.iter().map(|m| m.2 * m.0)) / total,
+                positive_share: sum(members.iter().map(|m| m.2 * m.1)) / total,
             })
         })
         .collect();
@@ -444,6 +455,29 @@ mod tests {
         let clusters: Vec<usize> = (0..5).collect();
         let (lo, hi) = auc_soft_interval(&soft, &clusters, 500, 7, 0.95).unwrap();
         assert!(lo <= binary && binary <= hi);
+    }
+
+    #[test]
+    fn a_nan_score_has_no_roc_and_no_auc() {
+        let nan = unit(&[f64::NAN, 1.0]);
+        assert!(roc_points(&nan, &unit(&[0.5])).is_empty());
+        let items = [
+            SoftItem {
+                score: f64::NAN,
+                share: 1.0,
+                weight: 1.0,
+            },
+            SoftItem {
+                score: 0.5,
+                share: 0.0,
+                weight: 1.0,
+            },
+        ];
+        assert_eq!(auc_soft(&items), None);
+        assert_eq!(
+            crate::agreement::spearman(&[f64::NAN, 1.0], &[1.0, 2.0]),
+            None
+        );
     }
 
     #[test]

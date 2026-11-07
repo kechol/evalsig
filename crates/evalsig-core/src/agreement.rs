@@ -13,10 +13,14 @@ use crate::records::{Label, LabelKind};
 
 /// Ascending distinct categories and the Q×Q table of the pairs `(first, second)`.
 pub fn table(pairs: &[(f64, f64)]) -> (Vec<f64>, Vec<Vec<f64>>) {
-    let mut categories: Vec<f64> = pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
+    let mut categories: Vec<f64> = pairs
+        .iter()
+        .flat_map(|&(a, b)| [a + 0.0, b + 0.0])
+        .collect();
     categories.sort_by(f64::total_cmp);
     categories.dedup();
-    let at = |x: f64| categories.partition_point(|c| c.total_cmp(&x).is_lt());
+    // `+ 0.0` turns -0.0 into 0.0: `dedup` merges the two zeros, `total_cmp` would not.
+    let at = |x: f64| categories.partition_point(|c| c.total_cmp(&(x + 0.0)).is_lt());
     let mut t = vec![vec![0.0; categories.len()]; categories.len()];
     for &(a, b) in pairs {
         t[at(a)][at(b)] += 1.0;
@@ -62,11 +66,23 @@ pub fn cohen_kappa(t: &[Vec<f64>]) -> Option<f64> {
     chance_corrected(po, pe)
 }
 
-/// Quadratic weighted κ = 1 − Σ w·p_o / Σ w·p_e with w_ab = (a − b)²/(Q − 1)².
+/// Quadratic weighted κ = 1 − Σ w·p_o / Σ w·p_e with w_ab = (a − b)²/(Q − 1)², the rows
+/// and columns being the consecutive levels 0 … Q − 1.
 pub fn quadratic_weighted_kappa(t: &[Vec<f64>]) -> Option<f64> {
+    let levels: Vec<f64> = (0..t.len()).map(|i| i as f64).collect();
+    quadratic_weighted_kappa_at(&levels, t)
+}
+
+/// The same with the level of each row and column given, ascending, so a table of the
+/// levels that occur weighs them by their distance and unseen levels need no row.
+pub fn quadratic_weighted_kappa_at(levels: &[f64], t: &[Vec<f64>]) -> Option<f64> {
     let s = proportions(t)?;
     let q = t.len();
-    let w = |a: usize, b: usize| (a.abs_diff(b) as f64 / (q - 1) as f64).powi(2);
+    if levels.len() != q {
+        return None;
+    }
+    let span = levels[q - 1] - levels[0];
+    let w = |a: usize, b: usize| ((levels[a] - levels[b]) / span).powi(2);
     let (mut observed, mut expected) = (0.0, 0.0);
     for a in 0..q {
         for b in 0..q {
@@ -127,12 +143,12 @@ pub fn krippendorff_alpha(units: &[Vec<f64>], level: Level) -> Option<f64> {
         .iter()
         .filter(|u| u.len() >= 2)
         .flatten()
-        .copied()
+        .map(|&x| x + 0.0)
         .collect();
     categories.sort_by(f64::total_cmp);
     categories.dedup();
     let q = categories.len();
-    let at = |x: f64| categories.partition_point(|c| c.total_cmp(&x).is_lt());
+    let at = |x: f64| categories.partition_point(|c| c.total_cmp(&(x + 0.0)).is_lt());
     let mut o = vec![vec![0.0; q]; q];
     for u in units.iter().filter(|u| u.len() >= 2) {
         let share = 1.0 / (u.len() - 1) as f64;
@@ -188,7 +204,7 @@ fn midranks(x: &[f64]) -> Vec<f64> {
 
 /// Spearman's ρ: the Pearson correlation of the midranks.
 pub fn spearman(x: &[f64], y: &[f64]) -> Option<f64> {
-    if x.len() != y.len() || x.len() < 2 {
+    if x.len() != y.len() || x.len() < 2 || x.iter().chain(y).any(|v| v.is_nan()) {
         return None;
     }
     let (rx, ry) = (midranks(x), midranks(y));
@@ -307,6 +323,26 @@ mod tests {
             (2, 2, 1)
         );
         assert_eq!(between.rate(), Some(0.5));
+    }
+
+    #[test]
+    fn negative_zero_is_the_category_zero() {
+        // `-0.0` and `0.0` are one category: the table is [0, 1] with both pairs at (0, 1).
+        let (categories, t) = table(&[(-0.0, 1.0), (0.0, 1.0)]);
+        assert_eq!(categories, [0.0, 1.0]);
+        assert_eq!(t, [[0.0, 2.0], [0.0, 0.0]]);
+        assert_eq!(table(&[(-0.0, 0.0), (0.0, 0.0)]).1, [[2.0]]);
+        // Krippendorff's α is the one of the +0.0 data (hand value -0.25).
+        let mixed = krippendorff_alpha(
+            &[vec![-0.0, 1.0], vec![0.0, 1.0], vec![1.0, 1.0]],
+            Level::Nominal,
+        );
+        let plain = krippendorff_alpha(
+            &[vec![0.0, 1.0], vec![0.0, 1.0], vec![1.0, 1.0]],
+            Level::Nominal,
+        );
+        assert_eq!(mixed, plain);
+        assert!((plain.unwrap() - -0.25).abs() < 1e-12);
     }
 
     #[test]

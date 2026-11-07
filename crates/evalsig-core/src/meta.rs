@@ -35,21 +35,18 @@ pub struct MetaEvaluation {
     pub spearman_rho: Option<f64>,
 }
 
-/// The table of integer levels over every level from the lowest to the highest seen,
-/// so the quadratic weights follow the level distance; `None` for non-integer scores.
-fn level_table(pairs: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
-    let values = pairs.iter().flat_map(|&(a, b)| [a, b]);
-    if values.clone().any(|v| v.fract() != 0.0) {
+/// The integer levels that occur, ascending, and their table; `None` for non-integer
+/// scores. The quadratic weights follow the level distance, so levels in between that
+/// never occur need no row and the table is D×D for D distinct levels.
+fn level_table(pairs: &[(f64, f64)]) -> Option<(Vec<f64>, Vec<Vec<f64>>)> {
+    if pairs
+        .iter()
+        .flat_map(|&(a, b)| [a, b])
+        .any(|v| v.fract() != 0.0)
+    {
         return None;
     }
-    let lo = values.clone().fold(f64::INFINITY, f64::min);
-    let hi = values.fold(f64::NEG_INFINITY, f64::max);
-    let q = (hi - lo) as usize + 1;
-    let mut t = vec![vec![0.0; q]; q];
-    for &(a, b) in pairs {
-        t[(a - lo) as usize][(b - lo) as usize] += 1.0;
-    }
-    Some(t)
+    Some(agreement::table(pairs))
 }
 
 /// Agreement of (grader, reference) pairs. `ordered` values get Spearman's ρ and,
@@ -61,13 +58,22 @@ pub fn evaluate(pairs: &[(f64, f64)], ordered: bool) -> MetaEvaluation {
         ..MetaEvaluation::default()
     };
     if ordered {
-        m.quadratic_weighted_kappa =
-            level_table(pairs).and_then(|t| agreement::quadratic_weighted_kappa(&t));
+        m.quadratic_weighted_kappa = level_table(pairs)
+            .and_then(|(levels, t)| agreement::quadratic_weighted_kappa_at(&levels, &t));
         let (x, y): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
         m.spearman_rho = agreement::spearman(&x, &y);
         return m;
     }
-    let (categories, table) = agreement::table(pairs);
+    let (mut categories, mut table) = agreement::table(pairs);
+    // Booleans and decisions are coded 0/1: a pair that uses one class still has two.
+    if let [c] = categories[..]
+        && (c == 0.0 || c == 1.0)
+    {
+        let n = table[0][0];
+        categories = vec![0.0, 1.0];
+        table = vec![vec![0.0; 2]; 2];
+        table[c as usize][c as usize] = n;
+    }
     m.cohen_kappa = agreement::cohen_kappa(&table);
     m.gwet_ac1 = agreement::gwet_ac1(&table);
     if categories.len() == 2 {
@@ -103,6 +109,31 @@ mod tests {
         // po 0.8, pe 0.4·0.4 + 0.6·0.6 = 0.52.
         assert!((m.cohen_kappa.unwrap() - (0.8 - 0.52) / 0.48).abs() < 1e-12);
         assert_eq!(m.spearman_rho, None);
+    }
+
+    #[test]
+    fn a_wide_range_of_levels_needs_no_table_over_the_range() {
+        // Four distinct levels over a span of a million: the table is 4 × 4, and the
+        // weights follow the distances. Reference values from numpy.
+        let wide = evaluate(&[(0.0, 0.0), (1.0, 1.0), (1e6, 1e6), (1e6, 0.0)], true);
+        assert!((wide.quadratic_weighted_kappa.unwrap() - 0.499_999_625_000_093_76).abs() < 1e-12);
+        let near = evaluate(&[(0.0, 0.0), (1.0, 1.0), (5.0, 5.0), (5.0, 1.0)], true);
+        assert!((near.quadratic_weighted_kappa.unwrap() - 0.594_936_708_860_759_6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_pair_that_uses_one_class_keeps_the_two_class_scale() {
+        // Both raters say positive on every item: κ is undefined (p_e = 1), AC1 is 1, and
+        // the positive agreement is 1 while the negative agreement is 0/0.
+        let all_positive = evaluate(&[(1.0, 1.0); 40], false);
+        assert_eq!(all_positive.cohen_kappa, None);
+        assert_eq!(all_positive.gwet_ac1, Some(1.0));
+        assert_eq!(all_positive.positive_agreement, Some(1.0));
+        assert_eq!(all_positive.negative_agreement, None);
+        let all_negative = evaluate(&[(0.0, 0.0); 40], false);
+        assert_eq!(all_negative.gwet_ac1, Some(1.0));
+        assert_eq!(all_negative.positive_agreement, None);
+        assert_eq!(all_negative.negative_agreement, Some(1.0));
     }
 
     #[test]

@@ -19,7 +19,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | item | `item` | One object being judged. An Inspect sample or a promptfoo test case |
 | stratum | `stratum` | A grouping of items to report separately (language, difficulty, customer). An item may have several |
 | weight | `weight` | Weight that maps the item back to the population. Default 1 |
-| missing rate | `missing_rate` | Share of judgments that are missing, every reason counted. A gate condition on the holdout |
+| missing rate | `missing_rate` | Mean over items of the share of an item's judgments that are missing, every reason counted. A gate condition on the holdout |
 | reference label | `label` | A judgment treated as correct. Its `source` says whether a human, a model or a panel produced it |
 | rater | `rater` | The human or model that produced a reference label. Also called annotator |
 | system under test | `system` | What produces judgments (a model, prompt and rule combination). Has a version |

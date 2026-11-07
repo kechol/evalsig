@@ -292,3 +292,22 @@ fn an_indistinguishable_comparison_points_to_power() {
     assert!(next.starts_with("evalsig power --delta "), "{next}");
     assert!(next.contains("--discordance 0.1833"), "{next}");
 }
+
+#[test]
+fn out_of_range_settings_are_usage_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [
+        &["--rate", "0.5", "--half-width", "0"][..],
+        &["--delta", "0.05", "--discordance", "0.1", "--power", "1.5"][..],
+        &["--delta", "0.05", "--discordance", "0.1", "--alpha", "2"][..],
+        &["--zero-events-below", "0"][..],
+        &["--rate", "1.5", "--half-width", "0.05"][..],
+    ] {
+        evalsig(dir.path())
+            .arg("power")
+            .args(args)
+            .assert()
+            .failure()
+            .code(64);
+    }
+}

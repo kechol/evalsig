@@ -6,7 +6,7 @@ Reference: `soft` from 2 raters; 300 items with a reference (0 model-derived)
 
 Rater design: crossed (detected); the intervals estimate performance against these raters
 
-| Metric | Value | 95% interval | If missing were worst / best | n |
+| Metric | Value | 95% interval | Range if missing were worst or best | n |
 |---|---:|---|---|---:|
 | accuracy | 0.7583 | 0.7133 to 0.8050 | 0.7583 to 0.7783 | 300 |
 | hit_rate | 0.7268 | 0.6442 to 0.8118 | 0.7268 to 0.7705 | 91.50 |

@@ -239,6 +239,27 @@ impl Prepared<'_> {
         ))
     }
 
+    /// For the positives and for the negatives, the factor that brings the item weights of
+    /// that class to sum to Kish's effective number of items, (Σw)²/Σw². Counts built from
+    /// the scaled weights can be read as numbers of items, as the log-linear correction
+    /// and the Katz standard error do, whatever the scale of the weights.
+    fn class_scales(&self) -> (f64, f64) {
+        let kish = |positive: bool| {
+            let (s1, s2) = self
+                .units
+                .iter()
+                .filter(|u| {
+                    u.reference
+                        .is_some_and(|s| if positive { s > 0.0 } else { s < 1.0 })
+                })
+                .fold((0.0, 0.0), |(a, b), u| {
+                    (a + u.weight, b + u.weight * u.weight)
+                });
+            if s2 > 0.0 { s1 / s2 } else { 1.0 }
+        };
+        (kish(true), kish(false))
+    }
+
     /// The point hit rate and false-alarm rate under the decision rule.
     pub fn rates(&self) -> Option<(f64, f64)> {
         let ((h, p), (f, n)) = self.counts()?;
@@ -248,11 +269,12 @@ impl Prepared<'_> {
     /// d′ and c under the decision rule.
     pub fn sdt(&self) -> Option<Sdt> {
         let ((h, p), (f, n)) = self.counts()?;
+        let (kp, kn) = self.class_scales();
         let (dprime, criterion) = crate::sdt::Confusion {
-            hits: h,
-            misses: p - h,
-            false_alarms: f,
-            correct_rejections: n - f,
+            hits: h * kp,
+            misses: (p - h) * kp,
+            false_alarms: f * kn,
+            correct_rejections: (n - f) * kn,
         }
         .dprime_and_criterion();
         Some(Sdt {
@@ -270,7 +292,8 @@ impl Prepared<'_> {
         let units = self.ranked()?;
         let scores: Vec<f64> = units.iter().map(|u| u.raw.unwrap_or(0.0)).collect();
         let y: Vec<f64> = units.iter().map(|u| u.reference.unwrap_or(0.0)).collect();
-        roc::calibration(&scores, &y).map(|(brier, bins)| Calibration { brier, bins })
+        let weights: Vec<f64> = units.iter().map(|u| u.weight).collect();
+        roc::calibration(&scores, &y, &weights).map(|(brier, bins)| Calibration { brier, bins })
     }
 
     /// Each feature's likelihood ratio and class over the items with a reference; an
@@ -286,6 +309,7 @@ impl Prepared<'_> {
             .iter()
             .flat_map(|u| u.fired.keys().map(String::as_str))
             .collect();
+        let (kp, kn) = self.class_scales();
         let counts: Vec<Counts> = ids
             .iter()
             .map(|id| {
@@ -298,10 +322,10 @@ impl Prepared<'_> {
                 for u in &units {
                     let s = u.reference.unwrap_or(0.0);
                     let f = u.fired.get(*id).copied().unwrap_or(0.0);
-                    c.a += u.weight * s * f;
-                    c.n_pos += u.weight * s;
-                    c.b += u.weight * (1.0 - s) * f;
-                    c.n_neg += u.weight * (1.0 - s);
+                    c.a += kp * u.weight * s * f;
+                    c.n_pos += kp * u.weight * s;
+                    c.b += kn * u.weight * (1.0 - s) * f;
+                    c.n_neg += kn * u.weight * (1.0 - s);
                 }
                 c
             })
@@ -394,8 +418,13 @@ impl Prepared<'_> {
             let Some(g) = model else { continue };
             let score = |r: f64| match self.positive {
                 Some(_) => calc
-                    .item_value_bound(u, &|_| None, Fill::Policy, super::Values::Judged)
-                    .map(|(v, _)| v * r + (1.0 - v) * (1.0 - r)),
+                    .item_value_bound(
+                        u,
+                        &|_| Some(if r >= 0.5 { 0.0 } else { 1.0 }),
+                        Fill::Policy,
+                        super::Values::Judged,
+                    )
+                    .map(|v| v * r + (1.0 - v) * (1.0 - r)),
                 None => Some(r),
             };
             let Some(f) = score(g) else { continue };

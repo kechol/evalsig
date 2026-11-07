@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_core::criteria::{self, Condition};
+use evalsig_core::gate;
 use evalsig_core::interval::{clopper_pearson, clopper_pearson_upper};
 use evalsig_core::missing::Side;
-use evalsig_core::records::Label;
+use evalsig_core::records::{Judgment, Label};
 use evalsig_core::report::{self, Report};
 use evalsig_core::validity;
 use serde_json::json;
@@ -110,8 +111,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let mut rows = Vec::new();
     let mut outcomes = Vec::new();
     for c in &file.conditions {
-        let (estimate, interval) =
-            condition_value(c, &reports[&key(c)], c.level.unwrap_or(settings.level))?;
+        let (estimate, interval) = condition_value(
+            c,
+            &reports[&key(c)],
+            &judgments,
+            c.level.unwrap_or(settings.level),
+        )?;
         let judged = if enough { c.judge(interval) } else { None };
         outcomes.push(judged.map(|(_, passed)| passed));
         rows.push(json!({
@@ -170,15 +175,18 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
 type Measured = (Option<f64>, Option<(f64, f64)>);
 
 /// A condition's point value and the interval at the level its sidedness needs.
-fn condition_value(c: &Condition, r: &Report, level: f64) -> Result<Measured, Error> {
+fn condition_value(
+    c: &Condition,
+    r: &Report,
+    judgments: &[&Judgment],
+    level: f64,
+) -> Result<Measured, Error> {
     if c.metric == "missing_rate" {
-        let system: u64 = r
-            .missing_by_reason
-            .iter()
-            .filter(|(reason, _)| reason.side() == Side::System)
-            .map(|(_, n)| n)
-            .sum();
-        let (k, n) = (system as f64, r.n_judgments as f64);
+        let (k, n) = gate::missing_counts(judgments, |j| {
+            j.missing
+                .as_ref()
+                .is_some_and(|m| m.reason.side() == Side::System)
+        });
         let interval = (n > 0.0).then(|| match c.sided {
             criteria::Sided::One => (0.0, clopper_pearson_upper(k, n, level)),
             criteria::Sided::Two => clopper_pearson(k, n, level),

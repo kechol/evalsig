@@ -284,7 +284,8 @@ adapters are shortcuts for people who have those logs.
   versions it reads and refuses others instead of reading them silently.
 - **Unmappable values become missing.** A value that cannot be mapped to a number
   or boolean (and a NaN or infinite score) becomes `missing` with reason
-  `invalid_output`, never 0.
+  `invalid_output`, never 0. An integral float is the integer it spells (`3.0` is
+  level 3).
 - **Replicates.** Inspect epochs and promptfoo repeats re-run both the system and
   the grader, so they are generation replicates (`gen_replicate`). promptfoo keeps
   no replicate number; the replicates of one (run, item) are numbered in result
@@ -609,15 +610,17 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   alone (`crates/evalsig-core/src/gate.rs`): `lower_bound_at_least` and
   `upper_bound_at_most` on the candidate's value; `delta_lower_bound_at_least` and
   `delta_upper_bound_at_most` on the candidate-minus-baseline difference;
-  `not_worse_than` (non-inferiority: the difference's lower bound is at least a negative
-  margin); and `pass` for a verdict metric. For the two difference rules with a
-  `min_effect`, a point difference smaller than it does not pass. `pass` reads the
-  alternative annotator test on the holdout ([metrics](metrics.md) §9.4).
+  `not_worse_than` (non-inferiority: the lower bound of the difference, oriented so that
+  positive is better, is at least a negative margin); and `pass` for a verdict metric.
+  For the two difference rules with a `min_effect`, a point difference smaller than it
+  does not pass. `pass` reads the alternative annotator test on the holdout
+  ([metrics](metrics.md) §9.4).
 - **Several conditions.** All must hold. This is an intersection-union test, so the
   overall error rate does not exceed any condition's level and no further correction is
   needed.
-- **Missing rate.** The metric `missing_rate` bounds the share of missing judgments; on a
-  holdout every missing judgment counts, whatever its reason.
+- **Missing rate.** The metric `missing_rate` bounds the share of missing judgments, taken
+  per item so that replicates add nothing to the count; on a holdout every missing
+  judgment counts, whatever its reason.
 - **Checks the referee makes on a submission.** In this order, with `gate` accepting no
   overrides:
 

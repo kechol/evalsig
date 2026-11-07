@@ -99,9 +99,11 @@ fn delong_cases_match() {
 #[test]
 fn calibration_cases_match() {
     for c in cases("calibration") {
+        let scores = floats(&c["input"]["scores"]);
         let (brier, bins) = roc::calibration(
-            &floats(&c["input"]["scores"]),
+            &scores,
             &floats(&c["input"]["labels"]),
+            &vec![1.0; scores.len()],
         )
         .unwrap();
         close(brier, &c["expected"]["brier"], "brier");

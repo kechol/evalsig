@@ -358,3 +358,54 @@ fn walk(dir: &Path) -> usize {
         })
         .unwrap_or(0)
 }
+
+#[test]
+fn an_integral_float_is_the_ordinal_level_it_spells() {
+    // `3.0` is level 3 in `records/1`, so a mapping must not turn it into a missing
+    // `invalid_output` judgment.
+    let dir = project();
+    let mapping = dir.path().join("mapping.toml");
+    std::fs::write(
+        &mapping,
+        r#"schema = "evalsig.mapping/1"
+name = "floats"
+
+[source]
+format = "jsonl"
+
+[run]
+run_id = { path = "$.run" }
+system = { id = { const = "sys" }, version = { const = "1" } }
+value_semantics = "decision"
+output_type = "ordinal"
+levels = 5
+
+[item]
+id = "$.id"
+
+[judgment]
+value = { path = "$.score" }
+"#,
+    )
+    .unwrap();
+    let log = dir.path().join("log.jsonl");
+    std::fs::write(
+        &log,
+        "{\"run\":\"r\",\"id\":\"a\",\"score\":3.0}\n{\"run\":\"r\",\"id\":\"b\",\"score\":2}\n",
+    )
+    .unwrap();
+    json(
+        evalsig(dir.path())
+            .arg("import")
+            .arg("--mapping")
+            .arg(&mapping)
+            .arg(&log),
+        0,
+    );
+    let runs = json(evalsig(dir.path()).arg("runs"), 0);
+    let run = &runs["results"]["runs"][0];
+    assert_eq!(
+        (run["judgments"].as_u64(), run["missing"].as_u64()),
+        (Some(2), Some(0))
+    );
+}

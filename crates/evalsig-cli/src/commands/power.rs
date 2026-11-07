@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use evalsig_core::cost;
+use evalsig_core::gate::Sided;
 use evalsig_core::power;
 use evalsig_core::records::Label;
 use evalsig_core::report;
@@ -18,6 +19,7 @@ use evalsig_project::data;
 use evalsig_project::envelope::{Envelope, Output, Schema, round_numbers};
 use evalsig_project::exit::Exit;
 use evalsig_project::project::Project;
+use evalsig_referee::conditions::Conditions;
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct PowerArgs {
@@ -65,25 +67,38 @@ pub fn power(args: &PowerArgs) -> Result<Output, Error> {
     if let Some(path) = &args.gate {
         let text = std::fs::read_to_string(path)
             .map_err(|e| evalsig_project::project::io_error(path, &e))?;
-        let doc: toml::Table = toml::from_str(&text).map_err(|e| Error::invalid_input(path, e))?;
+        let doc: Conditions = toml::from_str(&text).map_err(|e| Error::invalid_input(path, e))?;
         let primary = doc
-            .get("conditions")
-            .and_then(|c| c.as_array())
-            .and_then(|c| c.first());
+            .conditions
+            .first()
+            .ok_or_else(|| Error::usage(format!("{}: no conditions", path.display())))?;
+        // An approved copy keeps the level it resolved from the configuration.
         let level = primary
-            .and_then(|c| c.get("level"))
-            .and_then(toml::Value::as_float)
+            .level
+            .or(doc.resolved.as_ref().map(|r| r.level))
             .unwrap_or(0.95);
         args.alpha = 1.0 - level;
-        args.one_sided = primary
-            .and_then(|c| c.get("sided"))
-            .and_then(toml::Value::as_str)
-            == Some("one");
-        args.budget = doc
-            .get("holdout")
-            .and_then(|h| h.get("budget"))
-            .and_then(toml::Value::as_integer)
-            .map_or(5, |b| b as u32);
+        args.one_sided = primary.sided == Sided::One;
+        args.budget = doc.budget();
+    }
+    let open = |x: f64| x > 0.0 && x < 1.0;
+    for (flag, value) in [
+        ("--alpha", Some(args.alpha)),
+        ("--power", Some(args.power)),
+        ("--zero-events-below", args.zero_events_below),
+        ("--half-width", args.half_width),
+    ] {
+        if value.is_some_and(|x| !open(x)) {
+            return Err(Error::usage(format!(
+                "{flag} must lie strictly between 0 and 1"
+            )));
+        }
+    }
+    if args.rate.is_some_and(|p| !(0.0..=1.0).contains(&p)) {
+        return Err(Error::usage("--rate must lie between 0 and 1"));
+    }
+    if args.budget == 0 {
+        return Err(Error::usage("--budget must be at least 1"));
     }
     let args = &args;
     let effect = |n: u64| match (args.cluster_size, args.icc) {

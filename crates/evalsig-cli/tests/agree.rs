@@ -301,3 +301,44 @@ fn the_parity_test_sets_a_run_against_each_human() {
         .assert()
         .code(64);
 }
+
+#[test]
+fn labels_that_are_not_integers_are_still_ordered() {
+    // Two raters give 0.25-step scores. The ranks are 1..5 against 1, 3, 2, 4, 5, so
+    // Spearman's rho is 1 - 6 * 2 / (5 * 24) = 0.9; the weighted kappa needs integer levels.
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let mut rows = Vec::new();
+    for (i, (a, b)) in [
+        (0.0, 0.0),
+        (0.25, 0.5),
+        (0.5, 0.25),
+        (0.75, 0.75),
+        (1.0, 1.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rows.push(format!(r#"{{"record":"item","item_id":"i{i}"}}"#));
+        for (rater, v) in [("ana", a), ("ben", b)] {
+            rows.push(format!(
+                r#"{{"record":"label","item_id":"i{i}","rater_id":"{rater}","source":"human","value":{v},"version":1}}"#
+            ));
+        }
+    }
+    let file = dir.path().join("records.jsonl");
+    std::fs::write(&file, rows.join("\n") + "\n").unwrap();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(&file)
+        .assert()
+        .success();
+    let r = &agree(dir.path(), &[])["results"];
+    assert_eq!(r["ordered_values"], true, "{r}");
+    let values = &r["pairs"][0]["values"];
+    assert!(
+        (values["spearman_rho"].as_f64().unwrap() - 0.9).abs() < 1e-9,
+        "{values}"
+    );
+    assert!(values["quadratic_weighted_kappa"].is_null(), "{values}");
+}

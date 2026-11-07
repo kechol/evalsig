@@ -69,8 +69,8 @@ fn the_missing_rate_counts_every_missing_value_with_the_exact_bound() {
     let level = m["one_sided_level"].as_f64().unwrap();
     // A one-sided condition at 1 − α/B reads the two-sided interval at 1 − 2α/B.
     let e = gate::missing_rate(
-        m["missing"].as_u64().unwrap(),
-        m["judgments"].as_u64().unwrap(),
+        m["missing"].as_f64().unwrap(),
+        m["judgments"].as_f64().unwrap(),
         2.0 * level - 1.0,
         Sided::One,
     )

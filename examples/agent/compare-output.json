@@ -121,7 +121,7 @@
       "raters": 2
     },
     "transition": {
-      "cleared_false_alarms": 18.5,
+      "cleared_false_alarms": 20.5,
       "lost_hits": 6.5,
       "new_false_alarms": 7.0,
       "new_hits": 9.0
@@ -174,7 +174,7 @@
       },
       "command": "compare"
     },
-    "output": "blake3:4ab5b479be099fff7c68e1029f409e60c89f02ec49578b83b9cb7f00e59caafc"
+    "output": "blake3:f3756ce63f74e1f1895357e4f5efcbf8bbf2908570bde3d58df460b8f1441f28"
   },
   "truncated": null
 }

@@ -58,7 +58,7 @@ pub struct Request {
 }
 
 fn verdict_text(metric: &str, d: &compare::MetricDelta, level: f64) -> String {
-    let pct = (level * 100.0).round();
+    let pct = (level * 1000.0).round() / 10.0;
     match (d.delta, d.ci) {
         (Some(delta), Some((lo, hi))) => {
             let what = match d.verdict {

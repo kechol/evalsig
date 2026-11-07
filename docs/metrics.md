@@ -36,8 +36,10 @@ The `latent` reference is left out of v1 (D-016, §9.2).
   `missing_policy`; each metric carries `n`, the denominator it used.
 - **Weights.** Ratio metrics are weighted: an item contributes its `weight`, multiplied by
   1/p when it has a `label_inclusion_prob` p and a reference (§9.9). An item with a weight
-  other than 1 makes the metric's interval a cluster bootstrap (§1.1). Kish's effective
-  sample size is not used in any interval.
+  other than 1 makes the displayed interval a cluster bootstrap (§1.1); `gate` and `check`
+  instead take the exact interval on Kish's effective number of items over clusters (§1).
+  Kish's effective number of items also sets the scale of the counts behind d′ (§2) and the
+  feature likelihood ratios (§5).
 - **Level and direction.** The default is a two-sided 95% interval (`level = 0.95`). Each
   gate condition states `sided` (`one` or `two`) (§11.1).
 - **Interval method.** §1.1 chooses it. No command reads the `interval` setting.
@@ -73,7 +75,9 @@ Missing reasons split into the system's side and the measurement's side.
   `missing_rate_differs`.
 - **The gate does not trust reason codes.** A candidate's records are the candidate's own
   claim, so on the holdout every missing judgment is `worst` whatever its reason, and the
-  `missing_rate` condition counts every missing judgment (§11.2).
+  `missing_rate` condition counts every missing judgment (§11.2). The item is the counting
+  unit: an item contributes its share of missing judgments, so replicates never add to the
+  count, and the exact interval is taken on the number of items (§1).
 
 #### 0.1.1 The worst judgment per metric
 
@@ -131,8 +135,9 @@ Every interval function returns the vacuous [0, 1] when n = 0.
   with d_c the summed denominators of cluster c (an item without a cluster is its own).
   n_eff is the item count for independent items of weight 1, the cluster count for equal
   clusters, and smaller for unequal weights, clusters or soft references; the event count
-  is p̂ · n_eff. The `missing_rate` condition and the replicate-disagreement upper bound
-  (§6.2) use the exact method too. The library also provides Jeffreys and a method
+  is p̂ · n_eff. The `missing_rate` condition (p̂ is the mean over items of each item's
+  share of missing judgments, n the number of items) and the replicate-disagreement upper
+  bound (§6.2) use the exact method too. The library also provides Jeffreys and a method
   chooser, which no command calls.
 - **Why exact.** With no events the Wilson one-sided upper bound is smaller than the
   exact one, 1.645²/(n + 1.645²) against 1 − α^(1/n) at α = 0.05, and a percentile
@@ -178,9 +183,11 @@ negative; replicates enter as the share of positive judgments (§6.1).
 - **The assumption.** One ROC point cannot check the model, so d′ and c assume
   equal-variance normal distributions. The library names it `equal_variance_normal`. A
   check needs ordinal or score output (§3).
-- **Corrected quantities depend on counts.** Multiplying every count by k leaves the raw
-  rates unchanged and moves d′ and c slightly. Flipping which class is positive flips the
-  sign of d′.
+- **Corrected quantities depend on counts.** The counts are on the scale of effective items:
+  the weights of each reference class are scaled to sum to Kish's effective number of
+  items, (Σw)²/Σw², so scaling every weight changes neither d′ nor c. Multiplying every
+  count by k (replicating items) leaves the raw rates unchanged and moves d′ and c
+  slightly. Flipping which class is positive flips the sign of d′.
 - **Where they appear.** `report` and `compare` output accuracy, H, F, precision and
   `precision_at_prevalence`. `report`'s detail tier adds `sdt` with `dprime`, `criterion`
   and `assumption`, from the same weighted counts as H and F; they have no interval.
@@ -236,9 +243,11 @@ points are not independent, so a least-squares fit would be biased.
 
 For a score run whose scores all lie in [0, 1]:
 
-- **Brier score.** The mean of (p_i − y_i)², with y_i the reference share.
+- **Brier score.** The weighted mean Σ w_i (p_i − y_i)² / Σ w_i, with y_i the reference
+  share.
 - **Reliability bins.** Ten equal-width bins, [b/10, (b+1)/10) with the last including 1.
-  Each non-empty bin reports its count, mean score and positive share.
+  Each non-empty bin reports its item count and the weighted mean score and positive
+  share.
 - Reference case: `calibration`.
 
 ## 4. Cost and decision threshold
@@ -267,8 +276,10 @@ production prevalence π, and optionally a range of the cost ratio.
 ## 5. Feature likelihood ratios
 
 For a feature that fired in a of n_pos positives and b of n_neg negatives. Counts are
-weighted: replicate shares, and s_i and 1 − s_i under a soft reference. An item that does
-not report a feature counts as not firing it. Only items with a reference count.
+weighted: replicate shares, and s_i and 1 − s_i under a soft reference; the weights of
+each reference class are scaled to sum to Kish's effective number of items, so scaling
+every weight changes no interval, p-value or class. An item that does not report a
+feature counts as not firing it. Only items with a reference count.
 
 - **Point.** LR = (a/n_pos) / (b/n_neg). When a or b is 0, ½ is added to all four cells
   (Haldane-Anscombe), so the denominators become n_pos + 1 and n_neg + 1; the output marks
@@ -370,7 +381,9 @@ The metrics compared are those both arms support: accuracy, H, F, precision, `pa
   case: `mcnemar`.
 - **Transition table.** The weighted counts of items that became hits (reference positive,
   judged positive in B only), lost hits, became false alarms and stopped being false
-  alarms. A soft reference contributes s and 1 − s, so the counts are real numbers.
+  alarms. A soft reference contributes s and 1 − s, so the counts are real numbers. A
+  system-side missing judgment enters as the accuracy worst fill of §0.1.1, as in the
+  differences beside the table.
 - **Missing bounds.** §0.1.
 - **Multiple candidates.** With several candidates against one baseline, the output gives
   Holm-adjusted p-values of the primary metric across candidates and names the candidate
@@ -463,9 +476,10 @@ situations get different treatment.
   interpolation between order statistics (type 7). A resample whose statistic is undefined
   (an empty denominator) is dropped. With fewer than 5 units no interval is given
   (`too_few_units`).
-- **Resamples for a gate.** A gate condition judged at a one-sided or two-sided level with
-  tail α_adj needs B ≥ 50/α_adj (20 000 for α_adj = 0.0025). Approval raises the recorded
-  B to that number when the configured B is lower. At B = 2000 the Monte Carlo spread of
+- **Resamples for a gate.** A gate condition reads a percentile with tail α_adj beyond it
+  (α/B for a one-sided condition, α/(2B) for a two-sided one) and needs B ≥ 50/α_adj
+  (20 000 for α_adj = 0.0025). Approval raises the recorded B to that number when the
+  configured B is lower. At B = 2000 the Monte Carlo spread of
   the 0.0025 quantile is 0.15 standard errors of the difference. Under the null, with
   300 items 3% of them discordant, the one-sided percentile lower bound at α = 0.0025 is
   above 0 in 0.35% of samples against 0.06% for the exact McNemar test, which is why
@@ -491,14 +505,15 @@ and people by the same rule.
 |---|---|---|
 | Cohen's κ | two raters, nominal | (p_o − p_e)/(1 − p_e) |
 | quadratic weighted κ | two raters, ordered integer levels | 1 − Σ w·p_o / Σ w·p_e with w_ab = (a − b)²/(Q − 1)², over every level from the lowest to the highest seen |
-| Gwet's AC1 | agreement that stays high under skewed prevalence | (p_a − p_e)/(1 − p_e), p_e = (1/(Q − 1)) Σ_q π_q(1 − π_q), π_q the share of category q over both raters |
+| Gwet's AC1 | agreement that stays high under skewed prevalence | (p_a − p_e)/(1 − p_e), p_e = (1/(Q − 1)) Σ_q π_q(1 − π_q), π_q the share of category q over both raters, Q the size of the scale (2 for binary labels and decisions, so a pair that uses one class still has Q = 2) |
 | positive and negative agreement | which judgment the raters split on | for the table [[a, b], [c, d]] with a both positive: 2a/(2a + b + c) and 2d/(2d + b + c) |
 | Spearman's ρ | monotone agreement of scores | Pearson correlation of midranks |
 | Krippendorff's α | several raters, missing values | 1 − (n − 1) Σ o_ck δ²_ck / Σ n_c n_k δ²_ck from the coincidence matrix; nominal, ordinal and interval δ; library function only |
 
 - **Why not κ alone.** At low prevalence κ is low even when raw agreement is high (the κ
   paradox). Two-class values get κ, AC1 and both specific agreements together; ordered
-  values get weighted κ and ρ.
+  values (more than two distinct numbers) get ρ, and weighted κ when they are integer
+  levels.
 - **Same-rule comparison.** `agree` reports, for each human, grader or run, the mean κ
   against each human rater other than itself (leave-one-out), and likewise for a system's
   decisions against each human's decisions. Comparing the system with a majority or soft
@@ -634,19 +649,22 @@ should weigh more. Items with fewer than two human votes have no stratum.
 
 A grader is treated as the system and the reference of §9.2 as the truth. `report` of the
 grader's run gives §2 and §3, and `agree` with the run gives the agreement view:
-κ, AC1 and the positive and negative agreement for two-class values; weighted κ and ρ for
-ordered values; and the same-rule mean κ of §9.1.
+κ, AC1 and the positive and negative agreement for two-class values; ρ, and weighted κ for
+integer levels, for ordered values; and the same-rule mean κ of §9.1.
 
 ### 9.8 Correcting a grader's bias (prediction-powered inference)
 
-Most items have only a model grader's label f_i, and a random subset of n of the N items has
-a human label y_i. The human-standard value θ is estimated by PPI++ (Angelopoulos et al.
-2023), from `report` given a proxy: the model rater whose labels are f.
+Most items have only a model grader's label f_i, and a random subset of n items has a human
+label y_i as well; N is the number of items without a human label. The human-standard value
+θ is estimated by PPI++ (Angelopoulos et al. 2023), from `report` given a proxy: the model
+rater whose labels are f.
 
 - **Metrics.** Accuracy of a decision run, and the mean human label for other runs
-  (`mean_label`). Ratios whose denominator the label defines (H, F) are not covered, and
-  item weights are not used.
-- **Estimate.** θ̂ = λ·mean_N(f) + mean_n(y − λ·f), the first mean over all items.
+  (`mean_label`). A system-side missing judgment enters y and f as the accuracy worst fill
+  of §0.1.1. Ratios whose denominator the label defines (H, F) are not covered, and item
+  weights are not used.
+- **Estimate.** θ̂ = λ·mean_N(f) + mean_n(y − λ·f), the first mean over the N items without
+  a human label.
 - **Variance.** λ² Var(f)/N + Var(y − λf)/n, with a normal interval.
 - **λ.** λ* = Cov(y, f) / ((1 + n/N) Var(f)), clipped to [0, 1]; λ = 0 uses human labels
   alone and λ = 1 is the original PPI. It needs at least two items in each group.
@@ -705,9 +723,11 @@ A `preference` record compares two arms' outputs on one item and says which is b
 ### 11.1 Statistical rules
 
 - **Rules.** A condition reads an interval or a verdict, never a point alone: `lower_bound_at_least`
-  and `upper_bound_at_most` read the candidate's interval; `delta_lower_bound_at_least`,
-  `delta_upper_bound_at_most` and `not_worse_than` (non-inferiority, a negative margin) read
-  the interval of the difference, candidate minus baseline; `pass` reads a verdict, which only
+  and `upper_bound_at_most` read the candidate's interval; `delta_lower_bound_at_least` and
+  `delta_upper_bound_at_most` read the interval of the difference, candidate minus baseline,
+  on the metric's own scale; `not_worse_than` (non-inferiority, a negative margin) reads the
+  difference oriented so that positive is better (§7), so its margin bounds the loss on
+  `false_alarm_rate` as on any other metric; `pass` reads a verdict, which only
   `human_parity` gives (§9.4). The two
   delta rules also need the point difference to reach `min_effect` in their direction. A
   condition whose evidence is missing or of the wrong kind is undecided.

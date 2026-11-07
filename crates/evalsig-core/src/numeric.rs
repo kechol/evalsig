@@ -50,22 +50,46 @@ impl Rng {
     }
 }
 
+/// Neumaier-compensated running sum. After k `add`s, `total` equals [`sum`] of those k
+/// values, so a total can be read at every step without summing again from the start.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Running {
+    s: f64,
+    c: f64,
+}
+
+impl Running {
+    /// Add one term.
+    pub fn add(&mut self, x: f64) {
+        let t = self.s + x;
+        self.c += if self.s.abs() >= x.abs() {
+            (self.s - t) + x
+        } else {
+            (x - t) + self.s
+        };
+        self.s = t;
+    }
+
+    /// The sum of the terms added so far.
+    pub fn total(&self) -> f64 {
+        // With an infinite term the compensation is meaningless (it becomes inf − inf);
+        // the plain sum carries the infinity or NaN.
+        if self.s.is_finite() {
+            self.s + self.c
+        } else {
+            self.s
+        }
+    }
+}
+
 /// Neumaier-compensated sum in iteration order. Callers iterate in a fixed order, so
 /// the result does not depend on threads or hash maps.
 pub fn sum(values: impl IntoIterator<Item = f64>) -> f64 {
-    let (mut s, mut c) = (0.0f64, 0.0f64);
+    let mut acc = Running::default();
     for x in values {
-        let t = s + x;
-        c += if s.abs() >= x.abs() {
-            (s - t) + x
-        } else {
-            (x - t) + s
-        };
-        s = t;
+        acc.add(x);
     }
-    // With an infinite term the compensation is meaningless (it becomes inf − inf);
-    // the plain sum carries the infinity or NaN.
-    if s.is_finite() { s + c } else { s }
+    acc.total()
 }
 
 /// Mean in iteration order with the compensated sum; `None` when empty.
@@ -77,6 +101,9 @@ pub fn mean(values: impl IntoIterator<Item = f64>) -> Option<f64> {
 
 /// Variance with divisor n − ddof (0: population, 1: sample); NaN when n ≤ ddof.
 pub fn variance(xs: &[f64], ddof: usize) -> f64 {
+    if xs.len() <= ddof {
+        return f64::NAN;
+    }
     let m = mean(xs.iter().copied()).unwrap_or(f64::NAN);
     sum(xs.iter().map(|x| (x - m) * (x - m))) / (xs.len() as f64 - ddof as f64)
 }
@@ -169,6 +196,7 @@ mod tests {
             let beta = Beta::new(a, b).unwrap();
             assert!((beta.cdf(beta_ppf(p, a, b)) - p).abs() < 1e-12);
         }
+        assert!(variance(&[], 1).is_nan() && variance(&[1.0], 1).is_nan());
         assert_eq!(mean([1.0, 2.0, 6.0]), Some(3.0));
         assert_eq!(mean([]), None);
         assert_eq!(weighted_mean([(1.0, 3.0), (0.0, 1.0)]), Some(0.75));

@@ -66,16 +66,14 @@ fn shared(a: &BTreeMap<&str, f64>, b: &BTreeMap<&str, f64>) -> Vec<(f64, f64)> {
         .collect()
 }
 
-/// Ordered when every value is an integer and there are more than two of them.
+/// Ordered when more than two distinct values occur. Integer levels get the weighted
+/// κ and ρ, other numbers ρ only (`meta::evaluate`).
 fn ordered(r: &Ratings<'_>) -> bool {
     let values: BTreeSet<u64> = r
         .values()
         .flat_map(|m| m.values().map(|v| v.to_bits()))
         .collect();
     values.len() > 2
-        && r.values()
-            .flat_map(|m| m.values())
-            .all(|v| v.fract() == 0.0)
 }
 
 /// The agreement measure the same-rule table averages.

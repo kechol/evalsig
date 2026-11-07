@@ -91,6 +91,20 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
             held.len()
         )));
     }
+    // The budget belongs to the sealed holdout: its first approval fixes B and later ones
+    // keep it, so every submission is judged at the same alpha/B.
+    let fixed = entries
+        .iter()
+        .find(|e| {
+            e.kind == Kind::PreregisterApprove
+                && e.summary.get("holdout").and_then(Value::as_str) == Some(args.holdout.as_str())
+        })
+        .and_then(|e| e.summary.get("budget").and_then(Value::as_u64));
+    if let Some(b) = fixed.filter(|b| *b != u64::from(doc.budget())) {
+        return Err(Error::invalid_conditions(format!(
+            "this holdout's budget was fixed at {b} by its first approval; a new budget needs a new split and seal"
+        )));
+    }
     let d = data::load(&project)?;
     let mapping_hash = args
         .mapping
@@ -224,14 +238,18 @@ impl Approval<'_> {
         }
         let decision = doc.decision.or(config.decision().for_task(task).copied());
         let budget = doc.budget();
-        let level = doc.conditions[0].level.unwrap_or(config.stats.level);
-        let per_submission = interval_level(level, budget, Sided::Two);
-        // The bootstrap must reach the tail of the strictest condition, at its own level
-        // and sidedness, as the gate will judge it.
+        // The level of a condition that names none; the primary condition's own level
+        // fixes only the per-submission level.
+        let level = config.stats.level;
+        let per_submission =
+            interval_level(doc.conditions[0].level.unwrap_or(level), budget, Sided::Two);
+        // The bootstrap must reach the percentile tail of the strictest condition, at its
+        // own level and sidedness, as the gate will judge it: the quantile its interval
+        // reads is half of 1 - interval_level.
         let alpha = doc
             .conditions
             .iter()
-            .map(|c| 1.0 - interval_level(c.level.unwrap_or(level), budget, c.sided))
+            .map(|c| (1.0 - interval_level(c.level.unwrap_or(level), budget, c.sided)) / 2.0)
             .fold(1.0 - per_submission, f64::min);
         let reference = doc.reference.as_ref();
         let mut resolved = Resolved {
@@ -334,14 +352,19 @@ impl Approval<'_> {
         decision: Option<Rule>,
     ) -> report::Settings {
         let config = self.config;
+        let reference = self.doc.reference.as_ref();
         report::Settings {
             task: self.doc.task().to_owned(),
             positive,
             decision,
             estimand: self.doc.estimand.unwrap_or(config.stats.estimand),
             missing: config.missing_policy(),
-            reference: config.reference.mode,
-            rater_design: config.reference.rater_design,
+            reference: reference
+                .and_then(|r| r.mode)
+                .unwrap_or(config.reference.mode),
+            rater_design: reference
+                .and_then(|r| r.rater_design)
+                .unwrap_or(config.reference.rater_design),
             level: config.stats.level,
             bootstrap: config.stats.bootstrap,
             seed: config.stats.seed.unwrap_or(0),

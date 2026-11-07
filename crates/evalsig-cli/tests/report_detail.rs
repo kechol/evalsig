@@ -202,3 +202,53 @@ fn a_model_rater_corrects_the_human_scale_accuracy() {
     );
     assert!(text.contains("AUC "), "{text}");
 }
+
+#[test]
+fn a_system_side_gap_enters_the_proxy_estimate_as_the_accuracy_worst_fill() {
+    // 100 items carry a human label (half positive) and every item a model label equal
+    // to the truth. The system is right everywhere, except that it times out on 20
+    // negatives. The worst fill for accuracy on a negative is "judged positive", so
+    // those 20 count as wrong: the human-scale accuracy is 80 / 100, whatever the
+    // proxy says (the inclusion probabilities are unknown, so lambda is 0).
+    let mut lines = vec![
+        r#"{"record":"run","run_id":"s","system":{"id":"sys","version":"1"},"output_type":"binary"}"#
+            .to_owned(),
+    ];
+    for i in 0..200 {
+        let positive = i % 2 == 0;
+        let timeout = i < 40 && !positive;
+        lines.push(format!(r#"{{"record":"item","item_id":"i{i:03}"}}"#));
+        lines.push(if timeout {
+            format!(
+                r#"{{"record":"judgment","item_id":"i{i:03}","run_id":"s","gen_replicate":0,"output_type":"binary","missing":{{"reason":"timeout"}}}}"#
+            )
+        } else {
+            format!(
+                r#"{{"record":"judgment","item_id":"i{i:03}","run_id":"s","gen_replicate":0,"output_type":"binary","value":{positive}}}"#
+            )
+        });
+        lines.push(format!(
+            r#"{{"record":"label","item_id":"i{i:03}","rater_id":"model:judge","source":"model","value":{positive},"version":1}}"#
+        ));
+        if i < 100 {
+            lines.push(format!(
+                r#"{{"record":"label","item_id":"i{i:03}","rater_id":"user:ana","source":"human","value":{positive},"version":1}}"#
+            ));
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let file = dir.path().join("records.jsonl");
+    std::fs::write(&file, lines.join("\n") + "\n").unwrap();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(&file)
+        .assert()
+        .success();
+    let p = &report(
+        dir.path(),
+        &["--reference", "human", "--proxy", "model:judge"],
+    )["results"]["proxy"];
+    assert_eq!(p["lambda"].as_f64(), Some(0.0));
+    assert!((p["estimate"].as_f64().unwrap() - 0.8).abs() < 1e-9, "{p}");
+}

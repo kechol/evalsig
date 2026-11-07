@@ -50,6 +50,8 @@ pub fn at_k(c: u64, big_k: u64, k: u64, rule: Rule) -> Option<f64> {
             .map(|i| (pos - i as f64) / (big - i as f64))
             .product::<f64>()
             .max(0.0),
+        // The log-space terms sum to 1 + 1e-12 where the exact value is 1; a value above 1
+        // would leave the [0, 1] range every rate numerator keeps.
         Rule::Majority => sum((0..=k).map(|j| {
             let w = hypergeometric(c, big_k - c, k, j);
             match (2 * j).cmp(&k) {
@@ -57,7 +59,8 @@ pub fn at_k(c: u64, big_k: u64, k: u64, rule: Rule) -> Option<f64> {
                 std::cmp::Ordering::Equal => 0.5 * w,
                 std::cmp::Ordering::Less => 0.0,
             }
-        })),
+        }))
+        .min(1.0),
     })
 }
 
@@ -177,6 +180,19 @@ mod tests {
                             "{rule:?} c={c} K={big_k} k={k}: {a} vs {b}"
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_majority_probability_never_exceeds_one() {
+        // At_k(c = 4, K = 5, k = 3) is exactly 1; the log-space sum rounds above it.
+        for big_k in 1..=40u64 {
+            for k in 1..=big_k {
+                for c in 0..=big_k {
+                    let p = at_k(c, big_k, k, Rule::Majority).unwrap();
+                    assert!((0.0..=1.0).contains(&p), "{c} of {big_k}, k = {k}: {p}");
                 }
             }
         }

@@ -369,3 +369,37 @@ fn a_new_ledger_line_shows_the_new_data() {
         "{after}"
     );
 }
+
+#[test]
+fn a_comparison_the_cli_blocks_is_blocked_on_the_screen() {
+    // The candidate was graded by another grader version, which stops the comparison.
+    let rows: Vec<Value> = lines()
+        .into_iter()
+        .map(|mut v| {
+            if v["record"] == "run" && v["run_id"] == "triage-v2" {
+                v["grader"]["version"] = Value::from("2");
+            }
+            v
+        })
+        .collect();
+    let p = project(&jsonl(&rows));
+    let cli = evalsig_json(p.path())
+        .args(["compare", "triage-v1", "triage-v2"])
+        .output()
+        .unwrap();
+    let cli: Value = serde_json::from_slice(&cli.stdout).unwrap();
+    assert_eq!(cli["verdict"]["code"], "blocked", "{cli}");
+    let d = start(p.path());
+    let base = d
+        .url
+        .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
+        .to_owned();
+    let host = format!("127.0.0.1:{}", d.port);
+    let page = get(
+        d.port,
+        &format!("{base}compare?baseline=triage-v1&candidate=triage-v2"),
+        &host,
+    );
+    assert!(page.contains("data-code=\"blocked\""), "{page}");
+    assert!(page.contains("mixed_grader"), "{page}");
+}

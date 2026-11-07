@@ -9,6 +9,7 @@ use std::path::Path;
 
 use evalsig_core::checks::Overrides;
 use evalsig_core::compare::{self, Baseline, Options};
+use evalsig_core::config::Estimand;
 use evalsig_core::gate::{self, Evidence, Outcome, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
@@ -95,8 +96,19 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
             .path("results")
             .join(format!("{}-{}.json", hex(&args.approved), submission.hex()));
     if let Ok(saved) = std::fs::read_to_string(&result_path) {
-        let mut envelope: Envelope =
+        let saved: Value =
             serde_json::from_str(&saved).map_err(|e| Error::invalid_input(&result_path, e))?;
+        // A refusal after the submission was counted is an earlier answer too.
+        if let Some(refused) = saved.get("error") {
+            let mut e = Error::rejected(
+                refused["code"].as_str().unwrap_or("refused").to_owned(),
+                refused["message"].as_str().unwrap_or_default(),
+            );
+            e.hint = refused["hint"].as_str().map(str::to_owned);
+            return Err(e);
+        }
+        let mut envelope: Envelope =
+            serde_json::from_value(saved).map_err(|e| Error::invalid_input(&result_path, e))?;
         let exit = exit_for(envelope.verdict.as_ref().map(|v| v.code));
         envelope.warnings.push(Warning {
             code: "resubmission".into(),
@@ -215,6 +227,10 @@ pub fn judge_request(root: &Path, referee: &Referee, args: &Request) -> Result<O
         Ok(a) => a,
         Err(e) => {
             gate_line(Value::Null, Value::Null, Some(&e.code), None)?;
+            if e.exit == Exit::Rejected {
+                std::fs::write(&result_path, e.to_json())
+                    .map_err(|x| io_error(&result_path, &x))?;
+            }
             return Err(e);
         }
     };
@@ -447,7 +463,12 @@ fn mix_ups(
     if judgments.iter().any(|j| j.task() != r.task) {
         return refuse("the candidate's judgments are for another task");
     }
-    if let Some(want) = c.replicates {
+    // An @k estimand scores only items with at least k replicates, so k is the floor.
+    let floor = match r.estimand {
+        Estimand::SingleShot => None,
+        Estimand::Majority(k) | Estimand::Any(k) | Estimand::All(k) => Some(u64::from(k)),
+    };
+    if let Some(want) = c.replicates.max(floor) {
         let mut per_item: BTreeMap<&str, BTreeSet<u32>> = BTreeMap::new();
         for j in judgments {
             per_item
@@ -495,6 +516,14 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
         return Ok(stopped(
             VerdictCode::Blocked,
             "every generation replicate of some items is identical".into(),
+        ));
+    }
+    // A value of another type is unreadable and escapes the missing_rate count, so a run
+    // that mixes output types or level counts is refused like any other mismatch.
+    if findings.iter().any(|f| f.code == "mixed_output_type") {
+        return Err(Error::rejected(
+            "does_not_match_approval",
+            "the candidate's judgments mix output types or level counts",
         ));
     }
     recorded.extend(
@@ -731,13 +760,8 @@ fn evidence(
     let cand_j = on_holdout(j.judgments, items);
     if metric == "missing_rate" {
         // Every missing judgment counts, whatever its reason (SPEC §8.3).
-        let missing = cand_j.iter().filter(|j| j.missing.is_some()).count() as u64;
-        return Ok(gate::missing_rate(
-            missing,
-            cand_j.len() as u64,
-            s.level,
-            sided,
-        ));
+        let (missing, n) = gate::missing_counts(&cand_j, |j| j.missing.is_some());
+        return Ok(gate::missing_rate(missing, n, s.level, sided));
     }
     if rule.on_delta() {
         let Some((base_run, base_judgments)) = &h.base else {
@@ -758,8 +782,10 @@ fn evidence(
         let Some(m) = c.metrics.iter().find(|m| m.metric == metric) else {
             return Err(not_computed(metric));
         };
-        // MetricDelta is oriented so that positive is better; the rules read cand − base.
-        let sign = if m.direction == "higher_is_better" {
+        // MetricDelta is oriented so that positive is better. The two delta rules read
+        // cand − base on the metric's own scale; not_worse_than keeps the orientation, so
+        // its negative margin bounds the loss on a lower-is-better metric too.
+        let sign = if m.direction == "higher_is_better" || matches!(rule, GateRule::NotWorseThan) {
             1.0
         } else {
             -1.0

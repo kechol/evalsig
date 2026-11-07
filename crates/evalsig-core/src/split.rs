@@ -185,7 +185,9 @@ pub fn split(
 /// lone cluster stays in dev, the side that is looked at.
 fn latest_share(ordered: Vec<(&str, usize)>, share: f64) -> BTreeMap<&str, Part> {
     let total: usize = ordered.iter().map(|(_, n)| n).sum();
-    let target = share * total as f64;
+    // A decimal share times a count carries rounding error (0.07 * 100 is
+    // 7.000000000000001); the margin keeps an exact target from pulling in one more cluster.
+    let target = share * total as f64 * (1.0 - 4.0 * f64::EPSILON);
     let mut out = BTreeMap::new();
     let mut taken = 0;
     let last = ordered.len();
@@ -279,6 +281,17 @@ mod tests {
         let ja = a.validation.iter().filter(|i| i.as_str() >= "i10").count();
         assert_eq!((a.validation.len(), ja), (8, 4));
         assert_eq!(split(&refs, None, &method, 0.4).unwrap(), a);
+    }
+
+    #[test]
+    fn a_decimal_share_is_not_rounded_up_by_float_error() {
+        let names: Vec<String> = (0..100).map(|i| format!("c{i:03}")).collect();
+        let ordered: Vec<(&str, usize)> = names.iter().map(|n| (n.as_str(), 1)).collect();
+        let parts = latest_share(ordered, 0.07);
+        assert_eq!(
+            parts.values().filter(|p| **p == Part::Validation).count(),
+            7
+        );
     }
 
     #[test]

@@ -111,6 +111,11 @@ fn a_different_grader_or_mapping_is_refused_after_spending_budget() {
     assert_eq!(out.status.code(), Some(3));
     assert_eq!(json(&out)["error"]["code"], "does_not_match_approval");
     assert_eq!(accesses(&w), 1);
+    // The same snapshot again is the earlier refusal and spends nothing more.
+    let again = submit(&w, &other);
+    assert_eq!(again.status.code(), Some(3));
+    assert_eq!(json(&again)["error"]["code"], "does_not_match_approval");
+    assert_eq!(accesses(&w), 1);
 
     let records = candidate(w.referee.path(), "cand.jsonl", |_| {});
     let out = submit(&w, &records);
@@ -739,4 +744,200 @@ fn the_ladder_returns_a_rounded_value_on_a_new_best_only() {
     // Nor does a candidate below the best.
     let out = submit(&w, &variant(w.agent.path(), 3));
     assert!(json(&out)["results"].get("ladder").is_none());
+}
+
+#[test]
+fn a_condition_without_a_level_is_judged_at_the_default_level() {
+    // The first condition names level 0.9; the second names none and keeps the default
+    // 0.95, so the first level fixes only the per-submission level.
+    let gate = gate_toml(10, 5).replacen(
+        "value = -0.3\nsided = \"one\"",
+        "value = -0.3\nsided = \"one\"\nlevel = 0.9",
+        1,
+    );
+    let w = world(&gate_toml(10, 5), None);
+    let v = approve_output(&w, &gate, None);
+    let r = &v["results"]["resolved"];
+    assert!((r["level"].as_f64().unwrap() - 0.95).abs() < 1e-12, "{r}");
+    assert!(
+        (r["per_submission_level"].as_f64().unwrap() - 0.98).abs() < 1e-12,
+        "{r}"
+    );
+}
+
+#[test]
+fn approval_reaches_the_tail_of_a_two_sided_condition() {
+    // A two-sided interval at 1 - alpha/B reads a tail of alpha/(2B) = 0.005 at budget 5,
+    // which takes 50 / 0.005 = 10 000 resamples.
+    let gate = gate_toml(10, 5).replacen("sided = \"one\"", "sided = \"two\"", 1);
+    let w = world(&gate_toml(10, 5), None);
+    let v = approve_output(&w, &gate, None);
+    assert!(
+        v["results"]["resolved"]["bootstrap"].as_u64().unwrap() >= 10_000,
+        "{v}"
+    );
+}
+
+#[test]
+fn not_worse_than_bounds_the_loss_on_a_lower_is_better_metric() {
+    // Non-inferiority reads the difference oriented so that positive is better, so a
+    // margin of -0.05 on the false-alarm rate bounds how far it may rise.
+    let gate = gate_toml(10, 3).replace(
+        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+        "metric = \"false_alarm_rate\"\nrule = \"not_worse_than\"\nvalue = -0.05",
+    );
+    let w = world(&gate, None);
+    let judged_all = |rows: &mut Vec<Value>, value: bool| {
+        for r in rows.iter_mut().filter(|r| r["record"] == "judgment") {
+            r["value"] = Value::from(value);
+        }
+    };
+    // Every item judged positive: the false-alarm rate rises to 1.
+    let worse = candidate(w.referee.path(), "all-positive.jsonl", |rows| {
+        judged_all(rows, true)
+    });
+    let out = submit(&w, &worse);
+    assert_eq!(
+        code(&out),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["verdict"]["code"], "fail");
+    // Every item judged negative: no false alarms at all.
+    let better = candidate(w.referee.path(), "all-negative.jsonl", |rows| {
+        judged_all(rows, false)
+    });
+    let out = submit(&w, &better);
+    assert_eq!(
+        code(&out),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["verdict"]["code"], "pass");
+}
+
+#[test]
+fn a_holdout_keeps_the_budget_of_its_first_approval() {
+    let w = world(&gate_toml(10, 2), None);
+    let g = w.agent.path().join("gate.toml");
+    std::fs::write(&g, gate_toml(10, 20)).unwrap();
+    let d = json(
+        &evalsig(w.agent.path())
+            .args(["--format", "json", "preregister", "--draft"])
+            .arg(&g)
+            .output()
+            .unwrap(),
+    );
+    let out = evalsig(w.referee.path())
+        .args([
+            "--format",
+            "json",
+            "preregister",
+            "approve",
+            d["results"]["draft"].as_str().unwrap(),
+            "--holdout",
+            &w.holdout,
+            "--from",
+        ])
+        .arg(w.agent.path())
+        .arg("--referee")
+        .arg(w.home.path())
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), Some(3));
+    assert_eq!(json(&out)["error"]["code"], "invalid_conditions");
+}
+
+#[test]
+fn the_baseline_is_read_with_the_drafts_reference_mode() {
+    // Three raters per item, the third disagreeing on every third item: the soft
+    // reference gives those items a share of 2/3, the majority one of 0 or 1.
+    let mut rows = Vec::new();
+    let mut labelled = BTreeSet::new();
+    for r in lines() {
+        if r["record"] != "label" {
+            rows.push(r);
+        } else if labelled.insert(r["item_id"].as_str().unwrap().to_owned()) {
+            let split = labelled.len() % 3 == 0;
+            for (rater, flipped) in [("human:a", false), ("human:b", false), ("human:c", split)] {
+                let mut l = r.clone();
+                l["rater_id"] = rater.into();
+                l["value"] = (r["value"].as_bool().unwrap() != flipped).into();
+                rows.push(l);
+            }
+        }
+    }
+    let w = world_from(&rows, &gate_toml(10, 3), None);
+    let first_best = |gate: &str| {
+        approve_output(&w, gate, None)["results"]["resolved"]["ladder"]["first_best"]
+            .as_f64()
+            .unwrap()
+    };
+    let soft = first_best(&gate_toml(10, 3));
+    let majority = first_best(&format!(
+        "{}\n[reference]\nmode = \"majority\"\n",
+        gate_toml(10, 3)
+    ));
+    assert!((soft - majority).abs() > 1e-6, "{soft} {majority}");
+}
+
+#[test]
+fn a_run_that_mixes_output_types_is_refused() {
+    let w = world(&gate_toml(10, 3), None);
+    let records = candidate(w.referee.path(), "mixed.jsonl", |rows| {
+        let j = rows.iter_mut().find(|r| r["record"] == "judgment").unwrap();
+        j["output_type"] = "ordinal".into();
+        j["levels"] = 4.into();
+        j["value"] = 2.into();
+    });
+    let out = submit(&w, &records);
+    assert_eq!(
+        code(&out),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["error"]["code"], "does_not_match_approval");
+}
+
+#[test]
+fn an_at_k_estimand_needs_k_replicates_per_item() {
+    // Items with fewer than k replicates are left out of the metric, so a candidate that
+    // supplies one replicate per item could choose which items are scored.
+    let gate = gate_toml(10, 3).replace(
+        "split = \"holdout\"\n",
+        "split = \"holdout\"\nestimand = \"any@2\"\n",
+    );
+    let w = world(&gate, None);
+    let out = submit(&w, &variant(w.referee.path(), 1));
+    assert_eq!(
+        code(&out),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(json(&out)["error"]["code"], "does_not_match_approval");
+}
+
+#[test]
+fn power_reads_the_level_an_approval_resolved() {
+    // A condition that names no level takes the referee configuration's, and `power
+    // --gate` must read that level from the approved copy as the gate does.
+    let w = world(&gate_toml(10, 3), None);
+    let config = w.referee.path().join(".evalsig/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, text.replace("[stats]\n", "[stats]\nlevel = 0.9\n")).unwrap();
+    let v = approve_output(&w, &gate_toml(10, 3), None);
+    let out = evalsig_json(w.referee.path())
+        .args(["power", "--delta", "0.05", "--discordance", "0.1", "--gate"])
+        .arg(v["results"]["file"].as_str().unwrap())
+        .output()
+        .unwrap();
+    let power = json(&out);
+    assert!(
+        (power["results"]["alpha"].as_f64().unwrap() - 0.1).abs() < 1e-9,
+        "{power}"
+    );
 }

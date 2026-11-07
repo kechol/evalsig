@@ -1060,7 +1060,11 @@ fn typed_value(v: &Json, output_type: Option<OutputType>, levels: Option<u32>) -
     match v {
         Json::String(s) => crate::table::map_value(s, output_type, levels).ok(),
         Json::Bool(_) | Json::Number(_) => {
-            crate::table::map_value(&v.to_string(), output_type, levels).ok()
+            // An integral float is the integer (`3.0` is level 3), as in `records/1`.
+            let text = number(v)
+                .and_then(int)
+                .map_or_else(|| v.to_string(), |i| i.to_string());
+            crate::table::map_value(&text, output_type, levels).ok()
         }
         _ => None,
     }

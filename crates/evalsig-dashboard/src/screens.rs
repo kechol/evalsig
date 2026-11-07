@@ -6,15 +6,16 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use evalsig_core::checks::Finding;
 use evalsig_core::config::{Config, Language};
 use evalsig_core::records::{Label, Record, Run};
 use serde_json::{Value, json};
 
 use evalsig_project::analysis::{self, Analysis};
 use evalsig_project::data::Data;
-use evalsig_project::envelope::Output;
+use evalsig_project::envelope::{Envelope, Output, Schema, Verdict, Warning};
 use evalsig_project::project::{Project, io_error};
-use evalsig_project::{Error, agree, compare, data, explain, list, report, trend};
+use evalsig_project::{Error, agree, checks, compare, data, explain, list, report, trend};
 
 use crate::html::{self, Cell, Tab, Tone, esc};
 use crate::i18n::{self, T};
@@ -285,10 +286,25 @@ fn how_to_read<S: AsRef<str>>(names: &[S], lang: Language) -> String {
     html::details(T::HowToRead.text(lang), &format!("<dl>{items}</dl>"))
 }
 
-fn warnings_of(v: &[evalsig_project::envelope::Warning]) -> Vec<String> {
+fn warnings_of(v: &[Warning]) -> Vec<String> {
     v.iter()
         .map(|w| format!("{}: {}", w.code, w.message))
         .collect()
+}
+
+/// The warnings and verdict of a computation once its validity-check findings are applied
+/// as the command line applies them: every finding is a warning and a stopping one makes
+/// the verdict `blocked`. `apply` reads neither the schema nor the results.
+fn checked(
+    verdict: Option<Verdict>,
+    warnings: &[Warning],
+    findings: &[Finding],
+) -> (Vec<String>, Option<Verdict>) {
+    let mut envelope = Envelope::new(Schema::Report, Value::Null);
+    envelope.verdict = verdict;
+    envelope.warnings = warnings.to_vec();
+    let out = checks::apply(envelope, findings);
+    (warnings_of(&out.envelope.warnings), out.envelope.verdict)
 }
 
 fn metric_names(metrics: &Value) -> Vec<String> {
@@ -460,7 +476,12 @@ fn overview(v: &View) -> Result<Screen, Error> {
         let plot = match c {
             Err(e) => error_note(e),
             Ok(c) => {
-                warnings.extend(warnings_of(&c.warnings));
+                // The dataset checks run over every record, so each run's report repeats them.
+                for w in checked(None, &c.warnings, &c.findings).0 {
+                    if !warnings.contains(&w) {
+                        warnings.push(w);
+                    }
+                }
                 names.extend(metric_names(&c.results["metrics"]));
                 shared.map_or_else(String::new, |range| {
                     svg::intervals_in(
@@ -549,8 +570,9 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     // Two runs that cannot be compared leave the choice on the page to change.
     let warnings = match compare::compute(v.d, v.config, &request, None) {
         Ok(c) => {
-            comparison_body(v, &c.results, c.verdict.as_ref(), (&base, &cand), &mut body);
-            warnings_of(&c.warnings)
+            let (warnings, verdict) = checked(c.verdict.clone(), &c.warnings, &c.findings);
+            comparison_body(v, &c.results, verdict.as_ref(), (&base, &cand), &mut body);
+            warnings
         }
         Err(e) => {
             body.push_str(&error_note(&e));
@@ -570,7 +592,7 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
 fn comparison_body(
     v: &View,
     r: &Value,
-    verdict: Option<&evalsig_project::envelope::Verdict>,
+    verdict: Option<&Verdict>,
     (base, cand): (&str, &str),
     body: &mut String,
 ) {
@@ -823,7 +845,7 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     Ok(Screen {
         title: T::Reproducibility,
         focus: Focus::Run(run),
-        warnings: warnings_of(&c.warnings),
+        warnings: checked(None, &c.warnings, &c.findings).0,
         body,
     })
 }
@@ -1065,7 +1087,7 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     Ok(Screen {
         title: T::Discrimination,
         focus: Focus::Run(run),
-        warnings: warnings_of(&c.warnings),
+        warnings: checked(None, &c.warnings, &c.findings).0,
         body,
     })
 }
