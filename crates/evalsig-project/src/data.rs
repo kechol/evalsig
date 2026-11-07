@@ -34,6 +34,10 @@ pub fn records_hash<'a>(records: impl Iterator<Item = &'a Record>) -> Result<Str
 pub struct Data {
     pub records: Vec<Record>,
     pub snapshots: Vec<ContentHash>,
+    /// Per run, the `input_ref` of each of its items as the snapshots that hold the run's
+    /// judgments declare it, the latest import winning (D-035). `records` keeps one item
+    /// record per item, the latest import's, so it cannot tell two runs' inputs apart.
+    pub run_inputs: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 pub fn load(project: &Project) -> Result<Data, Error> {
@@ -67,9 +71,30 @@ pub fn load_snapshots(project: &Project, snapshots: Vec<ContentHash>) -> Result<
 
 /// Data from snapshots already read, in the same order.
 pub fn layered(snapshots: Vec<ContentHash>, read: Vec<Vec<Record>>) -> Data {
+    let mut run_inputs: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for records in &read {
+        let declared: BTreeMap<&str, &str> = records
+            .iter()
+            .filter_map(|r| match r {
+                Record::Item(i) => i.input_ref.as_deref().map(|h| (i.item_id.as_str(), h)),
+                _ => None,
+            })
+            .collect();
+        for r in records {
+            if let Record::Judgment(j) = r
+                && let Some(h) = declared.get(j.item_id.as_str())
+            {
+                run_inputs
+                    .entry(j.run_id.clone())
+                    .or_default()
+                    .insert(j.item_id.clone(), (*h).to_owned());
+            }
+        }
+    }
     Data {
         records: rows::layer(read),
         snapshots,
+        run_inputs,
     }
 }
 

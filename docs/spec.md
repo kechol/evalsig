@@ -247,7 +247,8 @@ Unknown records and unknown fields are rejected. Examples:
 - **Multi-class labels** are analysed as one class against the rest.
 - **`input_ref` holds the system-independent input**, never a prompt template or
   system prompt. Otherwise every prompt change would mark every item as changed
-  and remove it from comparisons (§7).
+  and remove it from comparisons (§7). Item records are kept per import: a comparison
+  reads each run's input hash from the imports that hold its judgments (D-035).
 
 ### 5.2 Ingestion routes
 

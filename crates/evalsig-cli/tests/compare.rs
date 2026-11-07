@@ -420,3 +420,50 @@ fn a_rerun_that_moves_more_than_the_difference_is_flagged() {
     let v = json(evalsig(dir.path()).args(["compare", "triage-v1", "triage-v2"]));
     assert!(!codes(&v).contains(&"run_variance_exceeds_delta".to_owned()));
 }
+
+#[test]
+fn items_whose_input_changed_between_the_arms_are_left_out() {
+    // Two imports declare the same items; the second run's import changed the input of
+    // half of them, and compare must read each run's own declaration (D-035).
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    std::fs::write(dir.path().join(".evalsig/config.toml"), CONFIG).unwrap();
+    let hash = |c: char| format!("blake3:{}", c.to_string().repeat(64));
+    let file = |run: &str, changed: usize| {
+        let mut lines = vec![format!(
+            r#"{{"record":"run","run_id":"{run}","system":{{"id":"s","version":"{run}"}},"output_type":"binary"}}"#
+        )];
+        for i in 0..10 {
+            let input = if i < changed { hash('b') } else { hash('a') };
+            lines.push(format!(
+                r#"{{"record":"item","item_id":"i-{i}","input_ref":"{input}"}}"#
+            ));
+            lines.push(format!(
+                r#"{{"record":"label","item_id":"i-{i}","rater_id":"rater:a","source":"human","value":{},"version":1}}"#,
+                i % 2 == 0
+            ));
+            lines.push(format!(
+                r#"{{"record":"judgment","item_id":"i-{i}","run_id":"{run}","gen_replicate":0,"output_type":"binary","value":{}}}"#,
+                i % 3 == 0
+            ));
+        }
+        let path = dir.path().join(format!("{run}.jsonl"));
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+        path
+    };
+    for (run, changed) in [("inp-a", 0), ("inp-b", 5)] {
+        evalsig(dir.path())
+            .arg("import")
+            .arg(file(run, changed))
+            .assert()
+            .success();
+    }
+    let out = evalsig(dir.path())
+        .args(["--format", "json", "compare", "inp-a", "inp-b"])
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let text = v.to_string();
+    assert!(text.contains("\"n_input_changed\":5"), "{v}");
+    assert!(text.contains("\"input_changed\""), "{v}");
+}

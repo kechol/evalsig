@@ -364,7 +364,9 @@ of the two exceeds the point difference.
 Arm A is the baseline and arm B the candidate, compared on the items both have. Items in
 one arm only are counted in `n_unpaired`. An item whose input hash (`input_ref`) differs
 between the arms is excluded and counted in `n_input_changed`, unless the check is
-overridden. Differences are B − A, oriented so that positive is better (the sign flips for
+overridden. Each arm's input hash is the one its run's own imports declare for the item,
+the latest winning; a run whose imports declare none takes the item record in force
+(D-035). Differences are B − A, oriented so that positive is better (the sign flips for
 `false_alarm_rate`). Both arms must share value semantics, output type and decision rule.
 
 The metrics compared are those both arms support: accuracy, H, F, precision, `pass_rate`,

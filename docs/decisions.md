@@ -1185,3 +1185,25 @@ after the entry is `Accepted`.
 - Consequences: gate.toml files written for the earlier rules are refused by the
   schema; a margin is written as a positive number.
 
+## D-035 Each run's item inputs come from its own imports
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: `compare` excludes items whose input changed between the arms, by the
+  items' `input_ref`. The data in force layers every import into one item record per
+  `item_id`, the latest import's, so both arms read the same hash and the check never
+  fired: a dataset revision that kept the item IDs was compared item by item as if
+  unchanged.
+- Decision:
+  - The data in force also keeps, per run, the `input_ref` that the snapshots holding
+    the run's judgments declare for each item, the latest import winning.
+  - A comparison reads each arm's input hash there; a run whose imports declare none
+    for an item takes the layered item record, as before.
+  - `records/1` does not change: the item record stays the place an input hash is
+    declared.
+- Alternatives: an `input_ref` on every judgment (not taken: a change to `records/1`
+  and a hash repeated per replicate for a property of the item as imported); one item
+  record per run in the layering (not taken: everything else reads one item per ID).
+- Consequences: two runs imported with different item records for the same IDs now
+  give `input_changed` and are compared on the unchanged items only.
+

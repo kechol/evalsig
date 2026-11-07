@@ -94,19 +94,24 @@ fn comparison_json(
     })
 }
 
-/// Items present in both arms whose input differs, by `input_ref` of the item records
-/// each arm reads.
+/// Items present in both arms whose input differs: each arm's `input_ref` is the one its
+/// run's own imports declare for the item (`Data::run_inputs`, D-035), else the item
+/// record in force when the run's imports declared none.
 fn changed_inputs(
+    d: &Data,
     items: &BTreeMap<&str, &Item>,
-    base: &Prepared<'_>,
-    cand: &Prepared<'_>,
+    base: (&str, &Prepared<'_>),
+    cand: (&str, &Prepared<'_>),
     overrides: &Overrides,
 ) -> (BTreeSet<String>, Vec<Finding>) {
-    let inputs = |p: &Prepared<'_>| -> BTreeMap<String, Option<String>> {
+    let inputs = |(run, p): (&str, &Prepared<'_>)| -> BTreeMap<String, Option<String>> {
+        let declared = d.run_inputs.get(run);
         p.judged()
             .into_keys()
             .map(|k| {
-                let input = items.get(k.as_str()).and_then(|i| i.input_ref.clone());
+                let input = declared
+                    .and_then(|m| m.get(&k).cloned())
+                    .or_else(|| items.get(k.as_str()).and_then(|i| i.input_ref.clone()));
                 (k, input)
             })
             .collect()
@@ -303,7 +308,13 @@ pub fn compute(
         let (excluded, input_findings) = if args.unpaired {
             (BTreeSet::new(), Vec::new())
         } else {
-            changed_inputs(&items, &base, &cand, &overrides)
+            changed_inputs(
+                d,
+                &items,
+                (&args.baseline, &base),
+                (cand_id, &cand),
+                &overrides,
+            )
         };
         findings.extend(input_findings);
         let options = Options {

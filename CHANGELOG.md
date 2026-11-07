@@ -41,6 +41,10 @@ longer reproduces.
 
 ### Fixed
 
+- `compare` (D-035): each run's item inputs come from its own imports, so items whose
+  `input_ref` changed between the arms are left out and reported as `input_changed`;
+  before, both arms read the latest import's item records and the check never fired.
+
 - `compare` and `gate`: a score run read at a threshold (`rate_at_least`) takes Tango's
   interval and the exact McNemar test like the other paired rates, not the bootstrap.
 - `compare`, `report` and `gate`: a bootstrap interval needs five units that carry the
