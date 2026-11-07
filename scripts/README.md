@@ -24,6 +24,12 @@ uv run --project scripts scripts/<script>.py
 | `check_changelog.sh` | Refuses a release tag whose version has no dated section in `CHANGELOG.md` (run by the release workflow) |
 | `sim_latent_reference.py` | Simulates the bias and interval coverage of the `soft` and `latent` references (D-016) |
 | `sim_ladder.py` | Simulates the false pass rate under an adaptive agent and the share of real improvements that pass, by holdout size, budget and Ladder step (D-015) |
+| `sim_rare_rate_bounds.py` | Compares bootstrap and Clopper-Pearson upper bounds of rare rates (metrics §1) |
+| `sim_percentile_tail.py` | Measures the null rejection rate of the percentile bootstrap, exact McNemar and Wald bounds of a paired difference, and the bootstrap quantile's Monte Carlo spread (metrics §7, §8) |
+| `sim_lord.py` | Prints LORD++'s per-test levels and the smallest detectable difference at those levels (metrics §7.2) |
+| `sim_nested_bootstrap.py` | Compares item-only and nested bootstrap standard errors and coverage with replicates (metrics §8) |
+| `sim_agreement_rule.py` | Compares system–majority, system–rater and rater–rater κ at equal accuracy (metrics §9.1) |
+| `sim_rater_resampling.py` | Compares item and rater resampling with the standard error over new raters in a crossed design (metrics §9.3) |
 
 ## Regenerating the fixtures
 

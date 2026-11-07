@@ -136,7 +136,10 @@ Every interval function returns the vacuous [0, 1] when n = 0.
   chooser, which no command calls.
 - **Why exact.** With no events the Wilson one-sided upper bound is smaller than the
   exact one, 1.645²/(n + 1.645²) against 1 − α^(1/n) at α = 0.05, and a percentile
-  bootstrap returns 0, which would pass a rate condition on no evidence. Items needed to
+  bootstrap returns 0, which would pass a rate condition on no evidence. At n = 300 and a
+  true rate of 0.01 (0.005), the bootstrap's one-sided 99% upper bound falls below the
+  true rate in 5.0% (22.5%) of samples, each one with no event observed, and
+  Clopper-Pearson's never does (`scripts/sim_rare_rate_bounds.py`). Items needed to
   claim a rate below u with no events: `docs/sample-size.md`, table 1.
 - Reference case: `proportion_interval`.
 
@@ -406,7 +409,9 @@ situations get different treatment.
   - No correction is applied. Reused validation data makes the tests dependent, the
     assumptions of online false-discovery-rate control (LORD++ and similar) do not hold,
     and the level would fall below 1% from the first use so that `improved` would almost
-    never appear. Validation data is a tool for searching; error control belongs to the
+    never appear: with LORD++'s default γ and q = 0.1 the level is 0.0027 at the first
+    test and 0.0002 at the tenth, and at 0.0005 the smallest difference detectable with
+    80% power on 300 items, 10% of them discordant, is 0.076 (`scripts/sim_lord.py`). Validation data is a tool for searching; error control belongs to the
     sealed holdout and its gate (§11).
   - The count and warning help a cooperative agent; they are not a guard, since the ledger
     lives on the agent's side.
@@ -446,7 +451,10 @@ situations get different treatment.
   and the item otherwise. Replicates, raters and runs are not resampled: an item's value
   (the replicate mean, the rater share) is fixed as an observation. Redrawing a lower
   level counts again the variance that redrawing the upper level already holds, and
-  widens the interval too much.
+  widens the interval too much. On 300 items with 3 replicates each, item resampling
+  gives a standard error within 1% of the true one and 95.3% coverage of a 95% interval;
+  redrawing the replicates as well gives 1.20 times the true error and 97.5%
+  (`scripts/sim_nested_bootstrap.py`).
 - **No stratified resampling.** Draws are plain draws of units. The library can keep
   stratum sizes, but no command uses it.
 - **Paired comparison.** Both arms use the same draw. In an unpaired comparison each arm
@@ -457,7 +465,12 @@ situations get different treatment.
   (`too_few_units`).
 - **Resamples for a gate.** A gate condition judged at a one-sided or two-sided level with
   tail α_adj needs B ≥ 50/α_adj (20 000 for α_adj = 0.0025). Approval raises the recorded
-  B to that number when the configured B is lower.
+  B to that number when the configured B is lower. At B = 2000 the Monte Carlo spread of
+  the 0.0025 quantile is 0.15 standard errors of the difference. Under the null, with
+  300 items 3% of them discordant, the one-sided percentile lower bound at α = 0.0025 is
+  above 0 in 0.35% of samples against 0.06% for the exact McNemar test, which is why
+  paired rates take Tango and McNemar where they apply (§7)
+  (`scripts/sim_percentile_tail.py`).
 - **p-value.** The differences are centred on 0 by subtracting the observed difference;
   the p-value is (1 + number of resampled differences at least as far from 0 as the observed
   one) / (1 + number of valid resamples). It cannot reach 0, and its resolution is
@@ -490,7 +503,10 @@ and people by the same rule.
   against each human rater other than itself (leave-one-out), and likewise for a system's
   decisions against each human's decisions. Comparing the system with a majority or soft
   reference while people are compared one to one makes the system look better at equal
-  accuracy, so every rater is compared only with other raters.
+  accuracy, so every rater is compared only with other raters. With three raters and a
+  system each right 85% of the time, κ is 0.47 between two raters, 0.59 for the system
+  against the majority and 0.46 for the system against each rater
+  (`scripts/sim_agreement_rule.py`).
 - **Ceiling.** With a soft reference, `agree` also gives mean(max(s_i, 1 − s_i)), the
   accuracy no system can exceed.
 - **Intervals.** `agree` outputs point values; it computes no interval for agreement.
@@ -545,7 +561,10 @@ The overlap of raters and items decides the design, output as `rater_design`.
 - **Raters are not resampled.** Under nested designs, item resampling already contains
   rater variation and resampling raters would count it twice. Under crossed designs,
   resampling raters would treat a rater's systematic leniency as independent noise per item
-  and not represent the population.
+  and not represent the population. With three raters of differing leniency, the standard
+  error over new items and new raters is 0.056; resampling items gives 0.031, the error
+  with these raters fixed, and adding raters per item or as a set gives 0.033 or 0.038,
+  still 0.58 to 0.68 of it (`scripts/sim_rater_resampling.py`).
 - **Rater spread (crossed, more than one voter).** The metrics are also computed with each
   rater's votes alone as the reference, and the minimum and maximum are output as
   `rater_spread` next to each metric.
