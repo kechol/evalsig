@@ -31,8 +31,11 @@ fn key(r: &Record) -> (u8, [Part<'_>; 8]) {
                 Str(&x.rater_id),
                 Str(x.task()),
                 Num(x.label_replicate()),
+                // An adjudication is a label of its own beside the rater's vote (D-037).
+                Num(u32::from(
+                    x.kind() == evalsig_core::records::LabelKind::Adjudication,
+                )),
                 Num(x.version),
-                N,
                 N,
                 N,
             ],
@@ -70,7 +73,14 @@ fn key(r: &Record) -> (u8, [Part<'_>; 8]) {
 const KEY_NAMES: [&[&str]; 6] = [
     &["run_id"],
     &["item_id"],
-    &["item_id", "rater_id", "task", "label_replicate", "version"],
+    &[
+        "item_id",
+        "rater_id",
+        "task",
+        "label_replicate",
+        "adjudication",
+        "version",
+    ],
     &[
         "item_id",
         "run_id",
@@ -211,7 +221,7 @@ mod tests {
         let r = Record::from_json(r#"{"record":"label","item_id":"q","rater_id":"u","source":"human","version":2,"value":true}"#).unwrap();
         assert_eq!(
             describe_key(&r),
-            r#"label{item_id="q", rater_id="u", task="default", label_replicate=0, version=2}"#
+            r#"label{item_id="q", rater_id="u", task="default", label_replicate=0, adjudication=0, version=2}"#
         );
         let other = Record::from_json(r#"{"record":"label","item_id":"q","rater_id":"u","source":"human","version":2,"value":false}"#).unwrap();
         let mut rs = vec![r.clone(), r.clone(), other];

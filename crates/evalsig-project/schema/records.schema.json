@@ -244,7 +244,7 @@
     "version": {
      "type": "integer",
      "minimum": 1,
-     "description": "Revision number for the same (item, rater, task, label_replicate). Revisions are appended, never overwritten"
+     "description": "Revision number for the same (item, rater, task, label_replicate, adjudication or not). Revisions are appended, never overwritten; a rater's adjudication is a label of its own beside that rater's vote"
     },
     "reason": {
      "type": "string",

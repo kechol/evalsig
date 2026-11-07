@@ -1,7 +1,7 @@
 //! Append-only label revisions and as-of selection (SPEC §5.1).
 //!
-//! A label is identified by (item, rater, task, label replicate). Revisions append a
-//! higher `version`; nothing is overwritten. Analyses read the latest version, or the
+//! A label is identified by (item, rater, task, label replicate, whether it is an
+//! adjudication; D-037). Revisions append a higher `version`; nothing is overwritten. Analyses read the latest version, or the
 //! latest one labelled at or before an `--labels-as-of` instant.
 
 use std::collections::BTreeMap;
@@ -20,6 +20,9 @@ pub struct LabelKey {
     pub task: String,
     /// Which blind re-label of the item by this rater it is.
     pub label_replicate: u32,
+    /// Whether the label adjudicates a split. A rater's adjudication is a label of its
+    /// own, not a revision of that rater's vote.
+    pub adjudication: bool,
 }
 
 impl LabelKey {
@@ -30,6 +33,7 @@ impl LabelKey {
             rater_id: label.rater_id.clone(),
             task: label.task().to_owned(),
             label_replicate: label.label_replicate(),
+            adjudication: label.kind() == crate::records::LabelKind::Adjudication,
         }
     }
 }
@@ -202,6 +206,34 @@ mod tests {
         let as_of = set.as_of(Instant::parse("2027-01-01T00:00:00Z").unwrap());
         assert_eq!(as_of.labels.len(), 1);
         assert_eq!(as_of.undated_skipped, 3);
+    }
+
+    #[test]
+    fn an_adjudication_stands_beside_the_raters_vote() {
+        // Alice votes 3, then adjudicates the split as 1 under her own rater ID: two
+        // labels, at version 1 and at version 2 alike (D-037).
+        for version in [1, 2] {
+            let mut set = LabelSet::default();
+            set.insert(alice(1, 3, "2026-08-03T00:00:00Z")).unwrap();
+            set.insert(label(&format!(
+                r#"{{"record":"label","item_id":"q1","rater_id":"alice","source":"human","kind":"adjudication","value":1,"levels":4,"version":{version}}}"#
+            )))
+            .unwrap();
+            let mut latest: Vec<_> = set.latest().iter().map(|l| (l.kind(), l.value)).collect();
+            latest.sort_by_key(|(k, _)| *k == crate::records::LabelKind::Adjudication);
+            assert_eq!(
+                latest,
+                [
+                    (crate::records::LabelKind::Independent, Some(Value::Int(3))),
+                    (crate::records::LabelKind::Adjudication, Some(Value::Int(1)))
+                ]
+            );
+        }
+        // A revision of the vote stays the same label.
+        let mut set = LabelSet::default();
+        set.insert(alice(1, 3, "2026-08-03T00:00:00Z")).unwrap();
+        set.insert(label(r#"{"record":"label","item_id":"q1","rater_id":"alice","source":"human","kind":"revision","value":2,"levels":4,"version":2}"#)).unwrap();
+        assert_eq!(set.latest().len(), 1);
     }
 
     #[test]

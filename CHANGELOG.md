@@ -45,6 +45,8 @@ longer reproduces.
   five units, takes the exact interval on the effective number of items instead of a
   bootstrap interval of zero width or none.
 
+- Labels (D-037): a rater's adjudication is a label of its own beside that rater's
+  vote; before, it replaced the vote as a revision or stopped the import.
 
 - Exact bounds on millions of judgments no longer hang: above a total shape of 1e5 the
   Beta quantile bisects the distribution function (D-036).

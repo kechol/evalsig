@@ -1236,3 +1236,25 @@ after the entry is `Accepted`.
 - Consequences: upgrading `statrs` or `rand_chacha` requires the reference and pinned
   tests, including the large-shape quantile test, to pass unchanged.
 
+## D-037 A rater's adjudication is a label of its own
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: A label was identified by (item, rater, task, label replicate). A rater who
+  adjudicated a split under the same rater ID as their vote therefore wrote a revision
+  of the vote: at version 1 the import stopped on a duplicate key, at version 2 the
+  adjudication silently replaced the vote, so `majority` and `soft` lost a voter and
+  read one rater's vote as the reference.
+- Decision:
+  - A label's identity also says whether it is an adjudication (`kind =
+    "adjudication"`). An adjudication stands beside the same rater's vote; a
+    `revision` remains a revision of the rater's label.
+  - The snapshot's primary key orders a vote before an adjudication of the same
+    (item, rater, task, label replicate), before `version`, so data without such pairs
+    keep their order and hashes.
+- Alternatives: refusing an adjudication under a voter's rater ID (not taken: the
+  adjudicator is often one of the raters, and a second ID per person misstates who
+  labelled).
+- Consequences: a records file holding a rater's vote and adjudication of one item now
+  imports, and only `single` reads the adjudication.
+

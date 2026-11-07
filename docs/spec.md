@@ -200,7 +200,7 @@ Unknown records and unknown fields are rejected. Examples:
 | Record | Key | Contents |
 |---|---|---|
 | `item` | `item_id` | `cluster` (the resampling and splitting unit), `strata`, `weight`, `label_inclusion_prob`, `occurred_at`, `input_ref` (the system-independent input only), `reference_ref` (for example the target of a graded generation task), `attrs` |
-| `label` | `item_id`, `rater_id`, `task`, `label_replicate`, `version` | Value or `missing`; `source` (`human`, `model`, `consensus`, `external`); `kind` (`independent`, `revision`, `adjudication`); `reason`; `source_ref` |
+| `label` | `item_id`, `rater_id`, `task`, `label_replicate`, adjudication or not (`kind`), `version` | Value or `missing`; `source` (`human`, `model`, `consensus`, `external`); `kind` (`independent`, `revision`, `adjudication`); `reason`; `source_ref` |
 | `judgment` | `item_id`, `run_id`, `task`, `gen_replicate`, `grade_replicate` | Value or `missing`; `features` that fired; `output_ref`, `rationale_ref`; `cost`; `source_ref` |
 | `preference` | `item_id`, `left_run_id`, `right_run_id`, `rater_id`, `task`, `grade_replicate` | `outcome` (`left`, `right`, `tie`) or `missing`. A judgment with the presentation order swapped is a separate record |
 | `run` | `run_id` | `system` (id, version, config hash), `value_semantics`, `output_type` and `levels`, `grader` (id, version, config hash, kind), `harness` (name, version, run reference) |
@@ -234,7 +234,9 @@ Unknown records and unknown fields are rejected. Examples:
   - On a gate's holdout every missing judgment, whatever its reason, counts as the
     worst (§8.3).
 - **Labels are never overwritten.** A revision of the same (item, rater, task,
-  label replicate) appends a higher `version`. Analyses use the latest version, or
+  label replicate, adjudication or not) appends a higher `version`. A rater's
+  adjudication is a label of its own beside that rater's vote, not a revision of it
+  (D-037). Analyses use the latest version, or
   the labels as of a time given with `--labels-as-of`. A gate reads only the
   sealed set (§8.2).
 - **The positive definition is configured once** (for example
