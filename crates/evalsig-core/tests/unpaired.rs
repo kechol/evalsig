@@ -162,3 +162,19 @@ fn mean_scores_use_welch() {
     assert!((lo - (d - q * (va + vb).sqrt())).abs() < 1e-12);
     assert!((hi - (d + q * (va + vb).sqrt())).abs() < 1e-12);
 }
+
+#[test]
+fn constant_mean_scores_name_zero_variance() {
+    let s = |v: &str, n: usize| -> Vec<String> { vec![v.to_owned(); n] };
+    let cmp = compare_runs(
+        &run("a", "score", &s("0.4", 6), false),
+        &run("b", "score", &s("0.6", 6), false),
+        None,
+    );
+    let m = cmp
+        .metrics
+        .iter()
+        .find(|m| m.metric == "mean_score")
+        .unwrap();
+    assert_eq!((m.interval, m.ci, m.p_value), ("zero_variance", None, None));
+}

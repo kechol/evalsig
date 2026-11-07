@@ -80,6 +80,9 @@ longer reproduces.
 - `agree`: ordered labels that are not integers get Spearman's ρ; AC1 and the specific
   agreements stay defined for a pair that uses one class; the weighted κ no longer
   allocates a table over the whole label range.
+- `compare` in unpaired mode: mean scores that are equal within each arm give no
+  interval, with the method `zero_variance`, instead of `too_few_units` or a zero-width
+  interval left by rounding.
 - `power`: out-of-range settings are usage errors, `--half-width 0` no longer loops, the
   exact power at ψ = 1 is finite, and `--gate` reads the level an approval resolved.
 - `import --mapping`: an integral float such as `3.0` is the ordinal level it spells.

@@ -458,8 +458,9 @@ situations get different treatment.
   overlap (for example production logs of different weeks). An item present in both arms
   counts in both. Rates of 0/1 items use Newcombe's hybrid score interval (§1); it gives
   no p-value. The mean score of unit-weight single items uses Welch's t interval and its
-  p-value. Everything else uses a bootstrap in which each arm resamples its own clusters,
-  with at least 5 clusters per arm. The verdict rule is §7.1. Reference case:
+  p-value; when each arm's scores are all equal it gives neither, with the method
+  `zero_variance`. Everything else uses a bootstrap in which each arm resamples its own
+  clusters, with at least 5 clusters per arm. The verdict rule is §7.1. Reference case:
   `unpaired_difference`.
 - **Trend** (`trend`). The metrics and intervals of each period of `occurred_at` (day,
   week or month). Each period is compared with the baseline period (the first unless

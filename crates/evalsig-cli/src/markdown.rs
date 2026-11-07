@@ -63,6 +63,7 @@ fn id(v: &Value) -> String {
 fn interval_cell(m: &Value, f: fn(&Value) -> String) -> String {
     match m["interval"].as_str() {
         Some("too_few_units") => "too few units".to_owned(),
+        Some("zero_variance") => "zero variance".to_owned(),
         _ => pair(&m["ci"], f),
     }
 }

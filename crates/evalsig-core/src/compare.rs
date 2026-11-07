@@ -27,8 +27,8 @@ pub struct MetricDelta {
     pub delta: Option<f64>,
     /// Confidence interval of the difference; `None` when no interval could be formed.
     pub ci: Option<(f64, f64)>,
-    /// Method of the interval: `tango`, `newcombe`, `welch`, `bootstrap`, `too_few_units`
-    /// or `none`.
+    /// Method of the interval: `tango`, `newcombe`, `welch`, `bootstrap`, `too_few_units`,
+    /// `zero_variance` or `none`.
     pub interval: &'static str,
     /// Number of bootstrap resamples, present for a bootstrap interval.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,6 +141,7 @@ type Inference = (
 
 const NO_INFERENCE: Inference = (None, "none", None, None, "none");
 const TOO_FEW_UNITS: Inference = (None, "too_few_units", None, None, "none");
+const ZERO_VARIANCE: Inference = (None, "zero_variance", None, None, "none");
 
 /// A metric's difference with its §7.1 verdict.
 fn finish(
@@ -358,8 +359,16 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
     if na < 2.0 || nb < 2.0 {
         return None;
     }
+    // An arm of equal values has no spread; computing it would leave rounding noise.
+    let spread = |x: &[f64]| {
+        if x.iter().all(|v| *v == x[0]) {
+            0.0
+        } else {
+            variance(x, 1)
+        }
+    };
     let (ma, mb) = (mean(a.iter().copied())?, mean(b.iter().copied())?);
-    let (sa, sb) = (variance(a, 1) / na, variance(b, 1) / nb);
+    let (sa, sb) = (spread(a) / na, spread(b) / nb);
     let se = (sa + sb).sqrt();
     if se == 0.0 {
         return None;
@@ -472,9 +481,11 @@ fn unpaired_delta(
         let points = |v: &BTreeMap<String, ItemValue>| -> Vec<f64> {
             v.values().map(|x| x.numerator).collect()
         };
-        match welch(&points(&pa), &points(&pb), o.level) {
+        let (a, b) = (points(&pa), points(&pb));
+        match welch(&a, &b, o.level) {
             Some((ci, p)) => (Some(orient(ci)), "welch", None, Some(p), "welch_t"),
-            None => TOO_FEW_UNITS,
+            None if a.len() < 2 || b.len() < 2 => TOO_FEW_UNITS,
+            None => ZERO_VARIANCE,
         }
     } else {
         let (ca, cb) = (cluster_totals(&pa), cluster_totals(&pb));
