@@ -381,6 +381,7 @@ canonicalized, so equivalent files hash the same. Tables:
 | `[cost]` | `matrix`, production `prevalence`, `ratio_range` |
 | `[checks]` | Switches for the configurable validity checks |
 | `[[import]]` | Named import blocks for flat tables and harness logs (②) |
+| `[dashboard]` | `language` (`en`, `ja`) of the dashboard's own text (D-033); display only, so it stays out of the stored configuration that provenance names |
 
 Rules are one-key tables: `{ ordinal_at_least = n }`, `{ score_at_least = x }` or
 `{ equals = v }`. `examples/evalsig.toml` shows every table.
@@ -856,6 +857,10 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   changed criterion, moving to a higher one a better separation. The equal-variance
   model draws noise N(0, 1) and signal N(d′, 1) with the criterion at d′/2 + c, the
   hits and false alarms shaded beyond it.
+- **Language** (D-033). `[dashboard] language` writes the pages' own text (screen names,
+  headings, column names, buttons, notes, chart labels) in English or Japanese. Verdicts,
+  warnings, errors, the glossary's meanings and metric names are the library's English
+  (D-002) in either language.
 - **Moving between screens.** Links carry the chosen run, or the chosen pair, so moving
   between screens keeps the choice; the current screen is marked in the navigation. A
   screen with nothing to show says which data it needs. Each chart has a collapsed "How

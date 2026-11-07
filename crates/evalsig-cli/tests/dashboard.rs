@@ -292,6 +292,33 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
 }
 
 #[test]
+fn the_pages_follow_the_configured_language() {
+    let p = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    let config = p.path().join(".evalsig/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("{text}\n[dashboard]\nlanguage = \"ja\"\n")).unwrap();
+    let d = start(p.path());
+    let base = d
+        .url
+        .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
+        .to_owned();
+    let host = format!("127.0.0.1:{}", d.port);
+    let page = get(d.port, &format!("{base}compare"), &host);
+    assert!(page.contains("<html lang=\"ja\">"), "{page}");
+    assert!(page.contains("<h1>比較</h1>"), "{page}");
+    assert!(page.contains(">概要</a>") && page.contains("ベースラインと候補を入れ替える"));
+    assert!(page.contains("誤警報率"), "{page}");
+    // Verdicts come from the library in English (D-002).
+    assert!(page.contains("so the candidate improved"), "{page}");
+    let page = get(
+        d.port,
+        &format!("{base}discrimination?run=triage-v2"),
+        &host,
+    );
+    assert!(page.contains("<h1>弁別力</h1>") && page.contains("等分散正規モデル"));
+}
+
+#[test]
 fn queries_name_known_runs_only_and_decode_safely() {
     let p = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
     let d = start(p.path());

@@ -39,6 +39,29 @@ pub struct Config {
     /// The `[[import]]` blocks, in file order.
     #[serde(rename = "import", skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<Import>,
+    /// How the dashboard shows its pages. It changes no result, so it stays out of the
+    /// stored configuration that provenance names.
+    #[serde(skip_serializing)]
+    pub dashboard: Dashboard,
+}
+
+/// The dashboard's display settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Dashboard {
+    /// The language of the pages' own text (D-033).
+    pub language: Language,
+}
+
+/// A language the dashboard's own text is written in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    /// English, the default.
+    #[default]
+    En,
+    /// Japanese.
+    Ja,
 }
 
 /// Project-wide name and the label-side and judgment-side rules.
@@ -679,6 +702,16 @@ mod tests {
         assert_eq!(c.imports[1].value_map["yes"], Value::Bool(true));
         assert_eq!(c.imports[2].value_map["P"], Value::Float(0.5));
         assert_eq!(c.imports[0].map.strata["lang"], "$.meta.lang");
+    }
+
+    #[test]
+    fn the_dashboard_language_stays_out_of_the_stored_configuration() {
+        let ja = Config::from_toml("[dashboard]\nlanguage = \"ja\"\n").unwrap();
+        assert_eq!(ja.dashboard.language, Language::Ja);
+        assert_eq!(Config::default().dashboard.language, Language::En);
+        // Display only: the configuration that provenance hashes is the same.
+        assert_eq!(ja.to_json(), Config::default().to_json());
+        assert!(Config::from_toml("[dashboard]\nlanguage = \"fr\"\n").is_err());
     }
 
     #[test]

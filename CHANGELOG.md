@@ -28,6 +28,9 @@ longer reproduces.
   (both runs of a comparison), same-rule agreement as bars and performance by k as
   lines with interval bands; ROC, z-ROC and calibration curves gain ticks, z-ROC in z
   units; replicate agreement is a table of its measures.
+- Dashboard in Japanese (D-033): `[dashboard] language = "ja"` writes the pages' own
+  text in Japanese; verdicts, warnings and glossary meanings stay English.
+- Dashboard design tokens retuned to neutral greys, underlined tabs and lighter tables.
 - `trend` without `occurred_at` hints at adding it.
 
 ## [0.1.0] - 2026-11-07

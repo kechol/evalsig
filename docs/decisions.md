@@ -1123,3 +1123,31 @@ after the entry is `Accepted`.
 - Consequences: a new kind of chart is code in `svg.rs` with a test that its
   attributes carry the reported values; no chart dependency is added.
 
+## D-033 The dashboard's own text in English or Japanese
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: D-002 makes English the language of documentation and CLI output.
+  The dashboard is read by people, among them the maintainer's Japanese-speaking
+  users, and its own text (screen names, headings, buttons, chart labels) is
+  neither documentation nor output another program parses.
+- Decision:
+  - `[dashboard] language` (`en` by default, or `ja`) chooses the language of
+    the dashboard's own text. Each piece of it is one variant of
+    `evalsig_dashboard::i18n::T` with its English and Japanese text side by
+    side, so a missing translation does not compile.
+  - Verdicts, warnings, errors and their hints, the glossary's meanings in "How
+    to read", metric names and every value stay the library's English, as D-002
+    has them, in both languages; `--format html` stays English like all CLI
+    output.
+  - The setting changes no result, so it is not serialized into the stored
+    configuration and leaves configuration hashes and provenance unchanged.
+  - The Japanese follows the terms of `README.ja.md`; run and item keep their
+    English names there and here.
+- Alternatives: translating verdicts and warnings too (not taken: agents and
+  scripts read them, and two texts per verdict would drift); a language flag
+  on `evalsig dashboard` (not taken: a project's readers share one setting,
+  and the page reads its configuration on every request).
+- Consequences: new dashboard text is a new variant with both texts; another
+  language adds a column to every variant.
+

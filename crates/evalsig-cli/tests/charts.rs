@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use evalsig_core::config::Language;
 use evalsig_dashboard::svg;
 use serde_json::Value;
 
@@ -65,7 +66,7 @@ fn every_drawn_value_is_the_cli_value() {
         );
         assert!(plot.contains(&attrs), "{attrs}");
     }
-    let roc = svg::roc(&r["roc"]);
+    let roc = svg::roc(&r["roc"], Language::En);
     let points = r["roc"]["points"].as_array().unwrap();
     assert!(!points.is_empty());
     for p in points {
@@ -75,7 +76,7 @@ fn every_drawn_value_is_the_cli_value() {
         );
     }
     if let Some(z) = r["roc"]["zroc"].as_array() {
-        let drawn = svg::zroc(&r["roc"]);
+        let drawn = svg::zroc(&r["roc"], Language::En);
         for p in z {
             assert!(drawn.contains(&format!("data-zx=\"{}\" data-zy=\"{}\"", p[0], p[1])));
         }
@@ -119,7 +120,7 @@ fn every_drawn_value_is_the_cli_value() {
         )));
     }
     if c["transition"].is_object() {
-        let table = svg::transition(&c["transition"]);
+        let table = svg::transition(&c["transition"], Language::En);
         for (k, v) in c["transition"].as_object().unwrap() {
             assert!(table.contains(&format!("data-key=\"{k}\">{v}<")), "{k}");
         }
@@ -144,7 +145,7 @@ fn the_reliability_diagram_shows_the_cli_calibration() {
     let calibration = &report["results"]["calibration"];
     let bins = calibration["bins"].as_array().unwrap();
     assert!(!bins.is_empty());
-    let drawn = svg::reliability(calibration);
+    let drawn = svg::reliability(calibration, Language::En);
     for b in bins {
         assert!(
             drawn.contains(&format!(

@@ -4,10 +4,12 @@
 
 use std::fmt::Write as _;
 
+use evalsig_core::config::Language;
 use evalsig_core::numeric::{norm_cdf, norm_pdf};
 use serde_json::Value;
 
 use crate::html::esc;
+use crate::i18n::T;
 
 const W: f64 = 720.0;
 const ROW: f64 = 28.0;
@@ -220,7 +222,7 @@ pub fn curve(
 }
 
 /// The empirical ROC of a report's `roc` detail.
-pub fn roc(roc: &Value) -> String {
+pub fn roc(roc: &Value, lang: Language) -> String {
     let p: Vec<(&Value, &Value)> = roc["points"]
         .as_array()
         .into_iter()
@@ -232,14 +234,14 @@ pub fn roc(roc: &Value) -> String {
         &pts(&p),
         ("data-x", "data-y"),
         true,
-        ("false alarm rate", "hit rate"),
+        (T::FalseAlarmRate.text(lang), T::HitRate.text(lang)),
         (0.0, 1.0),
     )
 }
 
 /// The z-ROC (probit of both rates), whose straightness checks the equal-variance model:
 /// a straight line of slope 1 is the model d′ assumes. Drawn in z units on both axes.
-pub fn zroc(roc: &Value) -> String {
+pub fn zroc(roc: &Value, lang: Language) -> String {
     let Some(z) = roc["zroc"].as_array() else {
         return String::new();
     };
@@ -259,13 +261,13 @@ pub fn zroc(roc: &Value) -> String {
         &reported,
         ("data-zx", "data-zy"),
         true,
-        ("z(false alarm rate)", "z(hit rate)"),
+        (T::ZFalseAlarmRate.text(lang), T::ZHitRate.text(lang)),
         ((lo - pad).floor(), (hi + pad).ceil()),
     )
 }
 
 /// A reliability diagram from a report's `calibration` detail.
-pub fn reliability(calibration: &Value) -> String {
+pub fn reliability(calibration: &Value, lang: Language) -> String {
     let p: Vec<(&Value, &Value)> = calibration["bins"]
         .as_array()
         .into_iter()
@@ -277,18 +279,22 @@ pub fn reliability(calibration: &Value) -> String {
         &pts(&p),
         ("data-x", "data-y"),
         true,
-        ("mean score", "share positive"),
+        (T::MeanScore.text(lang), T::SharePositive.text(lang)),
         (0.0, 1.0),
     )
 }
 
 /// The four cells of a comparison's transition table, as an HTML table.
-pub fn transition(t: &Value) -> String {
+pub fn transition(t: &Value, lang: Language) -> String {
     let cell = |k: &str| format!("<td class=\"n\" data-key=\"{k}\">{}</td>", num(&t[k]));
     format!(
-        "<table class=\"transition\"><thead><tr><th></th><th class=\"n\">Gained</th><th class=\"n\">Lost</th></tr></thead><tbody><tr><th>Hits</th>{}{}</tr><tr><th>False alarms</th>{}{}</tr></tbody></table>",
+        "<table class=\"transition\"><thead><tr><th></th><th class=\"n\">{}</th><th class=\"n\">{}</th></tr></thead><tbody><tr><th>{}</th>{}{}</tr><tr><th>{}</th>{}{}</tr></tbody></table>",
+        esc(T::Gained.text(lang)),
+        esc(T::Lost.text(lang)),
+        esc(T::Hits.text(lang)),
         cell("new_hits"),
         cell("lost_hits"),
+        esc(T::FalseAlarms.text(lang)),
         cell("new_false_alarms"),
         cell("cleared_false_alarms")
     )
@@ -441,7 +447,7 @@ fn legend(s: &mut String, x: f64, y: f64, class: &str, text: &str) {
 /// the reference negatives and signal N(d′, 1) for the positives on one decision axis,
 /// the criterion at d′/2 + c, and the areas beyond it shaded: under the signal the hits,
 /// under the noise the false alarms. Empty without both numbers.
-pub fn sdt_model(sdt: &Value) -> String {
+pub fn sdt_model(sdt: &Value, lang: Language) -> String {
     let (Some(d), Some(c)) = (f(&sdt["dprime"]), f(&sdt["criterion"])) else {
         return String::new();
     };
@@ -476,7 +482,8 @@ pub fn sdt_model(sdt: &Value) -> String {
     };
     let (dv, cv) = (num(&sdt["dprime"]), num(&sdt["criterion"]));
     let mut s = format!(
-        "<svg class=\"sdt-model\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\" data-dprime=\"{dv}\" data-criterion=\"{cv}\"><title>Equal-variance model: d′ {dv}, criterion {cv}</title>"
+        "<svg class=\"sdt-model\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\" data-dprime=\"{dv}\" data-criterion=\"{cv}\"><title>{}: d′ {dv}, c {cv}</title>",
+        esc(T::EqualVarianceModel.text(lang))
     );
     // The false alarms lie under the hits wherever d′ > 0, so they are drawn on top.
     let _ = write!(
@@ -507,23 +514,30 @@ pub fn sdt_model(sdt: &Value) -> String {
     let kx = fr.px(k);
     let _ = write!(
         s,
-        "<line class=\"criterion\" x1=\"{kx:.1}\" y1=\"{:.1}\" x2=\"{kx:.1}\" y2=\"{:.1}\"/><text class=\"note\" x=\"{:.1}\" y=\"{:.1}\">criterion, c = {c:.4}</text>",
+        "<line class=\"criterion\" x1=\"{kx:.1}\" y1=\"{:.1}\" x2=\"{kx:.1}\" y2=\"{:.1}\"/><text class=\"note\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
         fr.py(0.45),
         fr.py(0.0),
         kx + 4.0,
-        fr.py(0.43)
+        fr.py(0.43),
+        esc(&T::CriterionAt.fill(lang, &format!("{c:.4}")))
     );
     fr.axes(
         &mut s,
         &ticks(lo, hi, 8),
         &[],
-        ("decision axis (standard deviations)", ""),
+        (T::DecisionAxis.text(lang), ""),
     );
     let y = height - 14.0;
-    legend(&mut s, 20.0, y, "swatch s0", "reference negative (noise)");
-    legend(&mut s, 200.0, y, "swatch s1", "reference positive (signal)");
-    legend(&mut s, 380.0, y, "area positive", "hits");
-    legend(&mut s, 450.0, y, "area negative", "false alarms");
+    legend(&mut s, 20.0, y, "swatch s0", T::Noise.text(lang));
+    legend(&mut s, 200.0, y, "swatch s1", T::Signal.text(lang));
+    legend(&mut s, 380.0, y, "area positive", T::HitsArea.text(lang));
+    legend(
+        &mut s,
+        450.0,
+        y,
+        "area negative",
+        T::FalseAlarmsArea.text(lang),
+    );
     s.push_str("</svg>");
     s
 }
@@ -545,7 +559,7 @@ pub struct RocRun<'a> {
 /// reported d′ and c fix, on the equal-variance ROC of its d′ (every criterion at the
 /// same sensitivity), with the chance line. A run moved along its curve changed its
 /// criterion; a run on a higher curve separates the classes better.
-pub fn roc_space(runs: &[RocRun<'_>]) -> String {
+pub fn roc_space(runs: &[RocRun<'_>], lang: Language) -> String {
     let runs: Vec<(&RocRun, f64, f64)> = runs
         .iter()
         .filter_map(|r| Some((r, f(&r.sdt["dprime"])?, f(&r.sdt["criterion"])?)))
@@ -564,10 +578,16 @@ pub fn roc_space(runs: &[RocRun<'_>]) -> String {
     let width = 380.0;
     let height = fr.top + fr.h + 44.0 + 20.0 * runs.len() as f64;
     let mut s = format!(
-        "<svg class=\"roc-space\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>ROC space</title>"
+        "<svg class=\"roc-space\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>{}</title>",
+        esc(T::RocSpace.text(lang))
     );
     let grid = ticks(0.0, 1.0, 5);
-    fr.axes(&mut s, &grid, &grid, ("false alarm rate", "hit rate"));
+    fr.axes(
+        &mut s,
+        &grid,
+        &grid,
+        (T::FalseAlarmRate.text(lang), T::HitRate.text(lang)),
+    );
     let _ = write!(
         s,
         "<line class=\"chance\" x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"/>",
@@ -789,27 +809,33 @@ mod tests {
     #[test]
     fn the_signal_detection_charts_carry_the_reported_values() {
         let sdt = json!({"dprime": 1.6542, "criterion": 0.1483});
-        let m = sdt_model(&sdt);
+        let m = sdt_model(&sdt, Language::En);
         assert!(
             m.contains("data-dprime=\"1.6542\" data-criterion=\"0.1483\""),
             "{m}"
         );
         assert!(m.contains("class=\"area positive\"") && m.contains("class=\"area negative\""));
-        assert!(sdt_model(&json!({})).is_empty());
-        let r = roc_space(&[RocRun {
-            label: "<b>".into(),
-            sdt: &sdt,
-        }]);
+        assert!(sdt_model(&json!({}), Language::En).is_empty());
+        let r = roc_space(
+            &[RocRun {
+                label: "<b>".into(),
+                sdt: &sdt,
+            }],
+            Language::En,
+        );
         assert!(
             r.contains("data-dprime=\"1.6542\" data-criterion=\"0.1483\""),
             "{r}"
         );
         assert!(!r.contains("<b>"));
         assert!(
-            roc_space(&[RocRun {
-                label: "x".into(),
-                sdt: &json!(null)
-            }])
+            roc_space(
+                &[RocRun {
+                    label: "x".into(),
+                    sdt: &json!(null)
+                }],
+                Language::En
+            )
             .is_empty()
         );
         // H′ = 0.75 and F′ = 0.25 give d′ = 2·z(0.75) and c = 0, and back.
@@ -874,17 +900,22 @@ mod tests {
         assert!(
             s.contains("data-value=\"0.7583333333\" data-lo=\"0.7133333333\" data-hi=\"0.805\"")
         );
-        let r = roc(&json!({"points": [[0.0, 0.0], [0.25, 0.7], [1.0, 1.0]]}));
+        let r = roc(
+            &json!({"points": [[0.0, 0.0], [0.25, 0.7], [1.0, 1.0]]}),
+            Language::En,
+        );
         assert!(r.contains("data-x=\"0.25\" data-y=\"0.7\""));
         let t = transition(
             &json!({"new_hits": 9.0, "lost_hits": 6.5, "new_false_alarms": 7.0, "cleared_false_alarms": 18.5}),
+            Language::En,
         );
         assert!(t.contains("data-key=\"lost_hits\">6.5<"));
         let c = reliability(
             &json!({"brier": 0.1, "bins": [{"bin": 0, "n": 10, "mean_score": 0.15, "positive_share": 0.2}]}),
+            Language::En,
         );
         assert!(c.contains("data-x=\"0.15\" data-y=\"0.2\""));
-        let z = zroc(&json!({"zroc": [[-1.2, -0.4], [0.3, 0.9]]}));
+        let z = zroc(&json!({"zroc": [[-1.2, -0.4], [0.3, 0.9]]}), Language::En);
         assert!(z.contains("data-zx=\"-1.2\" data-zy=\"-0.4\""));
         // Labels from the data are escaped.
         let x = intervals(

@@ -2,14 +2,17 @@
 //! server, its screens, and the HTML and SVG they render from result JSON.
 
 pub mod html;
+pub mod i18n;
 pub mod screens;
 pub mod server;
 pub mod svg;
 
+use evalsig_core::config::Language;
 use evalsig_project::envelope::Schema;
 use serde_json::Value;
 
-/// One self-contained page for a result (`--format html`): the verdict, warnings,
+/// One self-contained page for a result (`--format html`), in English as all CLI output
+/// is (D-002): the verdict, warnings,
 /// the charts its results allow, and the envelope itself as
 /// `<script type="application/json">`. It loads nothing from anywhere.
 pub fn static_report(e: &Value) -> String {
@@ -44,17 +47,17 @@ pub fn static_report(e: &Value) -> String {
             point == "delta",
         ));
         if part["transition"].is_object() {
-            body.push_str(&svg::transition(&part["transition"]));
+            body.push_str(&svg::transition(&part["transition"], Language::En));
         }
     }
     if r["sdt"].is_object() {
-        body.push_str(&svg::sdt_model(&r["sdt"]));
+        body.push_str(&svg::sdt_model(&r["sdt"], Language::En));
     }
     if r["roc"].is_object() {
-        body.push_str(&svg::roc(&r["roc"]));
+        body.push_str(&svg::roc(&r["roc"], Language::En));
     }
     if r["calibration"].is_object() {
-        body.push_str(&svg::reliability(&r["calibration"]));
+        body.push_str(&svg::reliability(&r["calibration"], Language::En));
     }
     // No `<` inside the element at all, so nothing can end or re-open it; in JSON a
     // `<` occurs only within strings, where `\u003c` means the same.
@@ -74,5 +77,5 @@ pub fn static_report(e: &Value) -> String {
             )
         })
         .collect();
-    html::page(schema, "", &[], &warnings, &body)
+    html::page("en", schema, "", &[], &warnings, &body)
 }

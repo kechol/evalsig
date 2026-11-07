@@ -51,10 +51,11 @@ impl Tone {
     }
 }
 
-/// A page: the app bar with the screens as tabs, the page head with the question the
+/// A page in the language `lang` (its `lang` attribute): the app bar with the screens as tabs, the page head with the question the
 /// screen answers (`lead`, none when empty), warnings above everything else, then the
 /// body. The tab labelled `title` is marked as the current page.
 pub fn page(
+    lang: &str,
     title: &str,
     lead: &str,
     nav: &[(String, &str)],
@@ -64,7 +65,8 @@ pub fn page(
     let mut s = String::new();
     let _ = write!(
         s,
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{} · evalsig</title><style>{STYLE}</style></head><body><header class=\"appbar\"><span class=\"brand\">evalsig</span>",
+        "<!DOCTYPE html><html lang=\"{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{} · evalsig</title><style>{STYLE}</style></head><body><header class=\"appbar\"><span class=\"brand\">evalsig</span>",
+        esc(lang),
         esc(title)
     );
     if !nav.is_empty() {
@@ -216,7 +218,7 @@ mod tests {
             esc("<script>\"x\"&'"),
             "&lt;script&gt;&quot;x&quot;&amp;&#39;"
         );
-        let p = page("<b>", "<i>", &[], &["<img src=x>".into()], "");
+        let p = page("en", "<b>", "<i>", &[], &["<img src=x>".into()], "");
         assert!(!p.contains("<b>") && !p.contains("<i>") && !p.contains("<img"));
         assert!(!td("<b>").contains("<b>") && !button("\"><b>", "<b>", true).contains("<b>"));
     }
@@ -239,7 +241,7 @@ mod tests {
             ("./".to_owned(), "Overview"),
             ("compare".to_owned(), "Comparison"),
         ];
-        let p = page("Comparison", "", &nav, &[], "");
+        let p = page("en", "Comparison", "", &nav, &[], "");
         assert!(
             p.contains("<a class=\"tab\" href=\"compare\" aria-current=\"page\">Comparison</a>")
         );

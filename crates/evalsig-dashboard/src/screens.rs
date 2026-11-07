@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use evalsig_core::config::Config;
+use evalsig_core::config::{Config, Language};
 use evalsig_core::records::{Record, Run};
 use serde_json::{Value, json};
 
@@ -16,25 +16,26 @@ use evalsig_project::project::{Project, io_error};
 use evalsig_project::{Error, agree, compare, data, explain, list, report, trend};
 
 use crate::html::{self, esc};
+use crate::i18n::{self, T};
 use crate::server::{self, Page};
 use crate::svg;
 
 /// The screens, by route and title.
-pub const SCREENS: [(&str, &str); 6] = [
-    ("", "Overview"),
-    ("compare", "Comparison"),
-    ("trend", "Trend"),
-    ("reproducibility", "Reproducibility"),
-    ("reference", "Reference quality"),
-    ("discrimination", "Discrimination"),
+pub const SCREENS: [(&str, T); 6] = [
+    ("", T::Overview),
+    ("compare", T::Comparison),
+    ("trend", T::Trend),
+    ("reproducibility", T::Reproducibility),
+    ("reference", T::ReferenceQuality),
+    ("discrimination", T::Discrimination),
 ];
 
 /// The screens about one run, as the links offered for it.
-const RUN_SCREENS: [(&str, &str); 4] = [
-    ("reproducibility", "Reproducibility"),
-    ("reference", "Reference quality"),
-    ("discrimination", "Discrimination"),
-    ("trend", "Trend"),
+const RUN_SCREENS: [(&str, T); 4] = [
+    ("reproducibility", T::Reproducibility),
+    ("reference", T::ReferenceQuality),
+    ("discrimination", T::Discrimination),
+    ("trend", T::Trend),
 ];
 
 /// The runs a screen shows, which the navigation carries to the other screens so that
@@ -73,7 +74,7 @@ fn compare_href(baseline: &str, candidate: &str) -> String {
 /// The navigation, each link carrying the runs of `focus`: a run screen opens on the
 /// focused run (the candidate of a pair), the comparison on the pair or with the run
 /// as its candidate.
-fn nav(focus: &Focus) -> Vec<(String, &'static str)> {
+fn nav(focus: &Focus, lang: Language) -> Vec<(String, &'static str)> {
     SCREENS
         .iter()
         .map(|(route, label)| {
@@ -84,7 +85,7 @@ fn nav(focus: &Focus) -> Vec<(String, &'static str)> {
                 (route, Focus::Run(r) | Focus::Pair(_, r)) => run_href(route, r),
                 (route, Focus::None) => route.to_owned(),
             };
-            (href, *label)
+            (href, label.text(lang))
         })
         .collect()
 }
@@ -203,15 +204,26 @@ fn baseline_for(runs: &[&Run], c: usize) -> usize {
 
 /// The toolbar choosing the runs a screen is drawn for, as a plain GET form, with
 /// `extra` (HTML) after its button.
-fn picker(route: &str, runs: &[String], fields: &[(&str, &str)], extra: &str) -> String {
+fn picker(
+    route: &str,
+    runs: &[String],
+    fields: &[(&str, &str)],
+    extra: &str,
+    lang: Language,
+) -> String {
     let mut s = format!(
         "<form class=\"toolbar\" method=\"get\" action=\"{}\">",
         esc(route)
     );
     for (name, chosen) in fields {
+        let label = match *name {
+            "baseline" => T::Baseline,
+            "candidate" => T::Candidate,
+            _ => T::RunField,
+        };
         s.push_str(&format!(
             "<label>{}<select name=\"{}\">",
-            esc(name),
+            esc(label.text(lang)),
             esc(name)
         ));
         for r in runs {
@@ -220,33 +232,28 @@ fn picker(route: &str, runs: &[String], fields: &[(&str, &str)], extra: &str) ->
         }
         s.push_str("</select></label>");
     }
-    s.push_str(&format!("<button>Show</button>{extra}</form>"));
+    s.push_str(&format!(
+        "<button>{}</button>{extra}</form>",
+        esc(T::Show.text(lang))
+    ));
     s
 }
 
 /// The question each screen answers, under its title.
-fn lead(title: &str) -> &'static str {
+fn lead(title: T) -> Option<T> {
     match title {
-        "Overview" => {
-            "How each run performs: every metric with its interval, all runs on one axis."
-        }
-        "Comparison" => "Whether the candidate differs from the baseline, and on which items.",
-        "Trend" => "How a run's primary metric moves from one period to the next.",
-        "Reproducibility" => {
-            "How often a run's replicates of one item disagree, and what more replicates buy."
-        }
-        "Reference quality" => {
-            "How well the human raters agree with one another, and the system with them."
-        }
-        "Discrimination" => {
-            "How well a run's judgments separate positive items from negative ones."
-        }
-        _ => "",
+        T::Overview => Some(T::LeadOverview),
+        T::Comparison => Some(T::LeadComparison),
+        T::Trend => Some(T::LeadTrend),
+        T::Reproducibility => Some(T::LeadReproducibility),
+        T::ReferenceQuality => Some(T::LeadReferenceQuality),
+        T::Discrimination => Some(T::LeadDiscrimination),
+        _ => None,
     }
 }
 
 /// "How to read" for the metrics on a screen, from the embedded glossary.
-fn how_to_read(names: &[&str]) -> String {
+fn how_to_read(names: &[&str], lang: Language) -> String {
     let mut items = String::new();
     for n in names {
         if let Ok(o) = explain::run(n)
@@ -264,7 +271,10 @@ fn how_to_read(names: &[&str]) -> String {
     if items.is_empty() {
         return String::new();
     }
-    format!("<details><summary>How to read</summary><dl>{items}</dl></details>")
+    format!(
+        "<details><summary>{}</summary><dl>{items}</dl></details>",
+        esc(T::HowToRead.text(lang))
+    )
 }
 
 fn warnings_of(v: &[evalsig_project::envelope::Warning]) -> Vec<String> {
@@ -283,7 +293,7 @@ fn metric_names(metrics: &Value) -> Vec<String> {
 }
 
 struct Screen {
-    title: &'static str,
+    title: T,
     focus: Focus,
     warnings: Vec<String>,
     body: String,
@@ -291,7 +301,7 @@ struct Screen {
 
 impl Screen {
     /// A screen with nothing to show but a sentence.
-    fn note(title: &'static str, text: &str) -> Self {
+    fn note(title: T, text: &str) -> Self {
         Screen {
             title,
             focus: Focus::None,
@@ -330,6 +340,7 @@ fn report_of(run: &str) -> report::Request {
 struct View<'a> {
     d: &'a Data,
     config: &'a Config,
+    lang: Language,
 }
 
 impl View<'_> {
@@ -340,18 +351,18 @@ impl View<'_> {
 
 /// Where to go from the run at `i`: its comparison with the run imported before it as
 /// the main action, and the screens about one run beside it.
-fn run_actions(ids: &[String], i: usize) -> String {
+fn run_actions(ids: &[String], i: usize, lang: Language) -> String {
     let run = &ids[i];
     let mut buttons = Vec::new();
     if let Some(before) = i.checked_sub(1).map(|j| &ids[j]) {
         buttons.push(html::button(
             &compare_href(before, run),
-            &format!("Compare with {before}"),
+            &T::CompareWith.fill(lang, before),
             false,
         ));
     }
     for (route, label) in RUN_SCREENS {
-        buttons.push(html::button(&run_href(route, run), label, true));
+        buttons.push(html::button(&run_href(route, run), label.text(lang), true));
     }
     html::actions(&buttons)
 }
@@ -377,18 +388,19 @@ fn overview(v: &View) -> Result<Screen, Error> {
             .collect()
         })
         .collect();
+    let l = v.lang;
     let mut body = html::panel(
-        "Runs",
+        T::Runs.text(l),
         "",
         &html::table(
             &[
-                "Run",
-                "System",
-                "Version",
-                "Output type",
-                "Items",
-                "Judgments",
-                "Missing",
+                T::Run.text(l),
+                T::System.text(l),
+                T::Version.text(l),
+                T::OutputType.text(l),
+                T::Items.text(l),
+                T::Judgments.text(l),
+                T::Missing.text(l),
             ],
             &rows,
         ),
@@ -426,15 +438,16 @@ fn overview(v: &View) -> Result<Screen, Error> {
                 })
             }
         };
-        body.push_str(&html::panel(id, &run_actions(&ids, i), &plot));
+        body.push_str(&html::panel(id, &run_actions(&ids, i, l), &plot));
     }
     names.sort();
     names.dedup();
     body.push_str(&how_to_read(
         &names.iter().map(String::as_str).collect::<Vec<_>>(),
+        v.lang,
     ));
     Ok(Screen {
-        title: "Overview",
+        title: T::Overview,
         focus: Focus::None,
         warnings,
         body,
@@ -443,19 +456,15 @@ fn overview(v: &View) -> Result<Screen, Error> {
 
 /// How an item's judgment moved from the baseline to the candidate: toward its reference
 /// share, away from it, or only changed when there is no reference to tell.
-fn movement(item: &Value) -> Option<&'static str> {
+fn movement(item: &Value) -> Option<T> {
     let (b, c) = (&item["baseline"], &item["candidate"]);
     if b == c {
         return None;
     }
     match (b.as_f64(), c.as_f64(), item["reference"].as_f64()) {
-        (Some(b), Some(c), Some(r)) if (c - r).abs() < (b - r).abs() => {
-            Some("closer to the reference")
-        }
-        (Some(b), Some(c), Some(r)) if (c - r).abs() > (b - r).abs() => {
-            Some("further from the reference")
-        }
-        _ => Some("changed"),
+        (Some(b), Some(c), Some(r)) if (c - r).abs() < (b - r).abs() => Some(T::Closer),
+        (Some(b), Some(c), Some(r)) if (c - r).abs() > (b - r).abs() => Some(T::Further),
+        _ => Some(T::Changed),
     }
 }
 
@@ -463,7 +472,7 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let records = run_records(v.d);
     let runs = run_ids(v.d);
     if runs.len() < 2 {
-        return Ok(Screen::note("Comparison", "A comparison needs two runs."));
+        return Ok(Screen::note(T::Comparison, T::NeedsTwoRuns.text(v.lang)));
     }
     let (b0, c0) = default_pair(&records);
     let cand = chosen(q, "candidate", &runs, &runs[c0]).to_owned();
@@ -478,11 +487,8 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         "compare",
         &runs,
         &[("baseline", &base), ("candidate", &cand)],
-        &html::button(
-            &compare_href(&cand, &base),
-            "Swap baseline and candidate",
-            true,
-        ),
+        &html::button(&compare_href(&cand, &base), T::Swap.text(v.lang), true),
+        v.lang,
     );
     let request = compare::Request {
         baseline: base.clone(),
@@ -496,7 +502,7 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         Err(e) => {
             body.push_str(&error_note(&e));
             return Ok(Screen {
-                title: "Comparison",
+                title: T::Comparison,
                 focus: Focus::Pair(base, cand),
                 warnings: vec![],
                 body,
@@ -508,44 +514,47 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         body.push_str(&html::verdict(v.code.as_str(), &v.text));
     }
     body.push_str(&html::panel(
-        "Differences (candidate − baseline)",
+        T::Differences.text(v.lang),
         "",
         &svg::intervals(&svg::metric_rows(&r["metrics"], "delta"), true),
     ));
     // Both runs in ROC space: a move along one curve is a changed criterion, a move to a
     // higher curve a better separation.
     if let (Ok(rb), Ok(rc)) = (v.report(&report_of(&base)), v.report(&report_of(&cand))) {
-        let space = svg::roc_space(&[
-            svg::RocRun {
-                label: format!("baseline {base}"),
-                sdt: &rb.results["sdt"],
-            },
-            svg::RocRun {
-                label: format!("candidate {cand}"),
-                sdt: &rc.results["sdt"],
-            },
-        ]);
+        let space = svg::roc_space(
+            &[
+                svg::RocRun {
+                    label: T::BaselineRun.fill(v.lang, &base),
+                    sdt: &rb.results["sdt"],
+                },
+                svg::RocRun {
+                    label: T::CandidateRun.fill(v.lang, &cand),
+                    sdt: &rc.results["sdt"],
+                },
+            ],
+            v.lang,
+        );
         if !space.is_empty() {
-            body.push_str(&html::panel("ROC space", "", &space));
+            body.push_str(&html::panel(T::RocSpace.text(v.lang), "", &space));
         }
     }
     if r["transition"].is_object() {
         body.push_str(&html::panel(
-            "Transitions",
+            T::Transitions.text(v.lang),
             "",
-            &svg::transition(&r["transition"]),
+            &svg::transition(&r["transition"], v.lang),
         ));
     }
     // The items whose judgment changed, those moving away from the reference first; the
     // unchanged ones folded.
     let items = r["items"].as_array().map_or(&[][..], Vec::as_slice);
-    let mut changed: Vec<(&Value, &str)> = items
+    let mut changed: Vec<(&Value, T)> = items
         .iter()
         .filter_map(|i| movement(i).map(|m| (i, m)))
         .collect();
-    changed.sort_by_key(|(_, m)| match *m {
-        "further from the reference" => 0,
-        "closer to the reference" => 1,
+    changed.sort_by_key(|(_, m)| match m {
+        T::Further => 0,
+        T::Closer => 1,
         _ => 2,
     });
     let row = |i: &Value| {
@@ -556,26 +565,34 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             cell(&i["candidate"]),
         ]
     };
-    let head = ["Item", "Reference", "Baseline", "Candidate"];
+    let head = [
+        T::Item.text(v.lang),
+        T::Reference.text(v.lang),
+        T::Baseline.text(v.lang),
+        T::Candidate.text(v.lang),
+    ];
     if !items.is_empty() {
         let mut part = if changed.is_empty() {
-            "<p class=\"empty\">No item's judgment changed.</p>".to_owned()
+            format!(
+                "<p class=\"empty\">{}</p>",
+                esc(T::NoItemChanged.text(v.lang))
+            )
         } else {
             let rows: Vec<Vec<String>> = changed
                 .iter()
                 .map(|(i, m)| {
-                    let tone = match *m {
-                        "further from the reference" => html::Tone::Negative,
-                        "closer to the reference" => html::Tone::Positive,
+                    let tone = match m {
+                        T::Further => html::Tone::Negative,
+                        T::Closer => html::Tone::Positive,
                         _ => html::Tone::Neutral,
                     };
                     let mut r: Vec<String> = row(i).iter().map(|c| html::td(c)).collect();
-                    r.push(format!("<td>{}</td>", html::badge(tone, m)));
+                    r.push(format!("<td>{}</td>", html::badge(tone, m.text(v.lang))));
                     r
                 })
                 .collect();
             html::table_html(
-                &["Item", "Reference", "Baseline", "Candidate", "Change"],
+                &[head[0], head[1], head[2], head[3], T::Change.text(v.lang)],
                 &rows,
             )
         };
@@ -586,13 +603,13 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             .collect();
         if !same.is_empty() {
             part.push_str(&format!(
-                "<details><summary>Unchanged items ({})</summary>{}</details>",
-                same.len(),
+                "<details><summary>{}</summary>{}</details>",
+                esc(&T::ItemsUnchanged.fill(v.lang, &same.len().to_string())),
                 html::table(&head, &same)
             ));
         }
         body.push_str(&html::panel(
-            &format!("Items that changed ({})", changed.len()),
+            &T::ItemsChanged.fill(v.lang, &changed.len().to_string()),
             "",
             &part,
         ));
@@ -600,9 +617,10 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let names = metric_names(&r["metrics"]);
     body.push_str(&how_to_read(
         &names.iter().map(String::as_str).collect::<Vec<_>>(),
+        v.lang,
     ));
     Ok(Screen {
-        title: "Comparison",
+        title: T::Comparison,
         focus: Focus::Pair(base, cand),
         warnings: warnings_of(&c.warnings),
         body,
@@ -612,10 +630,10 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
 fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(v.d);
     let Some(first) = runs.first() else {
-        return Ok(Screen::note("Trend", "No runs."));
+        return Ok(Screen::note(T::Trend, T::NoRuns.text(v.lang)));
     };
     let run = chosen(q, "run", &runs, first).to_owned();
-    let mut body = picker("trend", &runs, &[("run", &run)], "");
+    let mut body = picker("trend", &runs, &[("run", &run)], "", v.lang);
     let request = trend::Request {
         run: run.clone(),
         ..trend::Request::default()
@@ -628,13 +646,13 @@ fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             }
             let primary = r["primary_metric"].as_str().unwrap_or_default();
             body.push_str(&html::panel(
-                &format!("{primary} by period"),
+                &T::ByPeriod.fill(v.lang, primary),
                 "",
                 &svg::trend(&r["periods"], primary),
             ));
-            body.push_str(&how_to_read(&[primary, "drifted"]));
+            body.push_str(&how_to_read(&[primary, "drifted"], v.lang));
             Ok(Screen {
-                title: "Trend",
+                title: T::Trend,
                 focus: Focus::Run(run),
                 warnings: warnings_of(&out.envelope.warnings),
                 body,
@@ -643,7 +661,7 @@ fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         Err(e) => {
             body.push_str(&error_note(&e));
             Ok(Screen {
-                title: "Trend",
+                title: T::Trend,
                 focus: Focus::Run(run),
                 warnings: vec![],
                 body,
@@ -655,14 +673,14 @@ fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
 fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(v.d);
     let Some(first) = runs.first() else {
-        return Ok(Screen::note("Reproducibility", "No runs."));
+        return Ok(Screen::note(T::Reproducibility, T::NoRuns.text(v.lang)));
     };
     let run = chosen(q, "run", &runs, first).to_owned();
     let c = v.report(&report::Request {
         k_curve: true,
         ..report_of(&run)
     })?;
-    let mut body = picker("reproducibility", &runs, &[("run", &run)], "");
+    let mut body = picker("reproducibility", &runs, &[("run", &run)], "", v.lang);
     // One row per source of variation, its measures as columns in the order they appear.
     let rep = &c.results["reproducibility"];
     let sources: Vec<(&String, &Value)> = rep.as_object().into_iter().flatten().collect();
@@ -682,19 +700,21 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             row
         })
         .collect();
-    let head: Vec<String> = std::iter::once("Source".to_owned())
-        .chain(keys.iter().map(|k| k.replace('_', " ")))
+    // The measures are named by their keys; in English with spaces for underscores.
+    let head: Vec<String> = std::iter::once(T::Source.text(v.lang).to_owned())
+        .chain(keys.iter().map(|k| match v.lang {
+            Language::En => k.replace('_', " "),
+            Language::Ja => (*k).to_owned(),
+        }))
         .collect();
     if rows.is_empty() {
         body.push_str(&empty_panel(
-            "Replicate agreement",
-            "Every item has one judgment in this run, so there are no replicates to \
-             compare. Judge each item several times (gen_replicate 0, 1, …) and import \
-             the run again.",
+            T::ReplicateAgreement.text(v.lang),
+            T::NoReplicates.text(v.lang),
         ));
     } else {
         body.push_str(&html::panel(
-            "Replicate agreement",
+            T::ReplicateAgreement.text(v.lang),
             "",
             &html::table(&head.iter().map(String::as_str).collect::<Vec<_>>(), &rows),
         ));
@@ -718,7 +738,14 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             })
             .collect();
         let table = html::table(
-            &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
+            &[
+                T::K.text(v.lang),
+                T::Rule.text(v.lang),
+                T::Metric.text(v.lang),
+                T::Value.text(v.lang),
+                T::Interval.text(v.lang),
+                T::CostPerItem.text(v.lang),
+            ],
             &rows,
         );
         // One line per rule over k, drawn when more than one k was judged.
@@ -742,17 +769,21 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             .unwrap_or("value");
         let part = if several {
             format!(
-                "{}<details><summary>Values</summary>{table}</details>",
-                svg::lines(&by_rule, ("replicates per item (k)", metric))
+                "{}<details><summary>{}</summary>{table}</details>",
+                svg::lines(&by_rule, (T::ReplicatesPerItem.text(v.lang), metric)),
+                esc(T::Values.text(v.lang))
             )
         } else {
             table
         };
-        body.push_str(&html::panel("Performance and cost by k", "", &part));
+        body.push_str(&html::panel(T::PerformanceByK.text(v.lang), "", &part));
     }
-    body.push_str(&how_to_read(&["replicate_disagreement", "noise_floor"]));
+    body.push_str(&how_to_read(
+        &["replicate_disagreement", "noise_floor"],
+        v.lang,
+    ));
     Ok(Screen {
-        title: "Reproducibility",
+        title: T::Reproducibility,
         focus: Focus::Run(run),
         warnings: warnings_of(&c.warnings),
         body,
@@ -770,6 +801,7 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         &runs,
         &[("run", run.as_deref().unwrap_or(""))],
         "",
+        v.lang,
     );
     let request = agree::Request {
         run: run.clone(),
@@ -807,12 +839,21 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 .filter_map(|b| b.value.as_f64())
                 .fold(0.0, f64::min);
             body.push_str(&html::panel(
-                "Same rule: each rater, grader or run against the humans",
+                T::SameRule.text(v.lang),
                 "",
                 &format!(
-                    "{}<details><summary>Values</summary>{}</details>",
+                    "{}<details><summary>{}</summary>{}</details>",
                     svg::bars(&bars, (low, 1.0), None),
-                    html::table(&["Who", "Kind", "Mean κ", "Humans compared"], &same)
+                    esc(T::Values.text(v.lang)),
+                    html::table(
+                        &[
+                            T::Who.text(v.lang),
+                            T::Kind.text(v.lang),
+                            T::MeanKappa.text(v.lang),
+                            T::HumansCompared.text(v.lang),
+                        ],
+                        &same
+                    )
                 ),
             ));
             let pairs: Vec<Vec<String>> = r["pairs"]
@@ -832,16 +873,16 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 })
                 .collect();
             body.push_str(&html::panel(
-                "Rater pairs",
+                T::RaterPairs.text(v.lang),
                 "",
                 &html::table(
                     &[
-                        "Pair",
-                        "Items",
+                        T::Pair.text(v.lang),
+                        T::Items.text(v.lang),
                         "Cohen κ",
                         "Gwet AC1",
-                        "Positive agreement",
-                        "Negative agreement",
+                        T::PositiveAgreement.text(v.lang),
+                        T::NegativeAgreement.text(v.lang),
                     ],
                     &pairs,
                 ),
@@ -861,21 +902,35 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 })
                 .collect();
             body.push_str(&html::panel(
-                "Rater variability",
+                T::RaterVariability.text(v.lang),
                 "",
                 &html::table(
-                    &["Task", "Within a rater", "Pairs", "Between raters", "Pairs"],
+                    &[
+                        T::Task.text(v.lang),
+                        T::WithinRater.text(v.lang),
+                        T::Pairs.text(v.lang),
+                        T::BetweenRaters.text(v.lang),
+                        T::Pairs.text(v.lang),
+                    ],
                     &variability,
                 ),
             ));
             if let Some(ceiling) = r["ceiling"].as_f64() {
                 body.push_str(&html::panel(
-                    "Ceiling with a soft reference",
+                    T::Ceiling.text(v.lang),
                     "",
+                    // The sentence is escaped first; the value goes in as markup.
                     &format!(
-                        "<p>No system can exceed accuracy <span data-ceiling=\"{}\">{}</span> against this reference.</p>",
-                        esc(&cell(&r["ceiling"])),
-                        html::shown(ceiling)
+                        "<p>{}</p>",
+                        esc(T::CeilingNote.text(v.lang)).replacen(
+                            "{}",
+                            &format!(
+                                "<span data-ceiling=\"{}\">{}</span>",
+                                esc(&cell(&r["ceiling"])),
+                                html::shown(ceiling)
+                            ),
+                            1
+                        )
                     ),
                 ));
             }
@@ -886,16 +941,19 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             vec![]
         }
     };
-    body.push_str(&how_to_read(&[
-        "rater_design",
-        "same_rule",
-        "within_rater",
-        "ceiling",
-        "alt_test",
-        "reference_agreement",
-    ]));
+    body.push_str(&how_to_read(
+        &[
+            "rater_design",
+            "same_rule",
+            "within_rater",
+            "ceiling",
+            "alt_test",
+            "reference_agreement",
+        ],
+        v.lang,
+    ));
     Ok(Screen {
-        title: "Reference quality",
+        title: T::ReferenceQuality,
         focus: run.map_or(Focus::None, Focus::Run),
         warnings,
         body,
@@ -905,21 +963,21 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
 fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let runs = run_ids(v.d);
     let Some(first) = runs.first() else {
-        return Ok(Screen::note("Discrimination", "No runs."));
+        return Ok(Screen::note(T::Discrimination, T::NoRuns.text(v.lang)));
     };
     let run = chosen(q, "run", &runs, first).to_owned();
     let c = v.report(&report_of(&run))?;
     let r = &c.results;
-    let mut body = picker("discrimination", &runs, &[("run", &run)], "");
+    let mut body = picker("discrimination", &runs, &[("run", &run)], "", v.lang);
     if r["sdt"].is_object() {
         body.push_str(&html::panel(
-            "Equal-variance model",
+            T::EqualVarianceModel.text(v.lang),
             "",
             &format!(
                 "{}{}",
-                svg::sdt_model(&r["sdt"]),
+                svg::sdt_model(&r["sdt"], v.lang),
                 html::table(
-                    &["d′ (sensitivity)", "c (criterion)"],
+                    &[T::Dprime.text(v.lang), T::Criterion.text(v.lang)],
                     &[vec![
                         cell(&r["sdt"]["dprime"]),
                         cell(&r["sdt"]["criterion"]),
@@ -928,12 +986,15 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             ),
         ));
         body.push_str(&html::panel(
-            "ROC space",
+            T::RocSpace.text(v.lang),
             "",
-            &svg::roc_space(&[svg::RocRun {
-                label: run.clone(),
-                sdt: &r["sdt"],
-            }]),
+            &svg::roc_space(
+                &[svg::RocRun {
+                    label: run.clone(),
+                    sdt: &r["sdt"],
+                }],
+                v.lang,
+            ),
         ));
     }
     if r["roc"].is_object() {
@@ -946,30 +1007,30 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             interval(&r["roc"]["ci"]).replace(" – ", ", ")
         );
         body.push_str(&html::panel(
-            "Empirical ROC and z-ROC",
+            T::EmpiricalRoc.text(v.lang),
             "",
-            &format!("{auc}{}{}", svg::roc(&r["roc"]), svg::zroc(&r["roc"])),
+            &format!(
+                "{auc}{}{}",
+                svg::roc(&r["roc"], v.lang),
+                svg::zroc(&r["roc"], v.lang)
+            ),
         ));
     } else {
         body.push_str(&empty_panel(
-            "Empirical ROC and z-ROC",
-            &format!(
-                "This run's judgments are {}; an empirical curve needs ordered judgments \
-                 (output type ordinal or score).",
-                r["output_type"].as_str().unwrap_or("not ordered")
-            ),
+            T::EmpiricalRoc.text(v.lang),
+            &T::NoEmpiricalRoc.fill(v.lang, r["output_type"].as_str().unwrap_or("–")),
         ));
     }
     if r["calibration"].is_object() {
         body.push_str(&html::panel(
-            "Calibration",
+            T::Calibration.text(v.lang),
             "",
-            &svg::reliability(&r["calibration"]),
+            &svg::reliability(&r["calibration"], v.lang),
         ));
     }
-    body.push_str(&how_to_read(&["auc", "dprime", "criterion"]));
+    body.push_str(&how_to_read(&["auc", "dprime", "criterion"], v.lang));
     Ok(Screen {
-        title: "Discrimination",
+        title: T::Discrimination,
         focus: Focus::Run(run),
         warnings: warnings_of(&c.warnings),
         body,
@@ -1028,27 +1089,33 @@ fn route(root: &Path, kept: &Mutex<Option<Loaded>>, path: &str) -> Page {
         "discrimination" => discrimination,
         _ => return Page::not_found(),
     };
+    // English until the configuration is read, so an error reading it is still shown.
+    let mut lang = Language::default();
     let shown = current(root, kept).and_then(|(d, config)| {
+        lang = config.dashboard.language;
         screen(
             &View {
                 d: &d,
                 config: &config,
+                lang,
             },
             &q,
         )
     });
     match shown {
         Ok(s) => Page::html(html::page(
-            s.title,
-            lead(s.title),
-            &nav(&s.focus),
+            i18n::tag(lang),
+            s.title.text(lang),
+            lead(s.title).map_or("", |t| t.text(lang)),
+            &nav(&s.focus, lang),
             &s.warnings,
             &s.body,
         )),
         Err(e) => Page::html(html::page(
-            "Error",
+            i18n::tag(lang),
+            T::Error.text(lang),
             "",
-            &nav(&Focus::None),
+            &nav(&Focus::None, lang),
             &[e.message],
             "",
         )),
