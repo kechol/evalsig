@@ -10,6 +10,23 @@
 //!   numbered in `testIdx` order.
 //! - Pass/fail grades the output: value semantics `score`, output type `binary`.
 //!   `failureReason` 2 (an error) and failed graders are missing, never a fail.
+//!
+//! promptfoo behaviour this adapter does not undo:
+//!
+//! - A rating from the web UI replaces `gradingResult`, `success` and `score`, adds a
+//!   `componentResults` entry whose `assertion.type` is `human`, records neither who
+//!   nor when, and leaves `failureReason` as it was. The row is read as the grader's
+//!   judgment, with `human` in the grader ID, and an overridden error row stays
+//!   missing. Import people's verdicts as `label` records instead.
+//! - With `testCase.threshold` set, pass is the weighted mean score reaching the
+//!   threshold rather than every assertion passing, and weight-0 assertions always
+//!   pass. `success` already carries that rule.
+//! - Under `PROMPTFOO_STRIP_*` the prompt, vars and `gradingResult` are removed, so
+//!   tests that share a description share an item ID unless they set
+//!   `metadata.testCaseId`.
+//! - The jsonl output lacks the outer frame (eval ID, config, version, prompts) and
+//!   the CSV rounds scores to two decimals and drops component results; neither is
+//!   read. The database has no column for the promptfoo version.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

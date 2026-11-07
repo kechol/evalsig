@@ -9,6 +9,18 @@
 //!   label is synthesized; the target becomes `reference_ref` content.
 //! - Unscored values (NaN), errors, limits and invalidations become `missing` with
 //!   their reason; values that cannot be mapped become `invalid_output`, never 0.
+//!
+//! Inspect behaviour this adapter does not undo:
+//!
+//! - Editing a score by hand overwrites `Score.value` and keeps the original as
+//!   `history[0]`, each later entry carrying `provenance {timestamp, author, reason}`.
+//!   The current value is read as the scorer's judgment and `history` is ignored, so
+//!   an edit is not imported as a label or a label revision.
+//! - The summaries (`summaries.json`, `samples_df`) drop `history`, cut explanations at
+//!   about 1 KB and replace large metadata, so only `samples/*.json` is read.
+//! - A re-run writes a new log with the same `task_id` and a new `eval_id`; importing
+//!   both gives two runs.
+//! - Very old logs keep the score under a singular `score` key, which is not read.
 
 use std::collections::BTreeMap;
 
