@@ -1,0 +1,35 @@
+# Version updates: per ecosystem and week, one pull request for all minor and
+# patch updates and one per major update. A release is proposed only once it
+# is three days old, so a compromised version is likely yanked before it lands.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    # fuzz/ is a workspace of its own with its own lockfile.
+    directories: ["/", "/fuzz"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      cargo:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: uv
+    directory: /scripts
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      scripts:
+        update-types: [minor, patch]
