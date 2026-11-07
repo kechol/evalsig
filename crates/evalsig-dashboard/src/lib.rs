@@ -47,6 +47,9 @@ pub fn static_report(e: &Value) -> String {
             body.push_str(&svg::transition(&part["transition"]));
         }
     }
+    if r["sdt"].is_object() {
+        body.push_str(&svg::sdt_model(&r["sdt"]));
+    }
     if r["roc"].is_object() {
         body.push_str(&svg::roc(&r["roc"]));
     }

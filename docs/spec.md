@@ -843,12 +843,19 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
     with the run imported before it and to the screens about one run.
   - Comparison: unless a pair is chosen, the latest run against the latest earlier run
     with the same output type and value semantics. It shows the verdict, the difference
-    intervals, the transition table and the items whose judgment changed, those moving
-    away from their reference first, with the unchanged items folded. Runs that cannot
-    be compared show why, with the choice left on the page.
-  - Trend; Reproducibility (replicate disagreement, performance and cost by k);
-    Reference quality (same-rule agreement, rater pairs, rater variability); and
-    Discrimination (d′ and criterion c, ROC, z-ROC, calibration).
+    intervals, both runs in ROC space, the transition table and the items whose
+    judgment changed, those moving away from their reference first, with the unchanged
+    items folded. Runs that cannot be compared show why, with the choice left on the
+    page.
+  - Trend; Reproducibility (replicate disagreement, performance and cost by k as lines
+    with interval bands); Reference quality (same-rule agreement as bars, rater pairs,
+    rater variability); and Discrimination (the equal-variance model of d′ and c, the
+    run in ROC space, the empirical ROC, z-ROC and calibration).
+- **Charts** (D-032). In ROC space a run sits at the corrected rates (F′, H′) that its
+  d′ and c fix, on the equal-variance ROC of its d′: moving along that curve is a
+  changed criterion, moving to a higher one a better separation. The equal-variance
+  model draws noise N(0, 1) and signal N(d′, 1) with the criterion at d′/2 + c, the
+  hits and false alarms shaded beyond it.
 - **Moving between screens.** Links carry the chosen run, or the chosen pair, so moving
   between screens keeps the choice; the current screen is marked in the navigation. A
   screen with nothing to show says which data it needs. Each chart has a collapsed "How

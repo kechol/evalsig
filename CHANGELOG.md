@@ -24,6 +24,10 @@ longer reproduces.
   they need.
 - Dashboard and `--format html`: one stylesheet of tokens and components, in light and
   dark, with screens as tabs, sections as panels and verdicts coloured by outcome.
+- Dashboard charts (D-032): the equal-variance model of d′ and c, runs in ROC space
+  (both runs of a comparison), same-rule agreement as bars and performance by k as
+  lines with interval bands; ROC, z-ROC and calibration curves gain ticks, z-ROC in z
+  units; replicate agreement is a table of its measures.
 - `trend` without `occurred_at` hints at adding it.
 
 ## [0.1.0] - 2026-11-07

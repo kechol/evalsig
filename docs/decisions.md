@@ -1095,3 +1095,31 @@ after the entry is `Accepted`.
   the tap keeps the previous version until the job is rerun. Whoever holds
   the token can change the tap's formulas, so it is rotated like any other
   credential.
+
+## D-032 Charts drawn as SVG by the dashboard crate
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: The dashboard and `--format html` show signal-detection results that
+  read best as pictures: the equal-variance model behind d′ and c, runs in ROC
+  space, agreement by rater, performance by k. D-019 keeps the pages free of
+  JavaScript under `default-src 'none'`, loading nothing from outside, and every
+  drawn value must stay checkable against the CLI's JSON.
+- Decision:
+  - Charts are SVG strings that `evalsig-dashboard::svg` writes on the server:
+    interval plots, curves on a square (ROC, z-ROC, calibration), the
+    equal-variance model, ROC space with each run's curve of constant d′, bars
+    and lines with interval bands, on shared axes, ticks and legends.
+  - Each drawn value sits in a `data-*` attribute and a `<title>` exactly as the
+    JSON writes it; model curves are drawn from the reported d′ and c with the
+    normal distribution functions of `evalsig_core::numeric`.
+  - Marks take their colours from the stylesheet's tokens through classes
+    (series, tones), so charts follow the light or dark appearance.
+- Alternatives: JavaScript libraries such as Chart.js, ECharts or Vega-Lite
+  (not taken: they need scripts, which D-019 and the policy forbid); `plotters`
+  with its SVG backend (not taken: it writes colours into each element and
+  cannot attach the reported values to what it draws); `poloto` (not taken: no
+  areas, bands or bars).
+- Consequences: a new kind of chart is code in `svg.rs` with a test that its
+  attributes carry the reported values; no chart dependency is added.
+

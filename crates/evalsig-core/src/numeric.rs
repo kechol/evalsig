@@ -3,7 +3,7 @@
 
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::{Rng as _, SeedableRng};
-use statrs::distribution::{Beta, ContinuousCDF, Normal};
+use statrs::distribution::{Beta, Continuous, ContinuousCDF, Normal};
 
 /// The only random number generator evalsig uses: ChaCha20 from a recorded seed, so
 /// results repeat on every platform.
@@ -90,6 +90,16 @@ pub fn weighted_mean(pairs: impl IntoIterator<Item = (f64, f64)> + Clone) -> Opt
 /// Standard normal quantile Φ⁻¹(p).
 pub fn norm_ppf(p: f64) -> f64 {
     standard_normal().inverse_cdf(p)
+}
+
+/// Standard normal distribution function Φ(x).
+pub fn norm_cdf(x: f64) -> f64 {
+    standard_normal().cdf(x)
+}
+
+/// Standard normal density φ(x).
+pub fn norm_pdf(x: f64) -> f64 {
+    standard_normal().pdf(x)
 }
 
 fn standard_normal() -> Normal {

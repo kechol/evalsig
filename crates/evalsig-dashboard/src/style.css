@@ -45,6 +45,11 @@
   --secondary-hover: light-dark(#d5e5ff, #24375c);
   --chart: light-dark(#335eb7, #79a3f6);
   --chart-guide: light-dark(#8c8984, #6e6b68);
+  --chart-grid: light-dark(#ecebe8, #232220);
+  --series-1: var(--chart);
+  --series-2: light-dark(#bf6600, #e38d3d);
+  --series-3: light-dark(#9267ca, #b58eed);
+  --series-people: light-dark(#867f74, #aaa499);
 
   --positive-fg: light-dark(#256b3a, #94cf9f);
   --positive-bg: light-dark(#e0f3e3, #1c3121);
@@ -329,6 +334,12 @@ th {
   font-weight: var(--weight-medium);
 }
 
+tbody th {
+  background: none;
+  color: var(--text);
+  font-size: inherit;
+}
+
 tbody tr:hover {
   background: var(--hover);
 }
@@ -401,3 +412,84 @@ svg circle.mark {
 svg .guide {
   stroke: var(--chart-guide);
 }
+
+/*
+ * Series: s1, s2 and s3 for runs, systems and graders in order, s0 for people and for
+ * the noise distribution. Lines, dots, bands, bars and swatches take --series.
+ */
+.s0 {
+  --series: var(--series-people);
+}
+.s1 {
+  --series: var(--series-1);
+}
+.s2 {
+  --series: var(--series-2);
+}
+.s3 {
+  --series: var(--series-3);
+}
+
+svg .line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+}
+
+svg .dot,
+svg .bar,
+svg .swatch {
+  fill: var(--series);
+}
+
+svg .band {
+  fill: var(--series);
+  fill-opacity: 0.15;
+}
+
+/* The equal-variance model: hits and false alarms as the areas beyond the criterion. */
+svg .area.positive {
+  fill: var(--positive-solid);
+  fill-opacity: 0.3;
+}
+
+/* Drawn over the hits it lies under, so it is nearly opaque to keep its own colour. */
+svg .area.negative {
+  fill: var(--negative-solid);
+  fill-opacity: 0.6;
+}
+
+svg .criterion {
+  stroke: var(--text);
+  stroke-dasharray: 4 3;
+}
+
+svg .bracket {
+  stroke: var(--text);
+}
+
+svg .chance {
+  stroke: var(--chart-guide);
+  stroke-dasharray: 3 3;
+}
+
+svg .axis {
+  stroke: var(--chart-guide);
+}
+
+svg .grid {
+  stroke: var(--chart-grid);
+}
+
+svg .tick,
+svg .legend,
+svg .note,
+svg .axis-title {
+  font-size: 12px;
+}
+
+svg .tick,
+svg .axis-title {
+  fill: var(--muted);
+}
+

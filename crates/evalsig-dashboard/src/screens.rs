@@ -512,6 +512,23 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         "",
         &svg::intervals(&svg::metric_rows(&r["metrics"], "delta"), true),
     ));
+    // Both runs in ROC space: a move along one curve is a changed criterion, a move to a
+    // higher curve a better separation.
+    if let (Ok(rb), Ok(rc)) = (v.report(&report_of(&base)), v.report(&report_of(&cand))) {
+        let space = svg::roc_space(&[
+            svg::RocRun {
+                label: format!("baseline {base}"),
+                sdt: &rb.results["sdt"],
+            },
+            svg::RocRun {
+                label: format!("candidate {cand}"),
+                sdt: &rc.results["sdt"],
+            },
+        ]);
+        if !space.is_empty() {
+            body.push_str(&html::panel("ROC space", "", &space));
+        }
+    }
     if r["transition"].is_object() {
         body.push_str(&html::panel(
             "Transitions",
@@ -646,12 +663,27 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         ..report_of(&run)
     })?;
     let mut body = picker("reproducibility", &runs, &[("run", &run)], "");
+    // One row per source of variation, its measures as columns in the order they appear.
     let rep = &c.results["reproducibility"];
-    let rows: Vec<Vec<String>> = rep
-        .as_object()
-        .into_iter()
-        .flatten()
-        .map(|(k, v)| vec![k.clone(), cell(v)])
+    let sources: Vec<(&String, &Value)> = rep.as_object().into_iter().flatten().collect();
+    let mut keys: Vec<&str> = Vec::new();
+    for (_, v) in &sources {
+        for k in v.as_object().into_iter().flatten().map(|(k, _)| k.as_str()) {
+            if !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+    }
+    let rows: Vec<Vec<String>> = sources
+        .iter()
+        .map(|(source, v)| {
+            let mut row = vec![(*source).clone()];
+            row.extend(keys.iter().map(|k| cell(&v[*k])));
+            row
+        })
+        .collect();
+    let head: Vec<String> = std::iter::once("Source".to_owned())
+        .chain(keys.iter().map(|k| k.replace('_', " ")))
         .collect();
     if rows.is_empty() {
         body.push_str(&empty_panel(
@@ -664,7 +696,7 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         body.push_str(&html::panel(
             "Replicate agreement",
             "",
-            &html::table(&["Measure", "Value"], &rows),
+            &html::table(&head.iter().map(String::as_str).collect::<Vec<_>>(), &rows),
         ));
     }
     // The k-curve: each rule and k with the primary metric's value and interval, and
@@ -685,14 +717,38 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 ]
             })
             .collect();
-        body.push_str(&html::panel(
-            "Performance and cost by k",
-            "",
-            &html::table(
-                &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
-                &rows,
-            ),
-        ));
+        let table = html::table(
+            &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
+            &rows,
+        );
+        // One line per rule over k, drawn when more than one k was judged.
+        let mut by_rule: Vec<svg::Line> = Vec::new();
+        for p in points {
+            let rule = cell(&p["rule"]);
+            let m = &p["metrics"][0];
+            let Some(k) = p["k"].as_f64() else { continue };
+            match by_rule.iter_mut().find(|l| l.label == rule) {
+                Some(l) => l.points.push((k, &m["value"], &m["ci"])),
+                None => by_rule.push(svg::Line {
+                    label: rule,
+                    points: vec![(k, &m["value"], &m["ci"])],
+                }),
+            }
+        }
+        let several = by_rule.iter().any(|l| l.points.len() > 1);
+        let metric = points
+            .first()
+            .and_then(|p| p["metrics"][0]["metric"].as_str())
+            .unwrap_or("value");
+        let part = if several {
+            format!(
+                "{}<details><summary>Values</summary>{table}</details>",
+                svg::lines(&by_rule, ("replicates per item (k)", metric))
+            )
+        } else {
+            table
+        };
+        body.push_str(&html::panel("Performance and cost by k", "", &part));
     }
     body.push_str(&how_to_read(&["replicate_disagreement", "noise_floor"]));
     Ok(Screen {
@@ -736,10 +792,28 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                     ]
                 })
                 .collect();
+            let bars: Vec<svg::Bar> = r["same_rule"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|x| svg::Bar {
+                    label: cell(&x["who"]),
+                    value: &x["mean_kappa"],
+                    series: if x["kind"] == "human" { "s0" } else { "s1" },
+                })
+                .collect();
+            let low = bars
+                .iter()
+                .filter_map(|b| b.value.as_f64())
+                .fold(0.0, f64::min);
             body.push_str(&html::panel(
                 "Same rule: each rater, grader or run against the humans",
                 "",
-                &html::table(&["Who", "Kind", "Mean κ", "Humans compared"], &same),
+                &format!(
+                    "{}<details><summary>Values</summary>{}</details>",
+                    svg::bars(&bars, (low, 1.0), None),
+                    html::table(&["Who", "Kind", "Mean κ", "Humans compared"], &same)
+                ),
             ));
             let pairs: Vec<Vec<String>> = r["pairs"]
                 .as_array()
@@ -839,15 +913,27 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let mut body = picker("discrimination", &runs, &[("run", &run)], "");
     if r["sdt"].is_object() {
         body.push_str(&html::panel(
-            "Signal detection",
+            "Equal-variance model",
             "",
-            &html::table(
-                &["d′ (sensitivity)", "c (criterion)"],
-                &[vec![
-                    cell(&r["sdt"]["dprime"]),
-                    cell(&r["sdt"]["criterion"]),
-                ]],
+            &format!(
+                "{}{}",
+                svg::sdt_model(&r["sdt"]),
+                html::table(
+                    &["d′ (sensitivity)", "c (criterion)"],
+                    &[vec![
+                        cell(&r["sdt"]["dprime"]),
+                        cell(&r["sdt"]["criterion"]),
+                    ]],
+                )
             ),
+        ));
+        body.push_str(&html::panel(
+            "ROC space",
+            "",
+            &svg::roc_space(&[svg::RocRun {
+                label: run.clone(),
+                sdt: &r["sdt"],
+            }]),
         ));
     }
     if r["roc"].is_object() {
@@ -860,16 +946,16 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
             interval(&r["roc"]["ci"]).replace(" – ", ", ")
         );
         body.push_str(&html::panel(
-            "ROC and z-ROC",
+            "Empirical ROC and z-ROC",
             "",
             &format!("{auc}{}{}", svg::roc(&r["roc"]), svg::zroc(&r["roc"])),
         ));
     } else {
         body.push_str(&empty_panel(
-            "ROC and z-ROC",
+            "Empirical ROC and z-ROC",
             &format!(
-                "This run's judgments are {}; a curve needs ordered judgments (output type \
-                 ordinal or score).",
+                "This run's judgments are {}; an empirical curve needs ordered judgments \
+                 (output type ordinal or score).",
                 r["output_type"].as_str().unwrap_or("not ordered")
             ),
         ));

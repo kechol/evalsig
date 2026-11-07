@@ -263,6 +263,32 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
     assert!(page.contains("<summary>Unchanged items ("));
     assert!(page.contains("compare?baseline=triage-v2&amp;candidate=triage-v1"));
     assert!(page.contains("href=\"trend?run=triage-v2\""), "{page}");
+    // The comparison draws both runs in ROC space, and the discrimination screen the
+    // equal-variance model with the d′ and c that report prints.
+    assert_eq!(page.matches("class=\"dot\"").count(), 2, "{page}");
+    let report: Value = serde_json::from_slice(
+        &evalsig_json(p.path())
+            .args(["report", "triage-v2"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let sdt = &report["results"]["sdt"];
+    let page = get(
+        d.port,
+        &format!("{base}discrimination?run=triage-v2"),
+        &host,
+    );
+    assert!(
+        page.contains("class=\"sdt-model\" viewBox")
+            && page.contains(&format!(
+                "data-dprime=\"{}\" data-criterion=\"{}\"",
+                sdt["dprime"], sdt["criterion"]
+            )),
+        "{page}"
+    );
+    assert!(page.contains("class=\"roc-space\""), "{page}");
 }
 
 #[test]
