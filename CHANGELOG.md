@@ -22,6 +22,8 @@ longer reproduces.
   comparable pair and keeps the choice on the page when two runs cannot be compared;
   numbers are written with four decimals; screens with nothing to show say which data
   they need.
+- Dashboard and `--format html`: one stylesheet of tokens and components, in light and
+  dark, with screens as tabs, sections as panels and verdicts coloured by outcome.
 - `trend` without `occurred_at` hints at adding it.
 
 ## [0.1.0] - 2026-11-07

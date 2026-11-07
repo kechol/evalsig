@@ -201,12 +201,16 @@ fn baseline_for(runs: &[&Run], c: usize) -> usize {
         .unwrap_or(if c == 0 { 1 } else { c - 1 })
 }
 
-/// A form choosing runs (and a period length), as plain GET links.
-fn picker(route: &str, runs: &[String], fields: &[(&str, &str)]) -> String {
-    let mut s = format!("<form method=\"get\" action=\"{}\">", esc(route));
+/// The toolbar choosing the runs a screen is drawn for, as a plain GET form, with
+/// `extra` (HTML) after its button.
+fn picker(route: &str, runs: &[String], fields: &[(&str, &str)], extra: &str) -> String {
+    let mut s = format!(
+        "<form class=\"toolbar\" method=\"get\" action=\"{}\">",
+        esc(route)
+    );
     for (name, chosen) in fields {
         s.push_str(&format!(
-            "<label>{} <select name=\"{}\">",
+            "<label>{}<select name=\"{}\">",
             esc(name),
             esc(name)
         ));
@@ -214,10 +218,31 @@ fn picker(route: &str, runs: &[String], fields: &[(&str, &str)]) -> String {
             let sel = if r == chosen { " selected" } else { "" };
             s.push_str(&format!("<option{sel}>{}</option>", esc(r)));
         }
-        s.push_str("</select></label> ");
+        s.push_str("</select></label>");
     }
-    s.push_str("<button>Show</button></form>");
+    s.push_str(&format!("<button>Show</button>{extra}</form>"));
     s
+}
+
+/// The question each screen answers, under its title.
+fn lead(title: &str) -> &'static str {
+    match title {
+        "Overview" => {
+            "How each run performs: every metric with its interval, all runs on one axis."
+        }
+        "Comparison" => "Whether the candidate differs from the baseline, and on which items.",
+        "Trend" => "How a run's primary metric moves from one period to the next.",
+        "Reproducibility" => {
+            "How often a run's replicates of one item disagree, and what more replicates buy."
+        }
+        "Reference quality" => {
+            "How well the human raters agree with one another, and the system with them."
+        }
+        "Discrimination" => {
+            "How well a run's judgments separate positive items from negative ones."
+        }
+        _ => "",
+    }
 }
 
 /// "How to read" for the metrics on a screen, from the embedded glossary.
@@ -271,17 +296,26 @@ impl Screen {
             title,
             focus: Focus::None,
             warnings: vec![],
-            body: format!("<p>{}</p>", esc(text)),
+            body: format!("<p class=\"empty\">{}</p>", esc(text)),
         }
     }
 }
 
-/// An error as a paragraph, with its hint when it has one.
+/// A result that could not be computed, as a warning callout with its hint.
 fn error_note(e: &Error) -> String {
     match &e.hint {
-        Some(h) => format!("<p>{}</p><p>{}</p>", esc(&e.message), esc(h)),
-        None => format!("<p>{}</p>", esc(&e.message)),
+        Some(h) => format!(
+            "<div class=\"callout warning\"><strong>{}</strong>{}</div>",
+            esc(&e.message),
+            esc(h)
+        ),
+        None => format!("<div class=\"callout warning\">{}</div>", esc(&e.message)),
     }
+}
+
+/// A panel holding a sentence of what is missing.
+fn empty_panel(title: &str, text: &str) -> String {
+    html::panel(title, "", &format!("<p class=\"empty\">{}</p>", esc(text)))
 }
 
 /// A run's report as `report` computes it, with the defaults of the command line.
@@ -304,21 +338,22 @@ impl View<'_> {
     }
 }
 
-/// Where to go from the run at `i`: its comparison with the run imported before it, and
-/// the screens about one run.
-fn run_links(ids: &[String], i: usize) -> String {
+/// Where to go from the run at `i`: its comparison with the run imported before it as
+/// the main action, and the screens about one run beside it.
+fn run_actions(ids: &[String], i: usize) -> String {
     let run = &ids[i];
-    let mut links = Vec::new();
+    let mut buttons = Vec::new();
     if let Some(before) = i.checked_sub(1).map(|j| &ids[j]) {
-        links.push(html::link(
+        buttons.push(html::button(
             &compare_href(before, run),
             &format!("Compare with {before}"),
+            false,
         ));
     }
     for (route, label) in RUN_SCREENS {
-        links.push(html::link(&run_href(route, run), label));
+        buttons.push(html::button(&run_href(route, run), label, true));
     }
-    format!("<p class=\"links\">{}</p>", links.concat())
+    html::actions(&buttons)
 }
 
 fn overview(v: &View) -> Result<Screen, Error> {
@@ -342,17 +377,21 @@ fn overview(v: &View) -> Result<Screen, Error> {
             .collect()
         })
         .collect();
-    let mut body = html::table(
-        &[
-            "Run",
-            "System",
-            "Version",
-            "Output type",
-            "Items",
-            "Judgments",
-            "Missing",
-        ],
-        &rows,
+    let mut body = html::panel(
+        "Runs",
+        "",
+        &html::table(
+            &[
+                "Run",
+                "System",
+                "Version",
+                "Output type",
+                "Items",
+                "Judgments",
+                "Missing",
+            ],
+            &rows,
+        ),
     );
     let mut warnings = warnings_of(&runs.warnings);
     let ids: Vec<String> = runs.results["runs"]
@@ -372,23 +411,22 @@ fn overview(v: &View) -> Result<Screen, Error> {
     let shared = svg::range(&all, false);
     let mut names = Vec::new();
     for (i, (id, c)) in ids.iter().zip(&reports).enumerate() {
-        body.push_str(&format!("<h2>{}</h2>", esc(id)));
-        body.push_str(&run_links(&ids, i));
         // One run that cannot be reported shows its error; the others still render.
-        match c {
-            Err(e) => body.push_str(&error_note(e)),
+        let plot = match c {
+            Err(e) => error_note(e),
             Ok(c) => {
                 warnings.extend(warnings_of(&c.warnings));
-                if let Some(range) = shared {
-                    body.push_str(&svg::intervals_in(
+                names.extend(metric_names(&c.results["metrics"]));
+                shared.map_or_else(String::new, |range| {
+                    svg::intervals_in(
                         &svg::metric_rows(&c.results["metrics"], "value"),
                         false,
                         range,
-                    ));
-                }
-                names.extend(metric_names(&c.results["metrics"]));
+                    )
+                })
             }
-        }
+        };
+        body.push_str(&html::panel(id, &run_actions(&ids, i), &plot));
     }
     names.sort();
     names.dedup();
@@ -440,11 +478,12 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         "compare",
         &runs,
         &[("baseline", &base), ("candidate", &cand)],
+        &html::button(
+            &compare_href(&cand, &base),
+            "Swap baseline and candidate",
+            true,
+        ),
     );
-    body.push_str(&format!(
-        "<p class=\"links\">{}</p>",
-        html::link(&compare_href(&cand, &base), "Swap baseline and candidate")
-    ));
     let request = compare::Request {
         baseline: base.clone(),
         candidates: vec![cand.clone()],
@@ -468,13 +507,17 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     if let Some(v) = &c.verdict {
         body.push_str(&html::verdict(v.code.as_str(), &v.text));
     }
-    body.push_str(&svg::intervals(
-        &svg::metric_rows(&r["metrics"], "delta"),
-        true,
+    body.push_str(&html::panel(
+        "Differences (candidate − baseline)",
+        "",
+        &svg::intervals(&svg::metric_rows(&r["metrics"], "delta"), true),
     ));
     if r["transition"].is_object() {
-        body.push_str("<h2>Transitions</h2>");
-        body.push_str(&svg::transition(&r["transition"]));
+        body.push_str(&html::panel(
+            "Transitions",
+            "",
+            &svg::transition(&r["transition"]),
+        ));
     }
     // The items whose judgment changed, those moving away from the reference first; the
     // unchanged ones folded.
@@ -498,35 +541,44 @@ fn comparison(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     };
     let head = ["Item", "Reference", "Baseline", "Candidate"];
     if !items.is_empty() {
-        body.push_str(&format!("<h2>Items that changed ({})</h2>", changed.len()));
-        if changed.is_empty() {
-            body.push_str("<p>No item's judgment changed.</p>");
+        let mut part = if changed.is_empty() {
+            "<p class=\"empty\">No item's judgment changed.</p>".to_owned()
         } else {
             let rows: Vec<Vec<String>> = changed
                 .iter()
                 .map(|(i, m)| {
-                    let mut r = row(i);
-                    r.push((*m).to_owned());
+                    let tone = match *m {
+                        "further from the reference" => html::Tone::Negative,
+                        "closer to the reference" => html::Tone::Positive,
+                        _ => html::Tone::Neutral,
+                    };
+                    let mut r: Vec<String> = row(i).iter().map(|c| html::td(c)).collect();
+                    r.push(format!("<td>{}</td>", html::badge(tone, m)));
                     r
                 })
                 .collect();
-            body.push_str(&html::table(
+            html::table_html(
                 &["Item", "Reference", "Baseline", "Candidate", "Change"],
                 &rows,
-            ));
-        }
+            )
+        };
         let same: Vec<Vec<String>> = items
             .iter()
             .filter(|i| movement(i).is_none())
             .map(row)
             .collect();
         if !same.is_empty() {
-            body.push_str(&format!(
+            part.push_str(&format!(
                 "<details><summary>Unchanged items ({})</summary>{}</details>",
                 same.len(),
                 html::table(&head, &same)
             ));
         }
+        body.push_str(&html::panel(
+            &format!("Items that changed ({})", changed.len()),
+            "",
+            &part,
+        ));
     }
     let names = metric_names(&r["metrics"]);
     body.push_str(&how_to_read(
@@ -546,7 +598,7 @@ fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         return Ok(Screen::note("Trend", "No runs."));
     };
     let run = chosen(q, "run", &runs, first).to_owned();
-    let mut body = picker("trend", &runs, &[("run", &run)]);
+    let mut body = picker("trend", &runs, &[("run", &run)], "");
     let request = trend::Request {
         run: run.clone(),
         ..trend::Request::default()
@@ -558,7 +610,11 @@ fn trend_screen(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 body.push_str(&html::verdict(v.code.as_str(), &v.text));
             }
             let primary = r["primary_metric"].as_str().unwrap_or_default();
-            body.push_str(&svg::trend(&r["periods"], primary));
+            body.push_str(&html::panel(
+                &format!("{primary} by period"),
+                "",
+                &svg::trend(&r["periods"], primary),
+            ));
             body.push_str(&how_to_read(&[primary, "drifted"]));
             Ok(Screen {
                 title: "Trend",
@@ -589,7 +645,7 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         k_curve: true,
         ..report_of(&run)
     })?;
-    let mut body = picker("reproducibility", &runs, &[("run", &run)]);
+    let mut body = picker("reproducibility", &runs, &[("run", &run)], "");
     let rep = &c.results["reproducibility"];
     let rows: Vec<Vec<String>> = rep
         .as_object()
@@ -598,13 +654,18 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         .map(|(k, v)| vec![k.clone(), cell(v)])
         .collect();
     if rows.is_empty() {
-        body.push_str(
-            "<p>Every item has one judgment in this run, so there are no replicates to \
+        body.push_str(&empty_panel(
+            "Replicate agreement",
+            "Every item has one judgment in this run, so there are no replicates to \
              compare. Judge each item several times (gen_replicate 0, 1, …) and import \
-             the run again.</p>",
-        );
+             the run again.",
+        ));
     } else {
-        body.push_str(&html::table(&["Measure", "Value"], &rows));
+        body.push_str(&html::panel(
+            "Replicate agreement",
+            "",
+            &html::table(&["Measure", "Value"], &rows),
+        ));
     }
     // The k-curve: each rule and k with the primary metric's value and interval, and
     // the cost per item when the configuration prices a generation.
@@ -624,10 +685,13 @@ fn reproducibility(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                 ]
             })
             .collect();
-        body.push_str("<h2>Performance and cost by k</h2>");
-        body.push_str(&html::table(
-            &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
-            &rows,
+        body.push_str(&html::panel(
+            "Performance and cost by k",
+            "",
+            &html::table(
+                &["k", "Rule", "Metric", "Value", "Interval", "Cost per item"],
+                &rows,
+            ),
         ));
     }
     body.push_str(&how_to_read(&["replicate_disagreement", "noise_floor"]));
@@ -645,7 +709,12 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let run = runs
         .first()
         .map(|first| chosen(q, "run", &runs, first).to_owned());
-    let mut body = picker("reference", &runs, &[("run", run.as_deref().unwrap_or(""))]);
+    let mut body = picker(
+        "reference",
+        &runs,
+        &[("run", run.as_deref().unwrap_or(""))],
+        "",
+    );
     let request = agree::Request {
         run: run.clone(),
         ..agree::Request::default()
@@ -667,10 +736,10 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                     ]
                 })
                 .collect();
-            body.push_str("<h2>Same rule: each rater, grader or run against the humans</h2>");
-            body.push_str(&html::table(
-                &["Who", "Kind", "Mean κ", "Humans compared"],
-                &same,
+            body.push_str(&html::panel(
+                "Same rule: each rater, grader or run against the humans",
+                "",
+                &html::table(&["Who", "Kind", "Mean κ", "Humans compared"], &same),
             ));
             let pairs: Vec<Vec<String>> = r["pairs"]
                 .as_array()
@@ -688,17 +757,20 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                     ]
                 })
                 .collect();
-            body.push_str("<h2>Rater pairs</h2>");
-            body.push_str(&html::table(
-                &[
-                    "Pair",
-                    "Items",
-                    "Cohen κ",
-                    "Gwet AC1",
-                    "Positive agreement",
-                    "Negative agreement",
-                ],
-                &pairs,
+            body.push_str(&html::panel(
+                "Rater pairs",
+                "",
+                &html::table(
+                    &[
+                        "Pair",
+                        "Items",
+                        "Cohen κ",
+                        "Gwet AC1",
+                        "Positive agreement",
+                        "Negative agreement",
+                    ],
+                    &pairs,
+                ),
             ));
             let variability: Vec<Vec<String>> = r["variability"]
                 .as_object()
@@ -714,16 +786,23 @@ fn reference(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
                     ]
                 })
                 .collect();
-            body.push_str("<h2>Rater variability</h2>");
-            body.push_str(&html::table(
-                &["Task", "Within a rater", "Pairs", "Between raters", "Pairs"],
-                &variability,
+            body.push_str(&html::panel(
+                "Rater variability",
+                "",
+                &html::table(
+                    &["Task", "Within a rater", "Pairs", "Between raters", "Pairs"],
+                    &variability,
+                ),
             ));
-            if !r["ceiling"].is_null() {
-                body.push_str(&format!(
-                    "<p>Ceiling with a soft reference: <span data-ceiling=\"{}\">{}</span></p>",
-                    esc(&cell(&r["ceiling"])),
-                    esc(&cell(&r["ceiling"]))
+            if let Some(ceiling) = r["ceiling"].as_f64() {
+                body.push_str(&html::panel(
+                    "Ceiling with a soft reference",
+                    "",
+                    &format!(
+                        "<p>No system can exceed accuracy <span data-ceiling=\"{}\">{}</span> against this reference.</p>",
+                        esc(&cell(&r["ceiling"])),
+                        html::shown(ceiling)
+                    ),
                 ));
             }
             warnings_of(&o.envelope.warnings)
@@ -757,36 +836,50 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
     let run = chosen(q, "run", &runs, first).to_owned();
     let c = v.report(&report_of(&run))?;
     let r = &c.results;
-    let mut body = picker("discrimination", &runs, &[("run", &run)]);
+    let mut body = picker("discrimination", &runs, &[("run", &run)], "");
     if r["sdt"].is_object() {
-        body.push_str(&html::table(
-            &["d′ (sensitivity)", "c (criterion)"],
-            &[vec![
-                cell(&r["sdt"]["dprime"]),
-                cell(&r["sdt"]["criterion"]),
-            ]],
+        body.push_str(&html::panel(
+            "Signal detection",
+            "",
+            &html::table(
+                &["d′ (sensitivity)", "c (criterion)"],
+                &[vec![
+                    cell(&r["sdt"]["dprime"]),
+                    cell(&r["sdt"]["criterion"]),
+                ]],
+            ),
         ));
     }
     if r["roc"].is_object() {
-        body.push_str(&format!(
-            "<p>AUC <span data-auc=\"{}\">{}</span> [{}, {}]</p>",
+        let auc = format!(
+            "<p>AUC <span data-auc=\"{}\">{}</span> [{}]</p>",
             esc(&r["roc"]["auc"].to_string()),
-            esc(&r["roc"]["auc"].to_string()),
-            esc(&r["roc"]["ci"][0].to_string()),
-            esc(&r["roc"]["ci"][1].to_string())
+            r["roc"]["auc"]
+                .as_f64()
+                .map_or_else(|| cell(&r["roc"]["auc"]), html::shown),
+            interval(&r["roc"]["ci"]).replace(" – ", ", ")
+        );
+        body.push_str(&html::panel(
+            "ROC and z-ROC",
+            "",
+            &format!("{auc}{}{}", svg::roc(&r["roc"]), svg::zroc(&r["roc"])),
         ));
-        body.push_str(&svg::roc(&r["roc"]));
-        body.push_str(&svg::zroc(&r["roc"]));
     } else {
-        body.push_str(&format!(
-            "<p>No ROC or z-ROC: this run's judgments are {}, and a curve needs ordered \
-             judgments (output type ordinal or score).</p>",
-            esc(r["output_type"].as_str().unwrap_or("not ordered"))
+        body.push_str(&empty_panel(
+            "ROC and z-ROC",
+            &format!(
+                "This run's judgments are {}; a curve needs ordered judgments (output type \
+                 ordinal or score).",
+                r["output_type"].as_str().unwrap_or("not ordered")
+            ),
         ));
     }
     if r["calibration"].is_object() {
-        body.push_str("<h2>Calibration</h2>");
-        body.push_str(&svg::reliability(&r["calibration"]));
+        body.push_str(&html::panel(
+            "Calibration",
+            "",
+            &svg::reliability(&r["calibration"]),
+        ));
     }
     body.push_str(&how_to_read(&["auc", "dprime", "criterion"]));
     Ok(Screen {
@@ -859,8 +952,20 @@ fn route(root: &Path, kept: &Mutex<Option<Loaded>>, path: &str) -> Page {
         )
     });
     match shown {
-        Ok(s) => Page::html(html::page(s.title, &nav(&s.focus), &s.warnings, &s.body)),
-        Err(e) => Page::html(html::page("Error", &nav(&Focus::None), &[e.message], "")),
+        Ok(s) => Page::html(html::page(
+            s.title,
+            lead(s.title),
+            &nav(&s.focus),
+            &s.warnings,
+            &s.body,
+        )),
+        Err(e) => Page::html(html::page(
+            "Error",
+            "",
+            &nav(&Focus::None),
+            &[e.message],
+            "",
+        )),
     }
 }
 

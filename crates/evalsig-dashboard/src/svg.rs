@@ -88,7 +88,7 @@ pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> Strin
         let z = x(0.0);
         let _ = write!(
             s,
-            "<line x1=\"{z:.1}\" y1=\"0\" x2=\"{z:.1}\" y2=\"{h}\" stroke=\"#999\" stroke-dasharray=\"3 3\"/>"
+            "<line x1=\"{z:.1}\" y1=\"0\" x2=\"{z:.1}\" y2=\"{h}\" class=\"guide\" stroke=\"#999\" stroke-dasharray=\"3 3\"/>"
         );
     }
     let shown = |v: &Value| match f(v) {
@@ -114,7 +114,7 @@ pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> Strin
         if let (Some(a), Some(b)) = (f(&r.ci[0]), f(&r.ci[1])) {
             let _ = write!(
                 s,
-                "<line x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
+                "<line x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" class=\"mark\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
                 x(a),
                 x(b)
             );
@@ -122,7 +122,7 @@ pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> Strin
         if let Some(p) = f(r.point) {
             let _ = write!(
                 s,
-                "<circle cx=\"{:.1}\" cy=\"{y:.1}\" r=\"4\" fill=\"#3b6ea5\"/>",
+                "<circle cx=\"{:.1}\" cy=\"{y:.1}\" r=\"4\" class=\"mark\" fill=\"#3b6ea5\"/>",
                 x(p)
             );
         }
@@ -177,13 +177,13 @@ pub fn curve(
     let py = |v: f64| m + (1.0 - v) * S;
     let size = S + 2.0 * m;
     let mut s = format!(
-        "<svg class=\"{}\" viewBox=\"0 0 {size} {size}\" width=\"{size}\" height=\"{size}\" role=\"img\"><rect x=\"{m}\" y=\"{m}\" width=\"{S}\" height=\"{S}\" fill=\"none\" stroke=\"#ccc\"/>",
+        "<svg class=\"{}\" viewBox=\"0 0 {size} {size}\" width=\"{size}\" height=\"{size}\" role=\"img\"><rect x=\"{m}\" y=\"{m}\" width=\"{S}\" height=\"{S}\" fill=\"none\" class=\"guide\" stroke=\"#ccc\"/>",
         esc(class)
     );
     if diagonal {
         let _ = write!(
             s,
-            "<line x1=\"{m}\" y1=\"{}\" x2=\"{}\" y2=\"{m}\" stroke=\"#bbb\" stroke-dasharray=\"3 3\"/>",
+            "<line x1=\"{m}\" y1=\"{}\" x2=\"{}\" y2=\"{m}\" class=\"guide\" stroke=\"#bbb\" stroke-dasharray=\"3 3\"/>",
             m + S,
             m + S
         );
@@ -204,14 +204,14 @@ pub fn curve(
         .collect();
     let _ = write!(
         s,
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
+        "<polyline points=\"{}\" class=\"mark\" fill=\"none\" stroke=\"#3b6ea5\" stroke-width=\"2\"/>",
         coords.join(" ")
     );
     for p in points {
         let (a, b) = &p.shown;
         let _ = write!(
             s,
-            "<circle class=\"pt\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"2.5\" fill=\"#3b6ea5\" {}=\"{a}\" {}=\"{b}\"><title>{a}, {b}</title></circle>",
+            "<circle class=\"pt mark\" cx=\"{:.1}\" cy=\"{:.1}\" r=\"2.5\" fill=\"#3b6ea5\" {}=\"{a}\" {}=\"{b}\"><title>{a}, {b}</title></circle>",
             px(p.x),
             py(p.y),
             attrs.0,

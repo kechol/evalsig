@@ -71,5 +71,5 @@ pub fn static_report(e: &Value) -> String {
             )
         })
         .collect();
-    html::page(schema, &[], &warnings, &body)
+    html::page(schema, "", &[], &warnings, &body)
 }

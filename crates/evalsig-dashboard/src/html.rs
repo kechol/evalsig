@@ -18,52 +18,134 @@ pub fn esc(s: &str) -> String {
     out
 }
 
-const STYLE: &str = "body{font:15px/1.5 system-ui,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;color:#1d1d1f}\
-nav a{margin-right:1rem}nav a[aria-current]{font-weight:600;color:inherit;text-decoration:none}\
-table{border-collapse:collapse;width:100%;margin:1rem 0}\
-th,td{text-align:left;padding:.3rem .6rem;border-bottom:1px solid #ddd}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}\
-p.links a{margin-right:.8rem}\
-.banner{background:#fff4e5;border-left:4px solid #e6a23c;padding:.5rem 1rem;margin:1rem 0}\
-details{margin:1rem 0}summary{cursor:pointer;color:#555}svg{max-width:100%}";
+/// The design system (tokens and components), inlined into every page.
+const STYLE: &str = include_str!("style.css");
 
-/// A page: the navigation, warning banners above everything, then the body. The
-/// navigation entry labelled `title` is marked as the current page.
-pub fn page(title: &str, nav: &[(String, &str)], warnings: &[String], body: &str) -> String {
+/// The tone a state is coloured with; `style.css` gives each its colours.
+#[derive(Clone, Copy)]
+pub enum Tone {
+    Positive,
+    Negative,
+    Warning,
+    Neutral,
+}
+
+impl Tone {
+    fn class(self) -> &'static str {
+        match self {
+            Tone::Positive => "positive",
+            Tone::Negative => "negative",
+            Tone::Warning => "warning",
+            Tone::Neutral => "neutral",
+        }
+    }
+
+    /// A verdict's tone: a good outcome, a bad one, no difference, or no answer.
+    pub fn of_verdict(code: &str) -> Tone {
+        match code {
+            "pass" | "improved" | "stable" | "human_parity" => Tone::Positive,
+            "fail" | "worsened" | "drifted" | "below_human" => Tone::Negative,
+            "negligible" | "indistinguishable" => Tone::Neutral,
+            _ => Tone::Warning,
+        }
+    }
+}
+
+/// A page: the app bar with the screens as tabs, the page head with the question the
+/// screen answers (`lead`, none when empty), warnings above everything else, then the
+/// body. The tab labelled `title` is marked as the current page.
+pub fn page(
+    title: &str,
+    lead: &str,
+    nav: &[(String, &str)],
+    warnings: &[String],
+    body: &str,
+) -> String {
     let mut s = String::new();
     let _ = write!(
         s,
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>{} · evalsig</title><style>{STYLE}</style></head><body><nav>",
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{} · evalsig</title><style>{STYLE}</style></head><body><header class=\"appbar\"><span class=\"brand\">evalsig</span>",
         esc(title)
     );
-    for (href, label) in nav {
-        let current = if *label == title {
-            " aria-current=\"page\""
-        } else {
-            ""
-        };
-        let _ = write!(s, "<a href=\"{}\"{current}>{}</a>", esc(href), esc(label));
+    if !nav.is_empty() {
+        s.push_str("<nav class=\"tabs\" aria-label=\"Screens\">");
+        for (href, label) in nav {
+            let current = if *label == title {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
+            let _ = write!(
+                s,
+                "<a class=\"tab\" href=\"{}\"{current}>{}</a>",
+                esc(href),
+                esc(label)
+            );
+        }
+        s.push_str("</nav>");
     }
-    s.push_str("</nav>");
+    let _ = write!(
+        s,
+        "</header><main><div class=\"page-head\"><h1>{}</h1>",
+        esc(title)
+    );
+    if !lead.is_empty() {
+        let _ = write!(s, "<p>{}</p>", esc(lead));
+    }
+    s.push_str("</div>");
     for w in warnings {
-        let _ = write!(s, "<div class=\"banner\">{}</div>", esc(w));
+        let _ = write!(
+            s,
+            "<div class=\"callout warning\" role=\"status\">{}</div>",
+            esc(w)
+        );
     }
-    let _ = write!(s, "<h1>{}</h1>{body}</body></html>", esc(title));
+    let _ = write!(s, "{body}</main></body></html>");
     s
 }
 
-/// A verdict line: its code (kept in `data-code`) and its text.
+/// A verdict as a callout in its tone: its code (kept in `data-code`) and its text.
 pub fn verdict(code: &str, text: &str) -> String {
     format!(
-        "<p class=\"verdict\" data-code=\"{}\"><strong>{}</strong>: {}</p>",
+        "<p class=\"verdict callout {}\" data-code=\"{}\"><strong>{}</strong>{}</p>",
+        Tone::of_verdict(code).class(),
         esc(code),
         esc(code),
         esc(text)
     )
 }
 
-/// A link; `href` and `text` are escaped.
-pub fn link(href: &str, text: &str) -> String {
-    format!("<a href=\"{}\">{}</a>", esc(href), esc(text))
+/// A panel: one section of a screen under `title`, with `aside` (badges, actions; HTML)
+/// in its head and `body` (HTML) below.
+pub fn panel(title: &str, aside: &str, body: &str) -> String {
+    format!(
+        "<section class=\"panel\"><div class=\"panel-head\"><h2>{}</h2>{aside}</div>{body}</section>",
+        esc(title)
+    )
+}
+
+/// A short state in its tone.
+pub fn badge(tone: Tone, text: &str) -> String {
+    format!(
+        "<span class=\"badge {}\">{}</span>",
+        tone.class(),
+        esc(text)
+    )
+}
+
+/// A link styled as a button; `quiet` for the ones beside the main action.
+pub fn button(href: &str, text: &str, quiet: bool) -> String {
+    format!(
+        "<a class=\"button{}\" href=\"{}\">{}</a>",
+        if quiet { " quiet" } else { "" },
+        esc(href),
+        esc(text)
+    )
+}
+
+/// Actions for a panel's head.
+pub fn actions(buttons: &[String]) -> String {
+    format!("<div class=\"actions\">{}</div>", buttons.concat())
 }
 
 /// A number as the Markdown output writes it: whole numbers as they are, others with
@@ -107,7 +189,7 @@ pub fn table_html(head: &[&str], rows: &[Vec<String>]) -> String {
                 .iter()
                 .all(|r| r.get(j).is_some_and(|c| c.starts_with("<td class=\"n\"")))
     };
-    let mut s = String::from("<table><thead><tr>");
+    let mut s = String::from("<div class=\"table-wrap\"><table><thead><tr>");
     for (j, h) in head.iter().enumerate() {
         let class = if numeric(j) { " class=\"n\"" } else { "" };
         let _ = write!(s, "<th{class}>{}</th>", esc(h));
@@ -120,7 +202,7 @@ pub fn table_html(head: &[&str], rows: &[Vec<String>]) -> String {
         }
         s.push_str("</tr>");
     }
-    s.push_str("</tbody></table>");
+    s.push_str("</tbody></table></div>");
     s
 }
 
@@ -134,9 +216,9 @@ mod tests {
             esc("<script>\"x\"&'"),
             "&lt;script&gt;&quot;x&quot;&amp;&#39;"
         );
-        let p = page("<b>", &[], &["<img src=x>".into()], "");
-        assert!(!p.contains("<b>") && !p.contains("<img"));
-        assert!(!td("<b>").contains("<b>") && !link("\"><b>", "<b>").contains("<b>"));
+        let p = page("<b>", "<i>", &[], &["<img src=x>".into()], "");
+        assert!(!p.contains("<b>") && !p.contains("<i>") && !p.contains("<img"));
+        assert!(!td("<b>").contains("<b>") && !button("\"><b>", "<b>", true).contains("<b>"));
     }
 
     #[test]
@@ -157,8 +239,18 @@ mod tests {
             ("./".to_owned(), "Overview"),
             ("compare".to_owned(), "Comparison"),
         ];
-        let p = page("Comparison", &nav, &[], "");
-        assert!(p.contains("<a href=\"compare\" aria-current=\"page\">Comparison</a>"));
-        assert!(p.contains("<a href=\"./\">Overview</a>"));
+        let p = page("Comparison", "", &nav, &[], "");
+        assert!(
+            p.contains("<a class=\"tab\" href=\"compare\" aria-current=\"page\">Comparison</a>")
+        );
+        assert!(p.contains("<a class=\"tab\" href=\"./\">Overview</a>"));
+    }
+
+    #[test]
+    fn verdicts_take_the_tone_of_their_outcome() {
+        assert!(verdict("improved", "x").contains("class=\"verdict callout positive\""));
+        assert!(verdict("worsened", "x").contains("callout negative"));
+        assert!(verdict("indistinguishable", "x").contains("callout neutral"));
+        assert!(verdict("insufficient_data", "x").contains("callout warning"));
     }
 }

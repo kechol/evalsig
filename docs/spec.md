@@ -830,7 +830,10 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   written as the Markdown output writes them (four decimals, whole numbers as they are),
   and every table cell and plotted point keeps the exact value in a `data-*` attribute.
   The browser computes nothing and loads nothing from outside. No JavaScript is used;
-  folding uses `<details>`.
+  folding uses `<details>`. Every page, the static one included, carries one stylesheet
+  of tokens and components (`crates/evalsig-dashboard/src/style.css`) that follows the
+  system's light or dark appearance; a state is coloured only through its tone (positive,
+  negative, warning, neutral), and a verdict takes the tone of its outcome.
 - **Static HTML.** `--format html` on a command writes one page with the verdict, the
   warnings, the charts the result allows and the whole envelope embedded as
   `<script type="application/json">`. It loads nothing from a network.

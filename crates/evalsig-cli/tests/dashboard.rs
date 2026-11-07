@@ -203,11 +203,11 @@ fn every_screen_renders_for_the_examples() {
             );
             assert!(page.contains("<h1>Comparison</h1>"), "{page}");
             assert!(page.contains("<select name=\"baseline\">"), "{page}");
-            assert!(!page.contains("class=\"verdict\""), "{page}");
+            assert!(!page.contains("class=\"verdict "), "{page}");
         }
         // The comparison shows the CLI's verdict and the overview its intervals.
         let page = get(d.port, &format!("{base}compare"), &host);
-        assert!(page.contains("class=\"verdict\""), "{page}");
+        assert!(page.contains("class=\"verdict callout "), "{page}");
         assert!(get(d.port, &base, &host).contains("data-value="));
         assert_eq!(
             std::fs::read_to_string(p.join(".evalsig/ledger.jsonl")).unwrap(),
@@ -230,10 +230,12 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
     // screens about one run.
     let page = get(d.port, &base, &host);
     assert!(
-        page.contains("<a href=\"compare?baseline=triage-v1&amp;candidate=triage-v2\">Compare with triage-v1</a>"),
+        page.contains(
+            "href=\"compare?baseline=triage-v1&amp;candidate=triage-v2\">Compare with triage-v1</a>"
+        ),
         "{page}"
     );
-    assert!(page.contains("<a href=\"discrimination?run=triage-v2\">Discrimination</a>"));
+    assert!(page.contains("href=\"discrimination?run=triage-v2\">Discrimination</a>"));
     // A run screen marks itself and keeps the run in the other links.
     let page = get(
         d.port,
@@ -245,11 +247,11 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
         "{page}"
     );
     assert!(
-        page.contains("<a href=\"reproducibility?run=triage-v2\">"),
+        page.contains("href=\"reproducibility?run=triage-v2\""),
         "{page}"
     );
     assert!(
-        page.contains("<a href=\"compare?candidate=triage-v2\">"),
+        page.contains("href=\"compare?candidate=triage-v2\""),
         "{page}"
     );
     // By default the comparison is the latest run against the one before it, with the
@@ -260,7 +262,7 @@ fn screens_lead_to_each_other_with_the_runs_chosen() {
     assert!(page.contains("further from the reference"));
     assert!(page.contains("<summary>Unchanged items ("));
     assert!(page.contains("compare?baseline=triage-v2&amp;candidate=triage-v1"));
-    assert!(page.contains("<a href=\"trend?run=triage-v2\">"), "{page}");
+    assert!(page.contains("href=\"trend?run=triage-v2\""), "{page}");
 }
 
 #[test]
