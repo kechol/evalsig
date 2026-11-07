@@ -34,8 +34,8 @@ From source, with Rust 1.90 or later (the minimum supported Rust version):
 cargo install --locked evalsig-cli
 ```
 
-With Homebrew, from the `kechol/tap` tap, whose formula builds the release's
-source (`packaging/homebrew/evalsig.rb`):
+With Homebrew, from the `kechol/tap` tap, which installs the release archive
+for your platform:
 
 ```sh
 brew install kechol/tap/evalsig

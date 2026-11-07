@@ -1067,3 +1067,31 @@ after the entry is `Accepted`.
   reproduce, and each would add a saved file per run).
 - Consequences: a new command that saves results adds a variant to the
   request type and to `verify` in the same change.
+
+## D-031 Homebrew formula from the release archives
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: D-020 left the Homebrew channel to a later task, which wrote a
+  formula that built the release source with Rust. Each release then needed
+  the source tarball's checksum copied into a tap by hand, and every user
+  compiled evalsig. The maintainer's tap, `kechol/homebrew-tap`, already
+  receives formulas that cargo-dist writes for other tools.
+- Decision:
+  - cargo-dist also builds a Homebrew installer: a formula named `evalsig`
+    that installs the release archive for the user's platform (aarch64 and
+    x86_64 macOS and Linux), checked against the archive's SHA-256.
+  - The release workflow's `publish-homebrew-formula` job commits the
+    formula to `kechol/homebrew-tap` after the GitHub Release is published,
+    and skips pre-releases. It authenticates with the repository secret
+    `HOMEBREW_TAP_TOKEN`, a token that may write that repository's contents
+    and nothing else.
+  - Users install with `brew install kechol/tap/evalsig`. The repository
+    keeps no formula of its own.
+- Alternatives: the hand-kept source formula (not taken: a manual step per
+  release and a Rust toolchain on every user's machine); homebrew-core (not
+  taken for 0.1.0: it expects an established project).
+- Consequences: if the job fails, the GitHub Release stays published and
+  the tap keeps the previous version until the job is rerun. Whoever holds
+  the token can change the tap's formulas, so it is rotated like any other
+  credential.

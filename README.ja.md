@@ -24,7 +24,7 @@ AI エージェントがループでシステムを改善するときには、ev
 cargo install --locked evalsig-cli
 ```
 
-Homebrew では、`kechol/tap` の tap から入れます。formula（`packaging/homebrew/evalsig.rb`）はリリースのソースからビルドします。
+Homebrew では、`kechol/tap` の tap から入れます。お使いの環境向けのリリースのアーカイブが入ります。
 
 ```sh
 brew install kechol/tap/evalsig
