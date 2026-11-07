@@ -24,48 +24,49 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
+  --space-7: 48px;
 
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-lg: 10px;
   --control: 28px;
-  --width-page: 1080px;
+  --width-page: 1120px;
 
-  --canvas: light-dark(#f7f6f4, #100f0e);
-  --surface: light-dark(#ffffff, #181716);
-  --sunken: light-dark(#f3f2ef, #131311);
-  --hover: light-dark(#f3f2f0, #21201e);
-  --active: light-dark(#ebe9e6, #292725);
-  --divider: light-dark(#e5e4e1, #292725);
-  --text: light-dark(#1c1a19, #ecebe9);
-  --muted: light-dark(#66635e, #a6a4a0);
-  --accent: light-dark(#3d6cce, #79a3f6);
-  --secondary-bg: light-dark(#e4efff, #1d2d4c);
-  --secondary-fg: light-dark(#2b55ae, #afcbff);
-  --secondary-hover: light-dark(#d5e5ff, #24375c);
-  --chart: light-dark(#335eb7, #79a3f6);
-  --chart-guide: light-dark(#8c8984, #6e6b68);
-  --chart-grid: light-dark(#ecebe8, #232220);
+  --canvas: light-dark(#fafafa, #0b0b0d);
+  --surface: light-dark(#ffffff, #141417);
+  --hover: light-dark(#f4f4f5, #1d1d21);
+  --active: light-dark(#ececef, #26262b);
+  --edge-strong: light-dark(#d4d4d8, #3f3f46);
+  --divider: light-dark(#e8e8eb, #26262b);
+  --text: light-dark(#18181b, #f4f4f5);
+  --muted: light-dark(#6b6b75, #a1a1aa);
+  --accent: light-dark(#2563eb, #7aa2ff);
+  --secondary-bg: light-dark(#eff4ff, #18233d);
+  --secondary-fg: light-dark(#1d4ed8, #b4caff);
+  --secondary-hover: light-dark(#e1eaff, #1e2c4d);
+  --chart: light-dark(#2563eb, #7aa2ff);
+  --chart-guide: light-dark(#a1a1aa, #52525b);
+  --chart-grid: light-dark(#f0f0f2, #1d1d21);
   --series-1: var(--chart);
-  --series-2: light-dark(#bf6600, #e38d3d);
-  --series-3: light-dark(#9267ca, #b58eed);
-  --series-people: light-dark(#867f74, #aaa499);
+  --series-2: light-dark(#d97706, #fbbf24);
+  --series-3: light-dark(#7c3aed, #a78bfa);
+  --series-people: light-dark(#8a8a93, #9b9ba5);
 
-  --positive-fg: light-dark(#256b3a, #94cf9f);
-  --positive-bg: light-dark(#e0f3e3, #1c3121);
-  --positive-solid: light-dark(#25984d, #5bbd74);
-  --negative-fg: light-dark(#8c4039, #f2a89e);
-  --negative-bg: light-dark(#ffe6e3, #3d2320);
-  --negative-solid: light-dark(#ca564d, #ef7f74);
-  --warning-fg: light-dark(#854a0b, #e9b082);
-  --warning-bg: light-dark(#fce9db, #3a2616);
-  --warning-solid: light-dark(#bf6600, #e38d3d);
-  --info-fg: light-dark(#335b95, #9ac0f8);
-  --info-bg: light-dark(#e2eeff, #1f2c3f);
-  --info-solid: light-dark(#427fd8, #6ba5fb);
-  --neutral-fg: light-dark(#5f5a53, #c1bdb6);
-  --neutral-bg: light-dark(#eeecea, #2d2b29);
-  --neutral-solid: light-dark(#867f74, #aaa499);
+  --positive-fg: light-dark(#15803d, #86efac);
+  --positive-bg: light-dark(#ecfdf3, #10261a);
+  --positive-solid: light-dark(#16a34a, #4ade80);
+  --negative-fg: light-dark(#b42318, #fca5a5);
+  --negative-bg: light-dark(#fef3f2, #2c1517);
+  --negative-solid: light-dark(#dc2626, #f87171);
+  --warning-fg: light-dark(#b45309, #fcd34d);
+  --warning-bg: light-dark(#fffaeb, #2b2010);
+  --warning-solid: light-dark(#d97706, #fbbf24);
+  --info-fg: light-dark(#1d4ed8, #93c5fd);
+  --info-bg: light-dark(#eff6ff, #15213a);
+  --info-solid: light-dark(#2563eb, #60a5fa);
+  --neutral-fg: light-dark(#52525b, #d4d4d8);
+  --neutral-bg: light-dark(#f4f4f5, #232327);
+  --neutral-solid: light-dark(#71717a, #a1a1aa);
 }
 
 /* Each tone once: a component colours a state through --tone-fg, --tone-bg and --tone-solid. */
@@ -105,8 +106,9 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-md);
-  line-height: 1.45;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -125,30 +127,32 @@ a {
   z-index: 10;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-  min-height: 48px;
-  padding: var(--space-2) var(--space-4);
-  background: var(--surface);
+  align-items: stretch;
+  gap: 0 var(--space-6);
+  min-height: 52px;
+  padding: 0 var(--space-5);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--divider);
 }
 
 .brand {
+  align-self: center;
   font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
 }
 
+/* Tabs: the current screen underlined in the accent, the others quiet. */
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--space-5);
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  height: var(--control);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
+  border-bottom: 2px solid transparent;
   color: var(--muted);
   font-weight: var(--weight-medium);
   text-decoration: none;
@@ -156,29 +160,30 @@ a {
 
 .tab:hover {
   color: var(--text);
-  background: var(--hover);
 }
 
 .tab[aria-current="page"] {
   color: var(--text);
-  background: var(--active);
+  border-bottom-color: var(--accent);
 }
 
 main {
   max-width: var(--width-page);
   margin: 0 auto;
-  padding: var(--space-5) var(--space-5) var(--space-6);
+  padding: var(--space-6) var(--space-5) var(--space-7);
 }
 
 /* Page head: the screen's name and the question it answers. */
 .page-head {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 h1 {
   margin: 0;
-  font-size: var(--text-xl);
-  line-height: 1.4;
+  font-size: 22px;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
+  letter-spacing: -0.015em;
 }
 
 .page-head p {
@@ -188,13 +193,14 @@ h1 {
 
 h2 {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
 }
 
 /* Panel: one section of a screen, with an optional head holding badges and actions. */
 .panel {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-5);
   background: var(--surface);
   border: 1px solid var(--divider);
   border-radius: var(--radius-lg);
@@ -205,7 +211,7 @@ h2 {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .panel-head .actions {
@@ -297,10 +303,10 @@ select {
 
 /* Callout: a verdict or a warning, a sentence in its tone with a bar on the left. */
 .callout {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
-  border-left: 4px solid var(--tone-solid);
-  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--tone-solid) 30%, transparent);
+  border-radius: var(--radius-lg);
   background: var(--tone-bg);
 }
 
@@ -309,7 +315,7 @@ select {
   color: var(--tone-fg);
 }
 
-/* Tables: numbers right-aligned in tabular figures, the head on a sunken band. */
+/* Tables: numbers right-aligned in tabular figures, the head over a stronger rule. */
 .table-wrap {
   overflow-x: auto;
 }
@@ -322,16 +328,16 @@ table {
 
 th,
 td {
-  padding: 6px var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--divider);
   text-align: left;
 }
 
 th {
-  background: var(--sunken);
   color: var(--muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
+  border-bottom-color: var(--edge-strong);
 }
 
 tbody th {
