@@ -7,9 +7,8 @@
 # Local evalsig working state
 .evalsig/
 
-# Local planning and reference material
+# Local planning material
 /docs/backlog.md
-/spec/
 
 # Operating system files
 .DS_Store
