@@ -722,15 +722,18 @@ A `preference` record compares two arms' outputs on one item and says which is b
 
 ### 11.1 Statistical rules
 
-- **Rules.** A condition reads an interval or a verdict, never a point alone: `lower_bound_at_least`
-  and `upper_bound_at_most` read the candidate's interval; `delta_lower_bound_at_least` and
-  `delta_upper_bound_at_most` read the interval of the difference, candidate minus baseline,
-  on the metric's own scale; `not_worse_than` (non-inferiority, a negative margin) reads the
-  difference oriented so that positive is better (§7), so its margin bounds the loss on
-  `false_alarm_rate` as on any other metric; `pass` reads a verdict, which only
-  `human_parity` gives (§9.4). The two
-  delta rules also need the point difference to reach `min_effect` in their direction. A
-  condition whose evidence is missing or of the wrong kind is undecided.
+- **Rules.** A condition reads an interval or a verdict, never a point alone (D-034).
+  - `lower_bound_at_least` and `upper_bound_at_most` read the candidate's interval.
+  - The difference rules read the interval of the difference to the baseline, oriented so
+    that positive is better whatever the metric's direction (§7): a false-alarm rate that
+    falls is a positive difference. Their `value` is a margin of at least 0 and their
+    bounds are strict. `better_by` passes when the lower bound is above `value` and the
+    point difference reaches `min_effect` (0 when absent); `not_worse_than`
+    (non-inferiority) passes when the lower bound is above −`value`. A candidate no
+    different from the baseline gives a zero-width interval at 0, so it is not
+    `better_by` 0, while a candidate better on every item is.
+  - `pass` reads a verdict, which only `human_parity` gives (§9.4).
+  - A condition whose evidence is missing or of the wrong kind is undecided.
 - **Several conditions.** All must hold: an intersection-union test (Berger 1982) keeps the
   overall error rate within the level of each condition, so no further correction is
   needed. One failed condition fails the gate; otherwise an undecided one leaves it
@@ -749,13 +752,21 @@ A `preference` record compares two arms' outputs on one item and says which is b
 - **Counts.** `min_items` is required and counts only paired items, independent of the
   labels. Judging by the number of positives or negatives would let labels be inferred from
   where "too few items" begins. Fewer items gives `insufficient_data`.
-- **Power at approval.** When the first condition is a delta rule with `min_effect` above
-  0, `preregister approve` computes the probability that it passes if the candidate is
-  better by exactly `min_effect`, on the holdout's items at the per-submission level, and
-  warns (`low_power_at_hypothesis`) below 0.5. It uses the one-sided exact McNemar power
-  (§12) with the discordance ψ̂ = max(0.05, 4/n, min(1, 2·e_val)), n the holdout size and
-  e_val the baseline's error (1 − accuracy) on the items outside the holdout. No power is
-  computed when `min_effect` is at least ψ̂.
+- **Power at approval.** For each difference condition that states an `expected_effect`
+  (the difference the hypothesis predicts, positive being better), `preregister approve`
+  reports the probability that the condition passes if the candidate is better by that
+  much, and warns (`low_power`) below 0.8.
+  - The paired difference is taken as normal with standard error √((ψ − E²)/n), E the
+    expected effect, n the metric's denominator in the holdout and ψ the discordance
+    ψ̂ = max(0.05, 4/n, min(1, 2·e_val)) of §11.3 (raised to |E| when smaller), e_val the
+    baseline's error on that metric outside the holdout.
+  - The condition passes when the difference exceeds its threshold (`value` for
+    `better_by`, −`value` for `not_worse_than`) plus z·se, z the quantile of the
+    condition's own tail at its level and sidedness under the budget, and, for
+    `better_by`, reaches `min_effect`.
+  - At E equal to `min_effect` the point condition alone holds about half the time, so
+    the expected effect is what the hypothesis predicts, not the smallest effect that
+    matters. Without `expected_effect` no power is computed.
 - **What the guarantee rests on.** An ineffective candidate passes within the budget with
   probability at most α only if each test holds its nominal level (§1.1, §8) and the
   candidate's records pass the checks of §11.2. Choosing the next candidate from what the

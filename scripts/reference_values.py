@@ -490,20 +490,19 @@ def obuchowski_cases():
 
 
 def gate_rule_cases():
-    """Each gate rule passing and failing (SPEC §8.3): bounds come from intervals, delta
-    rules also need the point difference to move by min_effect in the rule's direction."""
+    """Each gate rule passing and failing (SPEC §8.3, D-034): bounds come from intervals.
+    The difference rules read the difference oriented so that positive is better and are
+    strict; better_by also needs the point difference to reach min_effect."""
     def judge(rule, value, min_effect, e):
         m = min_effect or 0.0
         if rule == "lower_bound_at_least":
             return e["lo"] >= value
         if rule == "upper_bound_at_most":
             return e["hi"] <= value
-        if rule == "delta_lower_bound_at_least":
-            return e["lo"] >= value and e["point"] >= m
-        if rule == "delta_upper_bound_at_most":
-            return e["hi"] <= value and e["point"] <= -m
+        if rule == "better_by":
+            return e["lo"] > value and e["point"] >= m
         if rule == "not_worse_than":
-            return e["lo"] >= value
+            return e["lo"] > -value
         if rule == "pass":
             return e["verdict"]
     rows = [
@@ -511,13 +510,13 @@ def gate_rule_cases():
         ("lower_bound_at_least", 0.7, None, {"kind": "value", "point": 0.8, "lo": 0.68, "hi": 0.9}),
         ("upper_bound_at_most", 0.05, None, {"kind": "value", "point": 0.02, "lo": 0.0, "hi": 0.04}),
         ("upper_bound_at_most", 0.05, None, {"kind": "value", "point": 0.03, "lo": 0.0, "hi": 0.06}),
-        ("delta_lower_bound_at_least", 0.0, 0.02, {"kind": "delta", "point": 0.05, "lo": 0.01, "hi": 0.09}),
-        ("delta_lower_bound_at_least", 0.0, 0.02, {"kind": "delta", "point": 0.015, "lo": 0.001, "hi": 0.03}),
-        ("delta_lower_bound_at_least", 0.0, None, {"kind": "delta", "point": 0.04, "lo": -0.01, "hi": 0.09}),
-        ("delta_upper_bound_at_most", 0.0, 0.02, {"kind": "delta", "point": -0.05, "lo": -0.09, "hi": -0.01}),
-        ("delta_upper_bound_at_most", 0.0, 0.02, {"kind": "delta", "point": -0.01, "lo": -0.02, "hi": -0.001}),
-        ("not_worse_than", -0.05, None, {"kind": "delta", "point": 0.0, "lo": -0.03, "hi": 0.03}),
-        ("not_worse_than", -0.05, None, {"kind": "delta", "point": -0.02, "lo": -0.07, "hi": 0.03}),
+        ("better_by", 0.0, 0.02, {"kind": "delta", "point": 0.05, "lo": 0.01, "hi": 0.09}),
+        ("better_by", 0.0, 0.02, {"kind": "delta", "point": 0.015, "lo": 0.001, "hi": 0.03}),
+        ("better_by", 0.0, None, {"kind": "delta", "point": 0.04, "lo": -0.01, "hi": 0.09}),
+        # A candidate no different from the baseline: a zero-width interval at 0.
+        ("better_by", 0.0, None, {"kind": "delta", "point": 0.0, "lo": 0.0, "hi": 0.0}),
+        ("not_worse_than", 0.05, None, {"kind": "delta", "point": 0.0, "lo": -0.03, "hi": 0.03}),
+        ("not_worse_than", 0.05, None, {"kind": "delta", "point": -0.02, "lo": -0.07, "hi": 0.03}),
         ("pass", 0.0, None, {"kind": "verdict", "verdict": True}),
         ("pass", 0.0, None, {"kind": "verdict", "verdict": False}),
     ]

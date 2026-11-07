@@ -4,8 +4,9 @@
 # Approval resolves every setting not given here (positive definition, missing
 # handling, level, interval method, seed, ...), pins the baseline run, the split,
 # the seal and the holdout items' attributes by hash, and writes
-# approved/<hash>.toml, the only file gate reads. At approval `power --gate` shows
-# the probability of passing if the hypothesis holds.
+# approved/<hash>.toml, the only file gate reads. For each condition with an
+# expected_effect, approval reports the probability that it passes if the hypothesis
+# holds, and warns below 0.8.
 name = "prompt-v4 cuts false alarms without losing hits"
 hypothesis = "Clearer instructions for judging missing evidence lower the false-alarm rate by 5 points without lowering the hit rate"
 split = "holdout"
@@ -27,20 +28,22 @@ mode = "soft"
 rater_design = "auto"                 # detected from the overlap and reported; raters are not resampled
 
 # Pass when all hold. The first is the Ladder's primary condition.
-# The false-alarm rate's denominator is the negatives, so with about 500 of them a
-# non-inferiority margin of -0.05 can pass even one-sided at 99%.
+# Differences are read so that positive is better, whatever the metric's direction: a
+# false-alarm rate that falls is a positive difference.
 [[conditions]]
 metric = "false_alarm_rate"
-rule = "delta_upper_bound_at_most"    # the upper end of the (candidate - baseline) interval is at most value
+rule = "better_by"                    # the lower end of the difference's interval is above value
 value = 0.0
-min_effect = 0.02                     # no pass unless the point difference falls by 2 points or more
+min_effect = 0.02                     # no pass unless the point difference is 2 points or more
+expected_effect = 0.05                # what the hypothesis predicts; approval computes the power at it
 sided = "one"
 interval = "auto"                     # replicates mean a bootstrap; the referee requires at least 50/(alpha/B) resamples
 
 [[conditions]]
 metric = "hit_rate"
-rule = "not_worse_than"               # the lower end of the difference's interval, positive being better, is at least -0.05 (non-inferiority)
-value = -0.05                         # a narrow margin such as -0.01 does not pass on a few hundred items even when true
+rule = "not_worse_than"               # the lower end of the difference's interval is above -0.05 (non-inferiority)
+value = 0.05                          # the margin; a narrow one such as 0.01 does not pass on a few hundred items even when true
+expected_effect = 0.0                 # the hypothesis expects no loss of hits
 sided = "one"
 interval = "auto"
 

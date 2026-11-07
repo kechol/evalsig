@@ -27,9 +27,10 @@ version = "j-1"
 
 [[conditions]]
 metric = "accuracy"
-rule = "delta_lower_bound_at_least"
+rule = "better_by"
 value = 0.0
 min_effect = 0.05
+expected_effect = 0.08
 sided = "one"
 
 [holdout]
@@ -183,7 +184,12 @@ fn approval_resolves_and_pins_and_ignores_later_configuration() {
     assert!((r["per_submission_level"].as_f64().unwrap() - 0.99).abs() < 1e-12);
     // 50 / (α/B) = 5000 resamples at least.
     assert!(r["bootstrap"].as_u64().unwrap() >= 5000);
-    assert!(v["results"]["power_at_hypothesis"].as_f64().is_some());
+    assert!(
+        v["results"]["power"][0]["pass_probability"]
+            .as_f64()
+            .is_some(),
+        "{v}"
+    );
     assert!(v["results"]["label_provenance"]["human"].as_u64().is_some());
     let approved = v["results"]["approved"].as_str().unwrap().to_owned();
     let ledger = std::fs::read_to_string(w.home.path().join("ledger.jsonl")).unwrap();

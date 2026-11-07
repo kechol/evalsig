@@ -1,7 +1,7 @@
 //! Power and sample size (metrics spec §12) and the tables of `docs/sample-size.md`,
 //! which `scripts/sample_size.py` also writes; a test checks that both agree.
 
-use crate::numeric::norm_ppf;
+use crate::numeric::{norm_cdf, norm_ppf};
 
 /// ln(k!) for k = 0 … n.
 fn log_factorials(n: usize) -> Vec<f64> {
@@ -232,6 +232,39 @@ pub fn gate_pass_probability(n: u64, p10: f64, p01: f64, alpha: f64, budget: u32
     mcnemar_power(n as usize, p10, p01, bonferroni(alpha, budget), false)
 }
 
+/// The probability that a difference condition passes on `n` paired items with
+/// discordance `psi` when the candidate is truly better by `effect` (positive is better;
+/// metrics spec §11.1): the difference's lower bound, with `tail` beyond it, must exceed
+/// `threshold` and its point reach `min_effect` (−∞ for a rule without one). The paired
+/// difference is taken as normal
+/// with standard error √((ψ − effect²)/n), ψ raised to |effect| when smaller, since no
+/// more items can change than are discordant. `None` without items or with a tail
+/// outside (0, 1).
+pub fn difference_pass_probability(
+    n: f64,
+    psi: f64,
+    effect: f64,
+    threshold: f64,
+    min_effect: f64,
+    tail: f64,
+) -> Option<f64> {
+    if n <= 0.0 || !(tail > 0.0 && tail < 1.0) {
+        return None;
+    }
+    let psi = psi.max(effect.abs());
+    let se = ((psi - effect * effect).max(0.0) / n).sqrt();
+    let need = (threshold + norm_ppf(1.0 - tail) * se).max(min_effect);
+    if se == 0.0 {
+        // Every item changes the same way: the difference is the effect itself.
+        return Some(if effect > threshold && effect >= min_effect {
+            1.0
+        } else {
+            0.0
+        });
+    }
+    Some(1.0 - norm_cdf((need - effect) / se))
+}
+
 /// `docs/sample-size.md`, as `scripts/sample_size.py` writes it.
 pub fn table() -> String {
     fn text(l: &mut Vec<String>, lines: &[&str]) {
@@ -349,6 +382,41 @@ mod tests {
         assert_eq!(with_design_effect(100, 3.0, 0.5), 200);
         let p = gate_pass_probability(530, p10, p01, 0.05, 20);
         assert!(p > 0.7 && p < 0.9, "{p}");
+    }
+
+    #[test]
+    fn a_difference_condition_passes_as_its_effect_allows() {
+        // At an effect of exactly min_effect the point condition alone caps it near ½.
+        let p = difference_pass_probability(600.0, 0.1, 0.05, 0.0, 0.05, 0.01).unwrap();
+        assert!((p - 0.5).abs() < 1e-12, "{p}");
+        // A larger true effect clears both parts: 1 − Φ((0.05 − 0.08)/se).
+        let se = ((0.1 - 0.08f64.powi(2)) / 600.0).sqrt();
+        let p = difference_pass_probability(600.0, 0.1, 0.08, 0.0, 0.05, 0.01).unwrap();
+        assert!(
+            (p - (1.0 - norm_cdf((0.05 - 0.08) / se))).abs() < 1e-12,
+            "{p}"
+        );
+        // Non-inferiority at no true difference: a margin of 0.03 is about z·se here, so
+        // it passes about half the time; a margin of 0.05 almost always.
+        let se = (0.1f64 / 600.0).sqrt();
+        let p =
+            difference_pass_probability(600.0, 0.1, 0.0, -0.03, f64::NEG_INFINITY, 0.01).unwrap();
+        let expected = 1.0 - norm_cdf((-0.03 + norm_ppf(0.99) * se) / se);
+        assert!(
+            (p - expected).abs() < 1e-12 && (p - 0.5).abs() < 0.01,
+            "{p}"
+        );
+        let p =
+            difference_pass_probability(600.0, 0.1, 0.0, -0.05, f64::NEG_INFINITY, 0.01).unwrap();
+        assert!(p > 0.9, "{p}");
+        assert_eq!(
+            difference_pass_probability(0.0, 0.1, 0.05, 0.0, 0.0, 0.01),
+            None
+        );
+        assert_eq!(
+            difference_pass_probability(100.0, 0.1, 1.0, 0.0, 0.05, 0.01),
+            Some(1.0)
+        );
     }
 
     #[test]

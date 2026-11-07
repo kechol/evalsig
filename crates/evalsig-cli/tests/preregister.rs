@@ -10,7 +10,7 @@ const EXAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/gate.
 /// The hash of the example's canonical form; a change means the example or the
 /// canonical form changed.
 const EXAMPLE_HASH: &str =
-    "blake3:4051a70ee3e78b9f055eab9b0bd36414aa046d0932da7c557eab8f1045535037";
+    "blake3:55b72281fb757c80b0faacaf133d2b22bd254de37be4c06f713752353a830de7";
 
 fn evalsig(dir: &Path) -> Command {
     let mut c = Command::cargo_bin("evalsig").unwrap();

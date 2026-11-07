@@ -606,15 +606,16 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   passes, it can register lenient conditions, re-register after a failure, or register
   many and report the ones that pass. The ledger's actor is self-declared, so approval
   is separated by authority.
-- **Rules.** Six rules, each reading an interval or a verdict and never a point value
-  alone (`crates/evalsig-core/src/gate.rs`): `lower_bound_at_least` and
-  `upper_bound_at_most` on the candidate's value; `delta_lower_bound_at_least` and
-  `delta_upper_bound_at_most` on the candidate-minus-baseline difference;
-  `not_worse_than` (non-inferiority: the lower bound of the difference, oriented so that
-  positive is better, is at least a negative margin); and `pass` for a verdict metric.
-  For the two difference rules with a `min_effect`, a point difference smaller than it
-  does not pass. `pass` reads the alternative annotator test on the holdout
-  ([metrics](metrics.md) §9.4).
+- **Rules.** Five rules, each reading an interval or a verdict and never a point value
+  alone (`crates/evalsig-core/src/gate.rs`, D-034): `lower_bound_at_least` and
+  `upper_bound_at_most` on the candidate's value; `better_by` (the lower bound of the
+  difference to the baseline is above a margin, and the point difference reaches
+  `min_effect`) and `not_worse_than` (non-inferiority: the lower bound is above minus a
+  margin), both on the difference oriented so that positive is better and both strict;
+  and `pass` for a verdict metric, which reads the alternative annotator test on the
+  holdout ([metrics](metrics.md) §9.4). A difference condition may state the
+  `expected_effect` its hypothesis predicts; approval then reports the probability that
+  it passes ([metrics](metrics.md) §11.1).
 - **Several conditions.** All must hold. This is an intersection-union test, so the
   overall error rate does not exceed any condition's level and no further correction is
   needed.

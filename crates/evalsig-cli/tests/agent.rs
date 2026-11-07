@@ -281,7 +281,7 @@ version = "1"
 [[conditions]]
 metric = "accuracy"
 rule = "not_worse_than"
-value = -0.3
+value = 0.3
 sided = "one"
 
 [holdout]

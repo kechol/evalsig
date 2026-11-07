@@ -45,8 +45,7 @@ fn each_rule_has_a_passing_and_a_failing_case() {
     for rule in [
         "lower_bound_at_least",
         "upper_bound_at_most",
-        "delta_lower_bound_at_least",
-        "delta_upper_bound_at_most",
+        "better_by",
         "not_worse_than",
         "pass",
     ] {
@@ -55,7 +54,7 @@ fn each_rule_has_a_passing_and_a_failing_case() {
             "{rule}"
         );
     }
-    // The rule set has exactly these six, all read intervals or verdicts.
+    // The rule set has exactly these five, all read intervals or verdicts.
     assert!(serde_json::from_value::<Rule>(Value::String("point_at_least".into())).is_err());
 }
 

@@ -106,6 +106,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | trend | `trend`, `baseline_period` | Per-period metrics with intervals, each period compared with the baseline period as independent samples: `drifted` when the interval of the difference excludes 0, else `stable` |
 | winner's curse | — | Picking the best of many candidates biases its estimate upwards |
 | minimum effect | `min_effect` | Differences smaller than this are not called improvements even if the interval excludes 0 |
+| expected effect | `expected_effect` | The difference a gate condition's hypothesis predicts, positive being better; approval computes the probability that the condition passes at it |
 | missing bounds | `missing_bounds` | The metric range when system-side missing judgments are filled with the best and worst values (Manski bounds) |
 | position bias | — | In pairwise comparison, the side shown first (left) tends to win |
 | prediction-powered inference | `ppi`, `proxy` | Combines many grader labels with a few human labels to estimate the human-standard value without bias. `proxy` names the model rater whose labels fill in; `corrected` is false when the human-labelled items are not known to be random, and only the human labels are used |

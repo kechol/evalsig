@@ -36,7 +36,7 @@ budget = {budget}
     )
 }
 
-const NOT_WORSE: &str = "rule = \"not_worse_than\"\nvalue = -0.3";
+const NOT_WORSE: &str = "rule = \"not_worse_than\"\nvalue = 0.3";
 
 /// Every reference label of each item.
 fn references() -> BTreeMap<String, Vec<Value>> {
@@ -276,7 +276,7 @@ fn referee_reapproval_keeps_budget() {
     // Rewritten conditions, approved again on the same sealed holdout.
     let again = approve(
         &w,
-        &gate_toml(10, 2, "rule = \"not_worse_than\"\nvalue = -0.5"),
+        &gate_toml(10, 2, "rule = \"not_worse_than\"\nvalue = 0.5"),
         None,
     );
     assert_ne!(again, w.approved);

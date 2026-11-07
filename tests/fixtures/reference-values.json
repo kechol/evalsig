@@ -4191,7 +4191,7 @@
    },
    {
     "input": {
-     "rule": "delta_lower_bound_at_least",
+     "rule": "better_by",
      "value": 0.0,
      "min_effect": 0.02,
      "evidence": {
@@ -4208,7 +4208,7 @@
    },
    {
     "input": {
-     "rule": "delta_lower_bound_at_least",
+     "rule": "better_by",
      "value": 0.0,
      "min_effect": 0.02,
      "evidence": {
@@ -4225,7 +4225,7 @@
    },
    {
     "input": {
-     "rule": "delta_lower_bound_at_least",
+     "rule": "better_by",
      "value": 0.0,
      "min_effect": null,
      "evidence": {
@@ -4242,31 +4242,14 @@
    },
    {
     "input": {
-     "rule": "delta_upper_bound_at_most",
+     "rule": "better_by",
      "value": 0.0,
-     "min_effect": 0.02,
+     "min_effect": null,
      "evidence": {
       "kind": "delta",
-      "point": -0.05,
-      "lo": -0.09,
-      "hi": -0.01
-     }
-    },
-    "source": "closed (SPEC §8.3 rule definitions)",
-    "expected": {
-     "passed": true
-    }
-   },
-   {
-    "input": {
-     "rule": "delta_upper_bound_at_most",
-     "value": 0.0,
-     "min_effect": 0.02,
-     "evidence": {
-      "kind": "delta",
-      "point": -0.01,
-      "lo": -0.02,
-      "hi": -0.001
+      "point": 0.0,
+      "lo": 0.0,
+      "hi": 0.0
      }
     },
     "source": "closed (SPEC §8.3 rule definitions)",
@@ -4277,7 +4260,7 @@
    {
     "input": {
      "rule": "not_worse_than",
-     "value": -0.05,
+     "value": 0.05,
      "min_effect": null,
      "evidence": {
       "kind": "delta",
@@ -4294,7 +4277,7 @@
    {
     "input": {
      "rule": "not_worse_than",
-     "value": -0.05,
+     "value": 0.05,
      "min_effect": null,
      "evidence": {
       "kind": "delta",

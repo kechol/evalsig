@@ -26,7 +26,7 @@ version = "1"
 [[conditions]]
 metric = "accuracy"
 rule = "not_worse_than"
-value = -0.3
+value = 0.3
 sided = "one"
 
 [[conditions]]
@@ -345,7 +345,7 @@ fn each_run_of_one_records_file_is_its_own_submission() {
 fn a_condition_without_a_threshold_is_not_a_draft() {
     let w = world(&gate_toml(10, 3), None);
     let g = w.agent.path().join("no-value.toml");
-    std::fs::write(&g, gate_toml(10, 3).replace("value = -0.3\n", "")).unwrap();
+    std::fs::write(&g, gate_toml(10, 3).replace("value = 0.3\n", "")).unwrap();
     let out = evalsig(w.agent.path())
         .args(["--format", "json", "preregister", "--draft"])
         .arg(&g)
@@ -369,7 +369,7 @@ fn parity_drafts_and_uncomputed_metrics_are_checked_up_front() {
         std::fs::write(
             &g,
             gate_toml(10, 3).replace(
-                "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+                "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = 0.3",
                 condition,
             ),
         )
@@ -400,7 +400,7 @@ fn parity_drafts_and_uncomputed_metrics_are_checked_up_front() {
     // A metric the gate does not compute for this run is an error, not undecided.
     let w = world(
         &gate_toml(10, 3).replace(
-            "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+            "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = 0.3",
             "metric = \"dprime\"\nrule = \"lower_bound_at_least\"\nvalue = 0.0",
         ),
         None,
@@ -555,7 +555,7 @@ fn the_gate_answer_renders_as_junit_without_values() {
     let xml = String::from_utf8(out.stdout).unwrap();
     assert!(xml.contains("tests=\"2\""), "{xml}");
     assert!(
-        xml.contains("name=\"accuracy not_worse_than -0.3\""),
+        xml.contains("name=\"accuracy not_worse_than 0.3\""),
         "{xml}"
     );
     assert!(xml.contains("<failure message=\"the referee returns the verdict only\"/>"));
@@ -589,8 +589,8 @@ fn approval_warns_of_low_power_and_counts_earlier_queries() {
     let v = approve_output(
         &w,
         &gate_toml(10, 3).replace(
-            "rule = \"not_worse_than\"\nvalue = -0.3",
-            "rule = \"delta_lower_bound_at_least\"\nvalue = 0.0\nmin_effect = 0.01",
+            "rule = \"not_worse_than\"\nvalue = 0.3",
+            "rule = \"better_by\"\nvalue = 0.0\nmin_effect = 0.01\nexpected_effect = 0.02",
         ),
         None,
     );
@@ -599,10 +599,12 @@ fn approval_warns_of_low_power_and_counts_earlier_queries() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|x| x["code"] == "low_power_at_hypothesis"),
+            .any(|x| x["code"] == "low_power"),
         "{v}"
     );
-    assert!(v["results"]["power_at_hypothesis"].as_f64().unwrap() < 0.5);
+    let p = &v["results"]["power"][0];
+    assert_eq!(p["condition"], 0, "{v}");
+    assert!(p["pass_probability"].as_f64().unwrap() < 0.8, "{v}");
     assert_eq!(v["results"]["holdout_access_so_far"], 1);
 }
 
@@ -632,7 +634,7 @@ fn three_raters() -> (Vec<Value>, BTreeMap<String, bool>) {
 fn a_parity_condition_passes_a_candidate_that_says_what_people_say() {
     let (referee_rows, truth) = three_raters();
     let gate = gate_toml(10, 3).replace(
-        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
+        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = 0.3",
         "metric = \"human_parity\"\nrule = \"pass\"",
     );
     let w = world_from(&referee_rows, &gate, None);
@@ -751,8 +753,8 @@ fn a_condition_without_a_level_is_judged_at_the_default_level() {
     // The first condition names level 0.9; the second names none and keeps the default
     // 0.95, so the first level fixes only the per-submission level.
     let gate = gate_toml(10, 5).replacen(
-        "value = -0.3\nsided = \"one\"",
-        "value = -0.3\nsided = \"one\"\nlevel = 0.9",
+        "value = 0.3\nsided = \"one\"",
+        "value = 0.3\nsided = \"one\"\nlevel = 0.9",
         1,
     );
     let w = world(&gate_toml(10, 5), None);
@@ -783,8 +785,8 @@ fn not_worse_than_bounds_the_loss_on_a_lower_is_better_metric() {
     // Non-inferiority reads the difference oriented so that positive is better, so a
     // margin of -0.05 on the false-alarm rate bounds how far it may rise.
     let gate = gate_toml(10, 3).replace(
-        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = -0.3",
-        "metric = \"false_alarm_rate\"\nrule = \"not_worse_than\"\nvalue = -0.05",
+        "metric = \"accuracy\"\nrule = \"not_worse_than\"\nvalue = 0.3",
+        "metric = \"false_alarm_rate\"\nrule = \"not_worse_than\"\nvalue = 0.05",
     );
     let w = world(&gate, None);
     let judged_all = |rows: &mut Vec<Value>, value: bool| {

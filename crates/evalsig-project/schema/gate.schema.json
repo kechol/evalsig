@@ -185,20 +185,24 @@
       "enum": [
        "lower_bound_at_least",
        "upper_bound_at_most",
-       "delta_lower_bound_at_least",
-       "delta_upper_bound_at_most",
+       "better_by",
        "not_worse_than",
        "pass"
       ],
-      "description": "pass applies only to verdict metrics such as human_parity"
+      "description": "better_by and not_worse_than read the difference to the baseline oriented so that positive is better (D-034): better_by passes when its lower bound is above value and its point reaches min_effect, not_worse_than when its lower bound is above -value. pass applies only to verdict metrics such as human_parity"
      },
      "value": {
-      "type": "number"
+      "type": "number",
+      "description": "The bound: a value for the absolute rules, a margin of at least 0 for better_by and not_worse_than"
      },
      "min_effect": {
       "type": "number",
       "minimum": 0,
-      "description": "The smallest difference that matters: a delta rule does not pass when the point difference is below it"
+      "description": "better_by only: the smallest difference that matters; the condition does not pass when the point difference is below it"
+     },
+     "expected_effect": {
+      "type": "number",
+      "description": "better_by and not_worse_than only: the difference the hypothesis expects (positive is better), at which approval computes the probability that the condition passes"
      },
      "sided": {
       "enum": [
@@ -299,8 +303,7 @@
        "properties": {
         "rule": {
          "enum": [
-          "delta_lower_bound_at_least",
-          "delta_upper_bound_at_most",
+          "better_by",
           "not_worse_than"
          ]
         }

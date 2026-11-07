@@ -151,7 +151,10 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
         "budget": doc.budget(),
         "per_submission_level": format!("{:.6}", resolved.per_submission_level),
         "ladder_step": resolved.ladder.as_ref().map(|l| format!("{:.6}", l.step)),
-        "power_at_hypothesis": power.map(|p| format!("{p:.4}")),
+        "power": power.iter().map(|p| json!({
+            "condition": p.condition,
+            "pass_probability": format!("{:.4}", p.pass_probability),
+        })).collect::<Vec<_>>(),
     });
     referee.record(
         Kind::PreregisterApprove,
@@ -165,7 +168,12 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
             "approved": approved,
             "file": path.display().to_string(),
             "resolved": resolved,
-            "power_at_hypothesis": power,
+            "power": power.iter().map(|p| json!({
+                "condition": p.condition,
+                "metric": p.metric,
+                "expected_effect": p.expected_effect,
+                "pass_probability": p.pass_probability,
+            })).collect::<Vec<_>>(),
             "holdout_access_so_far": resolved.holdout_access_so_far,
             "label_provenance": provenance,
         })),
@@ -178,15 +186,25 @@ pub fn approve(root: &Path, args: &Request) -> Result<Output, Error> {
             message: "no Ladder step could be fixed (no baseline, or the first condition's metric has no value on both sides of the holdout); the gate will return verdicts only".into(),
         });
     }
-    if let Some(p) = power.filter(|p| *p < 0.5) {
+    for p in power.iter().filter(|p| p.pass_probability < 0.8) {
         envelope.warnings.push(Warning {
-            code: "low_power_at_hypothesis".into(),
+            code: "low_power".into(),
             message: format!(
-                "if the hypothesis holds, the gate passes with probability {p:.2} only"
+                "condition {} ({}) passes with probability {:.2} only if the candidate is better by the expected {}",
+                p.condition, p.metric, p.pass_probability, p.expected_effect
             ),
         });
     }
     Ok(Output::success(envelope))
+}
+
+/// The probability that a difference condition passes at its expected effect (metrics
+/// spec §11.1).
+struct Power {
+    condition: usize,
+    metric: String,
+    expected_effect: f64,
+    pass_probability: f64,
 }
 
 /// What approval pins of the referee's state, beside the resolved settings.
@@ -211,7 +229,7 @@ struct Approval<'a> {
 impl Approval<'_> {
     /// Every setting the gate needs, from the draft or else the referee's
     /// configuration, and the power at the hypothesis when there is a baseline.
-    fn resolve(&self, pins: Pins) -> Result<(Resolved, Option<f64>), Error> {
+    fn resolve(&self, pins: Pins) -> Result<(Resolved, Vec<Power>), Error> {
         let (doc, config, d) = (self.doc, self.config, self.d);
         let task = doc.task();
         let run = doc
@@ -281,68 +299,98 @@ impl Approval<'_> {
             mapping_hash: pins.mapping_hash,
             holdout_access_so_far: pins.holdout_access_so_far,
         };
-        let mut power = None;
+        let mut power = Vec::new();
         if let Some(run) = run {
             resolved.ladder = self.ladder(run, positive, decision)?;
             resolved.output_type = run.output_type;
             resolved.levels = run.levels;
             resolved.value_semantics = Some(run.value_semantics());
             resolved.baseline_snapshot = Some(baseline_hash(d, &run.run_id)?);
-            power = self.power_at_hypothesis(run, positive, decision, per_submission)?;
+            power = self.power(run, positive, decision, level, budget)?;
         }
         Ok((resolved, power))
     }
 
-    /// The probability of passing the primary difference condition if the candidate is
-    /// better by its `min_effect`, on the holdout's items, at the per-submission level
-    /// (metrics spec §11.1, §12). ψ̂ = max(0.05, 4/n, min(1, 2·e_val)) with e_val the
-    /// baseline's error on the items outside the holdout (§11.3).
-    fn power_at_hypothesis(
+    /// For each difference condition that states an `expected_effect`, the probability
+    /// that it passes if the candidate is better by that much (metrics spec §11.1): on the
+    /// metric's denominator in the holdout, at the condition's own level and sidedness
+    /// and the budget, with the discordance ψ̂ the Ladder uses.
+    fn power(
         &self,
         run: &Run,
         positive: Option<Rule>,
         decision: Option<Rule>,
-        per_submission: f64,
-    ) -> Result<Option<f64>, Error> {
+        level: f64,
+        budget: u32,
+    ) -> Result<Vec<Power>, Error> {
+        let mut out = Vec::new();
+        for (k, c) in self.doc.conditions.iter().enumerate() {
+            let Some(effect) = c.expected_effect.filter(|_| c.rule.on_delta()) else {
+                continue;
+            };
+            let (Some((outside, _, higher)), Some((_, n, _))) = (
+                self.metric_on(run, &c.metric, false, positive, decision)?,
+                self.metric_on(run, &c.metric, true, positive, decision)?,
+            ) else {
+                continue;
+            };
+            let e_val = if higher { 1.0 - outside } else { outside };
+            let value = c.value.unwrap_or(0.0);
+            let (threshold, min_effect) = match c.rule {
+                gate::Rule::NotWorseThan => (-value, f64::NEG_INFINITY),
+                _ => (value, c.min_effect.unwrap_or(0.0)),
+            };
+            let tail = (1.0 - interval_level(c.level.unwrap_or(level), budget, c.sided)) / 2.0;
+            if let Some(p) = power::difference_pass_probability(
+                n,
+                gate::ladder_psi(e_val, n),
+                effect,
+                threshold,
+                min_effect,
+                tail,
+            ) {
+                out.push(Power {
+                    condition: k,
+                    metric: c.metric.clone(),
+                    expected_effect: effect,
+                    pass_probability: p,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The baseline's value of `metric`, its denominator and whether higher is better, on
+    /// the holdout (`inside`) or off it, with every missing value the worst as the gate
+    /// counts it.
+    fn metric_on(
+        &self,
+        run: &Run,
+        metric: &str,
+        inside: bool,
+        positive: Option<Rule>,
+        decision: Option<Rule>,
+    ) -> Result<Option<(f64, f64, bool)>, Error> {
         let (d, held) = (self.d, self.held);
-        let c = &self.doc.conditions[0];
-        let on_delta = matches!(
-            c.rule,
-            gate::Rule::DeltaLowerBoundAtLeast | gate::Rule::DeltaUpperBoundAtMost
-        );
-        let Some(delta) = c.min_effect.filter(|m| *m > 0.0 && on_delta) else {
-            return Ok(None);
-        };
-        let outside: Vec<&Judgment> = d
-            .judgments(&run.run_id)
-            .into_iter()
-            .filter(|j| !held.contains(&j.item_id))
-            .collect();
         let (all, _) = d.labels(None)?;
         let labels: Vec<&Label> = all.iter().collect();
-        let settings = self.baseline_settings(positive, decision);
-        let r =
-            report::build(run, &outside, &d.items(), &labels, &settings).map_err(Error::report)?;
-        let Some(accuracy) = r
-            .metrics
-            .iter()
-            .find(|m| m.metric == "accuracy")
-            .and_then(|m| m.value)
-        else {
+        let settings = report::Settings {
+            missing: evalsig_core::missing::MissingPolicy::holdout(),
+            ..self.baseline_settings(positive, decision)
+        };
+        let judgments: Vec<&Judgment> = d
+            .judgments(&run.run_id)
+            .into_iter()
+            .filter(|j| held.contains(&j.item_id) == inside)
+            .collect();
+        let p = report::prepare(run, &judgments, &d.items(), &labels, &settings)
+            .map_err(Error::report)?;
+        let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == metric) else {
             return Ok(None);
         };
-        let n = held.len() as f64;
-        let psi = (2.0 * (1.0 - accuracy)).min(1.0).max(4.0 / n).max(0.05);
-        if delta >= psi {
-            return Ok(None);
-        }
-        Ok(Some(power::mcnemar_power(
-            held.len(),
-            (psi + delta) / 2.0,
-            (psi - delta) / 2.0,
-            1.0 - per_submission,
-            false,
-        )))
+        let values = p.item_values(id, Fill::Policy);
+        let n: f64 = values.values().map(|v| v.denominator).sum();
+        Ok(evalsig_core::compare::total_ratio(&values).map(|v| (v, n, id.higher_is_better())))
     }
 
     /// The settings a baseline is read with at approval, as the gate will read it.
@@ -387,33 +435,11 @@ impl Approval<'_> {
         positive: Option<Rule>,
         decision: Option<Rule>,
     ) -> Result<Option<Ladder>, Error> {
-        let (d, held) = (self.d, self.held);
         let metric = self.doc.conditions[0].metric.as_str();
-        let (all, _) = d.labels(None)?;
-        let labels: Vec<&Label> = all.iter().collect();
-        // On the holdout every missing value is the worst, as the gate will count it.
-        let settings = report::Settings {
-            missing: evalsig_core::missing::MissingPolicy::holdout(),
-            ..self.baseline_settings(positive, decision)
-        };
-        let items = d.items();
-        // The metric's value, its denominator and its direction, on or off the holdout.
-        let on = |inside: bool| -> Result<Option<(f64, f64, bool)>, Error> {
-            let judgments: Vec<&Judgment> = d
-                .judgments(&run.run_id)
-                .into_iter()
-                .filter(|j| held.contains(&j.item_id) == inside)
-                .collect();
-            let p = report::prepare(run, &judgments, &items, &labels, &settings)
-                .map_err(Error::report)?;
-            let Some(id) = p.metric_ids().into_iter().find(|id| id.name() == metric) else {
-                return Ok(None);
-            };
-            let values = p.item_values(id, Fill::Policy);
-            let n: f64 = values.values().map(|v| v.denominator).sum();
-            Ok(evalsig_core::compare::total_ratio(&values).map(|v| (v, n, id.higher_is_better())))
-        };
-        let (Some((outside, _, higher)), Some((first_best, n, _))) = (on(false)?, on(true)?) else {
+        let (Some((outside, _, higher)), Some((first_best, n, _))) = (
+            self.metric_on(run, metric, false, positive, decision)?,
+            self.metric_on(run, metric, true, positive, decision)?,
+        ) else {
             return Ok(None);
         };
         let e_val = if higher { 1.0 - outside } else { outside };

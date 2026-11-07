@@ -91,6 +91,10 @@ pub struct Condition {
     pub value: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_effect: Option<f64>,
+    /// The difference the hypothesis expects (positive is better), at which approval
+    /// computes the probability that the condition passes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_effect: Option<f64>,
     pub sided: Sided,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<f64>,
@@ -242,6 +246,28 @@ pub fn check(doc: &Value, origin: &str) -> Result<(), Error> {
         if c["rule"] != "pass" && !c["value"].is_number() {
             errors.push(format!(
                 "/conditions/{k}: rule {} needs a numeric value",
+                c["rule"]
+            ));
+        }
+        // A difference rule's value is a margin on the difference oriented so that positive
+        // is better (D-034): how far above 0 `better_by` must be, how far below 0
+        // `not_worse_than` may be.
+        let on_difference = c["rule"] == "better_by" || c["rule"] == "not_worse_than";
+        if on_difference && c["value"].as_f64().is_some_and(|v| v < 0.0) {
+            errors.push(format!(
+                "/conditions/{k}: the value of {} is a margin of at least 0",
+                c["rule"]
+            ));
+        }
+        if c["min_effect"].is_number() && c["rule"] != "better_by" {
+            errors.push(format!(
+                "/conditions/{k}: min_effect belongs to better_by, not {}",
+                c["rule"]
+            ));
+        }
+        if c["expected_effect"].is_number() && !on_difference {
+            errors.push(format!(
+                "/conditions/{k}: expected_effect belongs to a difference rule, not {}",
                 c["rule"]
             ));
         }

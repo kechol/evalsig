@@ -699,18 +699,30 @@ fn ladder(j: &Judging, h: &Holdout) -> Result<Option<NewBest>, Error> {
         scope: None,
     };
     // MetricDelta is oriented so that positive is better.
-    let beats = compare::compare(&Baseline::new(&best), &cand, &options)
+    let Some(m) = compare::compare(&Baseline::new(&best), &cand, &options)
         .metrics
-        .iter()
+        .into_iter()
         .find(|m| m.metric == l.metric)
-        .and_then(|m| Some(m.ci?.0 > 0.0 && m.delta? >= l.step))
-        .unwrap_or(false);
-    if !beats {
+    else {
+        return Ok(None);
+    };
+    if !m
+        .ci
+        .zip(m.delta)
+        .is_some_and(|((lo, _), d)| lo > 0.0 && d >= l.step)
+    {
         return Ok(None);
     }
-    // A difference rule returns the difference to the baseline, rounded toward 0.
+    // A difference rule returns the difference to the baseline as the rule reads it,
+    // oriented so that positive is better, rounded toward 0.
     let shown = if primary.rule.on_delta() {
-        gate::round_toward(value - l.first_best, 0.0, l.step)
+        let gap = value - l.first_best;
+        let oriented = if m.direction == "higher_is_better" {
+            gap
+        } else {
+            -gap
+        };
+        gate::round_toward(oriented, 0.0, l.step)
     } else {
         gate::round_toward(value, l.first_best, l.step)
     };
@@ -782,24 +794,10 @@ fn evidence(
         let Some(m) = c.metrics.iter().find(|m| m.metric == metric) else {
             return Err(not_computed(metric));
         };
-        // MetricDelta is oriented so that positive is better. The two delta rules read
-        // cand − base on the metric's own scale; not_worse_than keeps the orientation, so
-        // its negative margin bounds the loss on a lower-is-better metric too.
-        let sign = if m.direction == "higher_is_better" || matches!(rule, GateRule::NotWorseThan) {
-            1.0
-        } else {
-            -1.0
-        };
+        // MetricDelta is oriented so that positive is better, as the difference rules read
+        // it (D-034).
         return Ok(match (m.delta, m.ci) {
-            (Some(dl), Some((lo, hi))) => Some(if sign > 0.0 {
-                Evidence::Delta { point: dl, lo, hi }
-            } else {
-                Evidence::Delta {
-                    point: -dl,
-                    lo: -hi,
-                    hi: -lo,
-                }
-            }),
+            (Some(point), Some((lo, hi))) => Some(Evidence::Delta { point, lo, hi }),
             _ => None,
         });
     }

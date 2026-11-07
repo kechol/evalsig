@@ -1,7 +1,7 @@
 //! The gate's rules (SPEC §8.3 "Rules", metrics spec §11.1). Every rule reads an
-//! interval or a verdict; none reads a point estimate alone. A delta is
-//! candidate − baseline on the metric's own scale, except for `not_worse_than`, which
-//! reads it oriented so that positive is better.
+//! interval or a verdict; none reads a point estimate alone. A difference is the
+//! candidate's against the baseline's, oriented so that positive is better whatever the
+//! metric's direction (D-034).
 
 use std::collections::BTreeMap;
 
@@ -18,12 +18,11 @@ pub enum Rule {
     LowerBoundAtLeast,
     /// The candidate value's interval has an upper bound of at most `value`.
     UpperBoundAtMost,
-    /// The delta's interval has a lower bound of at least `value`.
-    DeltaLowerBoundAtLeast,
-    /// The delta's interval has an upper bound of at most `value`.
-    DeltaUpperBoundAtMost,
-    /// Non-inferiority: the lower bound of the delta, oriented so that positive is better,
-    /// is at least `value` (a negative margin).
+    /// Superiority by a margin: the difference's lower bound is above `value` (at least
+    /// 0), and its point reaches `min_effect`.
+    BetterBy,
+    /// Non-inferiority: the difference's lower bound is above −`value`, the margin (at
+    /// least 0) by which the candidate may trail.
     NotWorseThan,
     /// A verdict metric such as `human_parity`.
     Pass,
@@ -52,7 +51,8 @@ pub enum Evidence {
         /// Upper end of the interval.
         hi: f64,
     },
-    /// The difference between the arms with its confidence interval.
+    /// The difference between the arms, oriented so that positive is better, with its
+    /// confidence interval.
     Delta {
         /// Point estimate.
         point: f64,
@@ -77,10 +77,7 @@ pub struct Outcome {
 impl Rule {
     /// Whether the rule reads the delta rather than the candidate's value.
     pub fn on_delta(self) -> bool {
-        matches!(
-            self,
-            Rule::DeltaLowerBoundAtLeast | Rule::DeltaUpperBoundAtMost | Rule::NotWorseThan
-        )
+        matches!(self, Rule::BetterBy | Rule::NotWorseThan)
     }
 }
 
@@ -94,8 +91,9 @@ pub fn interval_level(level: f64, budget: u32, sided: Sided) -> f64 {
     }
 }
 
-/// Judge one condition. `min_effect` applies to the two delta rules: the point
-/// difference must move by at least that much in the rule's direction.
+/// Judge one condition. The difference rules are strict, so a candidate no different from
+/// the baseline (an interval of zero width at 0) does not pass `better_by = 0`.
+/// `min_effect` applies to `better_by`: the point difference must reach it.
 pub fn judge(
     rule: Rule,
     value: f64,
@@ -111,13 +109,8 @@ pub fn judge(
     let (passed, bound) = match (rule, e) {
         (Rule::LowerBoundAtLeast, Evidence::Value { lo, .. }) => (lo >= value, lo),
         (Rule::UpperBoundAtMost, Evidence::Value { hi, .. }) => (hi <= value, hi),
-        (Rule::DeltaLowerBoundAtLeast, Evidence::Delta { point, lo, .. }) => {
-            (lo >= value && point >= m, lo)
-        }
-        (Rule::DeltaUpperBoundAtMost, Evidence::Delta { point, hi, .. }) => {
-            (hi <= value && point <= -m, hi)
-        }
-        (Rule::NotWorseThan, Evidence::Delta { lo, .. }) => (lo >= value, lo),
+        (Rule::BetterBy, Evidence::Delta { point, lo, .. }) => (lo > value && point >= m, lo),
+        (Rule::NotWorseThan, Evidence::Delta { lo, .. }) => (lo > -value, lo),
         (Rule::Pass, Evidence::Verdict(v)) => {
             return Outcome {
                 passed: Some(v),
@@ -254,7 +247,7 @@ mod tests {
         );
         // Evidence of the wrong kind or none: undecided.
         assert_eq!(
-            judge(Rule::NotWorseThan, -0.05, None, Some(wide)).passed,
+            judge(Rule::NotWorseThan, 0.05, None, Some(wide)).passed,
             None
         );
         assert_eq!(judge(Rule::Pass, 0.0, None, None).passed, None);
@@ -272,6 +265,34 @@ mod tests {
             None
         );
         assert!((interval_level(0.95, 5, Sided::One) - 0.98).abs() < 1e-12);
+        // A candidate identical to the baseline gives a zero-width interval at 0: it is
+        // not better by 0, though it is not worse than a margin.
+        let same = Evidence::Delta {
+            point: 0.0,
+            lo: 0.0,
+            hi: 0.0,
+        };
+        assert_eq!(
+            judge(Rule::BetterBy, 0.0, None, Some(same)).passed,
+            Some(false)
+        );
+        assert_eq!(
+            judge(Rule::NotWorseThan, 0.02, None, Some(same)).passed,
+            Some(true)
+        );
+        assert_eq!(
+            judge(Rule::NotWorseThan, 0.0, None, Some(same)).passed,
+            Some(false)
+        );
+        let all = Evidence::Delta {
+            point: 1.0,
+            lo: 1.0,
+            hi: 1.0,
+        };
+        assert_eq!(
+            judge(Rule::BetterBy, 0.0, None, Some(all)).passed,
+            Some(true)
+        );
         assert!((interval_level(0.95, 5, Sided::Two) - 0.99).abs() < 1e-12);
     }
 }

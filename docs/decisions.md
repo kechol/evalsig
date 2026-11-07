@@ -1151,3 +1151,37 @@ after the entry is `Accepted`.
 - Consequences: new dashboard text is a new variant with both texts; another
   language adds a column to every variant.
 
+## D-034 Gate difference rules read the oriented difference
+
+- Status: Accepted
+- Date: 2026-11-07
+- Context: The gate had three difference rules. `delta_lower_bound_at_least` and
+  `delta_upper_bound_at_most` read candidate − baseline on the metric's own scale, so
+  a lower-is-better metric needed the second rule and the sign of its margin, while
+  `not_worse_than` read the difference oriented so that positive is better. Reading
+  one rule in the other's orientation let a candidate with more false alarms pass. The
+  bounds were inclusive, so a candidate identical to the baseline, whose bootstrap
+  interval is [0, 0], passed `delta_lower_bound_at_least = 0`. Approval's power assumed
+  the candidate better by exactly `min_effect`, where the point condition alone caps the
+  pass probability near one half, and it fixed accuracy, the holdout size and one side.
+- Decision:
+  - Two difference rules, both on the difference oriented so that positive is better
+    (as `compare` reports it) and both strict: `better_by = m` passes when the lower
+    bound is above m and the point reaches `min_effect`; `not_worse_than = m` passes
+    when the lower bound is above −m. m is a margin of at least 0; `min_effect` belongs
+    to `better_by` only.
+  - A difference condition may state `expected_effect`, the difference its hypothesis
+    predicts. Approval reports, for each such condition, the probability that it passes
+    at that effect, on the metric's denominator in the holdout, at the condition's own
+    level and sidedness under the budget, with the Ladder's discordance ψ̂, and warns
+    (`low_power`) below 0.8.
+  - The Ladder's value for a difference rule is the oriented difference to the
+    baseline.
+- Alternatives: keeping inclusive bounds and refusing zero-width intervals (not
+  taken: a candidate right on every item where the baseline was wrong also has a
+  zero-width interval, at 1, and must pass); keeping the raw-scale rules beside an
+  oriented one (not taken: two orientations for one comparison is how the defect
+  arose); power at `min_effect` (not taken: about one half by construction).
+- Consequences: gate.toml files written for the earlier rules are refused by the
+  schema; a margin is written as a positive number.
+

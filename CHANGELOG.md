@@ -33,6 +33,12 @@ longer reproduces.
 - Dashboard design tokens retuned to neutral greys, underlined tabs and lighter tables.
 - `trend` without `occurred_at` hints at adding it.
 
+- Gate (D-034): the difference rules are `better_by` and `not_worse_than`, both on the
+  difference oriented so that positive is better, both strict, with margins of at least
+  0; `delta_lower_bound_at_least` and `delta_upper_bound_at_most` are gone. A difference
+  condition may state `expected_effect`, and approval reports each such condition's
+  pass probability (`power`) and warns below 0.8 (`low_power`).
+
 ### Fixed
 
 - `compare` and `gate`: a score run read at a threshold (`rate_at_least`) takes Tango's
