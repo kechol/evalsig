@@ -13,6 +13,17 @@ longer reproduces.
 
 ## [Unreleased]
 
+### Changed
+
+- Dashboard: the overview writes each metric's value and interval beside its plot on
+  an axis shared by all runs and links each run to its comparison and to the screens
+  about one run; links between screens keep the chosen run or pair; the comparison
+  lists the items whose judgment changed in a table of their own, opens on the latest
+  comparable pair and keeps the choice on the page when two runs cannot be compared;
+  numbers are written with four decimals; screens with nothing to show say which data
+  they need.
+- `trend` without `occurred_at` hints at adding it.
+
 ## [0.1.0] - 2026-11-07
 
 ### Added

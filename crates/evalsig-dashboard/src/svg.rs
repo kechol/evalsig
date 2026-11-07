@@ -8,10 +8,12 @@ use serde_json::Value;
 
 use crate::html::esc;
 
-const W: f64 = 640.0;
+const W: f64 = 720.0;
 const ROW: f64 = 28.0;
 const LEFT: f64 = 180.0;
 const PAD: f64 = 20.0;
+/// The width kept on the right of an interval plot for its numbers.
+const VALUES: f64 = 200.0;
 
 /// A number as the JSON writes it.
 fn num(v: &Value) -> String {
@@ -49,8 +51,9 @@ pub fn metric_rows<'a>(metrics: &'a Value, point: &str) -> Vec<Row<'a>> {
         .collect()
 }
 
-/// Points with their intervals on one axis; `zero` draws the line at 0 (differences).
-pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
+/// The value range an interval plot of `rows` spans, padded by 5% on each side; with
+/// `zero`, 0 is inside it. `None` when no row has a number.
+pub fn range(rows: &[Row<'_>], zero: bool) -> Option<(f64, f64)> {
     let mut lo = if zero { 0.0 } else { f64::INFINITY };
     let mut hi = if zero { 0.0 } else { f64::NEG_INFINITY };
     for r in rows {
@@ -60,13 +63,23 @@ pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
         }
     }
     if !lo.is_finite() || !hi.is_finite() {
-        return String::new();
+        return None;
     }
     if hi - lo < 1e-9 {
         hi = lo + 1.0;
     }
-    let (lo, hi) = (lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05);
-    let x = |v: f64| LEFT + (v - lo) / (hi - lo) * (W - LEFT - PAD);
+    Some((lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05))
+}
+
+/// Each row's point and interval on one axis, with a dashed line at 0 when `zero`
+/// (differences), and the numbers written beside each row.
+pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
+    range(rows, zero).map_or_else(String::new, |r| intervals_in(rows, zero, r))
+}
+
+/// `intervals` on a given range, so that several plots share one axis.
+pub fn intervals_in(rows: &[Row<'_>], zero: bool, (lo, hi): (f64, f64)) -> String {
+    let x = |v: f64| LEFT + (v - lo) / (hi - lo) * (W - LEFT - VALUES);
     let h = ROW * rows.len() as f64 + PAD;
     let mut s = format!(
         "<svg class=\"intervals\" viewBox=\"0 0 {W} {h}\" width=\"{W}\" height=\"{h}\" role=\"img\">"
@@ -78,6 +91,11 @@ pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
             "<line x1=\"{z:.1}\" y1=\"0\" x2=\"{z:.1}\" y2=\"{h}\" stroke=\"#999\" stroke-dasharray=\"3 3\"/>"
         );
     }
+    let shown = |v: &Value| match f(v) {
+        Some(n) if zero => format!("{n:+.4}"),
+        Some(n) => format!("{n:.4}"),
+        None => "–".to_owned(),
+    };
     for (i, r) in rows.iter().enumerate() {
         let y = PAD / 2.0 + ROW * i as f64 + ROW / 2.0;
         let label = esc(&r.label);
@@ -108,7 +126,15 @@ pub fn intervals(rows: &[Row<'_>], zero: bool) -> String {
                 x(p)
             );
         }
-        s.push_str("</g>");
+        let _ = write!(
+            s,
+            "<text x=\"{}\" y=\"{:.1}\" font-size=\"12\" class=\"value\">{} [{}, {}]</text></g>",
+            W - VALUES + 12.0,
+            y + 4.0,
+            shown(r.point),
+            shown(&r.ci[0]),
+            shown(&r.ci[1])
+        );
     }
     s.push_str("</svg>");
     s
@@ -268,7 +294,7 @@ pub fn reliability(calibration: &Value) -> String {
 pub fn transition(t: &Value) -> String {
     let cell = |k: &str| format!("<td class=\"n\" data-key=\"{k}\">{}</td>", num(&t[k]));
     format!(
-        "<table class=\"transition\"><thead><tr><th></th><th>Gained</th><th>Lost</th></tr></thead><tbody><tr><th>Hits</th>{}{}</tr><tr><th>False alarms</th>{}{}</tr></tbody></table>",
+        "<table class=\"transition\"><thead><tr><th></th><th class=\"n\">Gained</th><th class=\"n\">Lost</th></tr></thead><tbody><tr><th>Hits</th>{}{}</tr><tr><th>False alarms</th>{}{}</tr></tbody></table>",
         cell("new_hits"),
         cell("lost_hits"),
         cell("new_false_alarms"),

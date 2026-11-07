@@ -165,19 +165,19 @@ fn every_screen_renders_for_the_examples() {
         for point in k["results"]["k_curve"]["points"].as_array().unwrap() {
             let value = &point["metrics"][0]["value"];
             assert!(
-                page.contains(&format!("<td class=\"n\">{value}</td>")),
+                page.contains(&format!("<td class=\"n\" data-value=\"{value}\">")),
                 "{value}: {page}"
             );
         }
         // The reference screen shows the same-rule and pair values agree prints.
         let page = get(d.port, &format!("{base}reference?run={run}"), &host);
         let a = &agree["results"];
-        // The screen writes a missing value as a dash.
+        // The screen writes a missing value as a dash and keeps a number's exact value.
         let shown = |v: &Value| {
             if v.is_null() {
                 "<td>–</td>".to_owned()
             } else {
-                format!("<td class=\"n\">{v}</td>")
+                format!("<td class=\"n\" data-value=\"{v}\">")
             }
         };
         for x in a["same_rule"].as_array().unwrap() {
@@ -194,6 +194,17 @@ fn every_screen_renders_for_the_examples() {
                 .any(|x| x["who"] == run.as_str()),
             "{a}"
         );
+        // Runs that cannot be compared show why, with the choice left on the page.
+        if p == ordinal.path() {
+            let page = get(
+                d.port,
+                &format!("{base}compare?baseline=r-cand&candidate=r-judge-score"),
+                &host,
+            );
+            assert!(page.contains("<h1>Comparison</h1>"), "{page}");
+            assert!(page.contains("<select name=\"baseline\">"), "{page}");
+            assert!(!page.contains("class=\"verdict\""), "{page}");
+        }
         // The comparison shows the CLI's verdict and the overview its intervals.
         let page = get(d.port, &format!("{base}compare"), &host);
         assert!(page.contains("class=\"verdict\""), "{page}");
@@ -204,6 +215,52 @@ fn every_screen_renders_for_the_examples() {
             "the dashboard wrote to the ledger"
         );
     }
+}
+
+#[test]
+fn screens_lead_to_each_other_with_the_runs_chosen() {
+    let p = project(&std::fs::read_to_string(SYNTHETIC).unwrap());
+    let d = start(p.path());
+    let base = d
+        .url
+        .trim_start_matches(&format!("http://127.0.0.1:{}", d.port))
+        .to_owned();
+    let host = format!("127.0.0.1:{}", d.port);
+    // The overview links each run to its comparison with the run before it and to the
+    // screens about one run.
+    let page = get(d.port, &base, &host);
+    assert!(
+        page.contains("<a href=\"compare?baseline=triage-v1&amp;candidate=triage-v2\">Compare with triage-v1</a>"),
+        "{page}"
+    );
+    assert!(page.contains("<a href=\"discrimination?run=triage-v2\">Discrimination</a>"));
+    // A run screen marks itself and keeps the run in the other links.
+    let page = get(
+        d.port,
+        &format!("{base}discrimination?run=triage-v2"),
+        &host,
+    );
+    assert!(
+        page.contains("aria-current=\"page\">Discrimination</a>"),
+        "{page}"
+    );
+    assert!(
+        page.contains("<a href=\"reproducibility?run=triage-v2\">"),
+        "{page}"
+    );
+    assert!(
+        page.contains("<a href=\"compare?candidate=triage-v2\">"),
+        "{page}"
+    );
+    // By default the comparison is the latest run against the one before it, with the
+    // changed items in a table of their own and a link that swaps the two.
+    let page = get(d.port, &format!("{base}compare"), &host);
+    assert!(page.contains("<option selected>triage-v2</option>"));
+    assert!(page.contains("<h2>Items that changed ("), "{page}");
+    assert!(page.contains("further from the reference"));
+    assert!(page.contains("<summary>Unchanged items ("));
+    assert!(page.contains("compare?baseline=triage-v2&amp;candidate=triage-v1"));
+    assert!(page.contains("<a href=\"trend?run=triage-v2\">"), "{page}");
 }
 
 #[test]

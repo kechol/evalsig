@@ -101,6 +101,9 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Erro
                 "no judged item has occurred_at",
                 Exit::InsufficientData,
             )
+            .with_hint(
+                "give each item the time it arose as occurred_at and import the records again",
+            )
         })?,
     };
     let prepare = |js: &Vec<&Judgment>| {

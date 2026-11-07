@@ -826,18 +826,31 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
   requests get 421 or 403). It answers GET only and sets a strict Content-Security-Policy
   (`default-src 'none'`). It reads the snapshots and never writes.
 - **Rendering.** Pages and charts are rendered on the server from the CLI's result JSON:
-  HTML through an escaping writer, charts as SVG. The displayed numbers therefore equal
-  the CLI's, and the browser computes nothing and loads nothing from outside. No
-  JavaScript is used; folding uses `<details>`.
+  HTML through an escaping writer, charts as SVG. The displayed numbers are the CLI's,
+  written as the Markdown output writes them (four decimals, whole numbers as they are),
+  and every table cell and plotted point keeps the exact value in a `data-*` attribute.
+  The browser computes nothing and loads nothing from outside. No JavaScript is used;
+  folding uses `<details>`.
 - **Static HTML.** `--format html` on a command writes one page with the verdict, the
   warnings, the charts the result allows and the whole envelope embedded as
   `<script type="application/json">`. It loads nothing from a network.
-- **Screens.** Overview (runs with their metrics and intervals), Comparison (difference
-  intervals, verdict, transition table, paired item values), Trend, Reproducibility
-  (replicate disagreement, performance and cost by k), Reference quality (same-rule
-  agreement, rater pairs, rater variability) and Discrimination (ROC, z-ROC,
-  calibration). Each chart has a collapsed "How to read" note built from the glossary
-  and metrics definitions, and validity-check warnings appear on the screens.
+- **Screens.**
+  - Overview: the runs, and each run's metrics with their intervals on one axis shared
+    by all runs, the numbers written beside each row. Each run links to its comparison
+    with the run imported before it and to the screens about one run.
+  - Comparison: unless a pair is chosen, the latest run against the latest earlier run
+    with the same output type and value semantics. It shows the verdict, the difference
+    intervals, the transition table and the items whose judgment changed, those moving
+    away from their reference first, with the unchanged items folded. Runs that cannot
+    be compared show why, with the choice left on the page.
+  - Trend; Reproducibility (replicate disagreement, performance and cost by k);
+    Reference quality (same-rule agreement, rater pairs, rater variability); and
+    Discrimination (d′ and criterion c, ROC, z-ROC, calibration).
+- **Moving between screens.** Links carry the chosen run, or the chosen pair, so moving
+  between screens keeps the choice; the current screen is marked in the navigation. A
+  screen with nothing to show says which data it needs. Each chart has a collapsed "How
+  to read" note built from the glossary and metrics definitions, and validity-check
+  warnings appear on the screens.
 
 ## 12. Integration
 
