@@ -10,7 +10,7 @@ Rust 1.90 以降で次を実行します。
 cargo install --locked evalsig-cli
 ```
 
-ビルド済みのバイナリ、Python の wheel、Homebrew の formula は [README](../README.ja.md#インストール) にあります。
+ビルド済みのバイナリと Homebrew の formula は [README](../README.ja.md#インストール) にあります。
 
 ## 2. 例を取得する
 

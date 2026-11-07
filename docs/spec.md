@@ -946,9 +946,9 @@ the zip and decompressed with `ruzstd`.
 
 - **Channels** (D-020). `cargo install --locked evalsig-cli` (MSRV is the workspace
   `rust-version`); GitHub Releases with prebuilt binaries for macOS and Linux (aarch64 and
-  x86_64), a SHA-256 checksum per archive, a shell installer and a CycloneDX SBOM; a
-  Homebrew formula that builds from the release source (`packaging/homebrew/`); and a
-  PyPI wheel that contains the binary (maturin, `crates/evalsig-cli/pyproject.toml`).
+  x86_64), a SHA-256 checksum per archive, a shell installer and a CycloneDX SBOM; and a
+  Homebrew formula in the `kechol/tap` tap that builds from the release source
+  (`packaging/homebrew/`).
 - **Provenance.** Releases are built by cargo-dist from a tag on GitHub Actions, and every
   archive carries a GitHub artifact attestation. A referee binary should have its origin
   checked before use (`gh attestation verify`). CI runs `cargo audit` and `cargo deny`.
@@ -1007,3 +1007,4 @@ them.
 - Intraclass correlation, shrinkage of likelihood ratios, and a cost-versus-latency
   chart.
 - Prebuilt Windows binaries.
+- A PyPI wheel that contains the binary (maturin, `crates/evalsig-cli/pyproject.toml`).

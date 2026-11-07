@@ -14,8 +14,8 @@ With Rust 1.90 or later:
 cargo install --locked evalsig-cli
 ```
 
-Prebuilt binaries, the Python wheel and the Homebrew formula are described in
-the [README](../README.md#install).
+Prebuilt binaries and the Homebrew formula are described in the
+[README](../README.md#install).
 
 ## 2. Get the example
 

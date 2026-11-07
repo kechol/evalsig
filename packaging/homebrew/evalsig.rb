@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-# Homebrew formula for evalsig, built from the release's source tarball.
+# Homebrew formula for evalsig, built from the release's source tarball. It is
+# published as Formula/evalsig.rb in github.com/kechol/homebrew-tap.
 # At each release, set `url` to the tag and `sha256` to the tarball's checksum
 # (the zeros below are a placeholder, not a checksum).
 class Evalsig < Formula

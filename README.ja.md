@@ -24,7 +24,11 @@ AI エージェントがループでシステムを改善するときには、ev
 cargo install --locked evalsig-cli
 ```
 
-同じバイナリを、Python の wheel（`pip install evalsig` で `evalsig` が PATH に入ります。`crates/evalsig-cli/pyproject.toml` から maturin でビルドします）と、リリースのソースからビルドする Homebrew の formula（`packaging/homebrew/evalsig.rb`）でも配っています。
+Homebrew では、`kechol/tap` の tap から入れます。formula（`packaging/homebrew/evalsig.rb`）はリリースのソースからビルドします。
+
+```sh
+brew install kechol/tap/evalsig
+```
 
 macOS と Linux（aarch64 と x86_64）のビルド済みバイナリは、GitHub の各 Release に付きます。アーカイブごとの SHA-256 チェックサムと、シェルのインストーラーも付きます。どのアーカイブにも GitHub の artifact attestation が付いています。審判として信頼する前に、どこから来たものかを確かめてください。
 
