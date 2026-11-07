@@ -80,7 +80,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | reference agreement | `reference_agreement` | Stratum of items on which all human raters agreed (`unanimous`) or not (`split`) |
 | ceiling | `ceiling` | With a soft reference, the accuracy no system can exceed: mean(max(s, 1 − s)) |
 | same-rule comparison | `same_rule` | Human–human and system–human agreement measured the same way: each rater, grader or run against each human rater but itself, averaged (leave-one-out) |
-| rater variability | `within_rater`, `between_raters` | Disagreement among one rater's own label replicates of an item, and among different raters' labels of it |
+| rater variability | `within_rater`, `between_raters` | Disagreement among one human rater's own label replicates of an item, and among different human raters' labels of it |
 | label kind | `label.kind` | `independent` (made without seeing others), `revision` (a rater correcting their earlier label) or `adjudication` (resolving a split; not independent) |
 | label replicate | `label_replicate` | A blind re-label of the same item by the same rater. Measures human variability |
 | alternative annotator test | `alt_test`, `agree --parity` | Tests whether replacing one human rater with the system keeps agreement with the remaining raters |

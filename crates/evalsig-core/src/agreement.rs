@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::records::{Label, LabelKind};
+use crate::records::{Label, LabelKind, Source};
 
 /// Ascending distinct categories and the Q×Q table of the pairs `(first, second)`.
 pub fn table(pairs: &[(f64, f64)]) -> (Vec<f64>, Vec<Vec<f64>>) {
@@ -252,15 +252,16 @@ impl LabelDisagreement {
 /// Item -> rater -> (label replicate, value), for one task.
 type ByItem<'a> = BTreeMap<&'a str, BTreeMap<&'a str, Vec<(u32, f64)>>>;
 
-/// Disagreement within each rater (their label replicates of one item) and between
-/// raters (each rater's first label replicate of one item), per task. Pass the latest
-/// revision of each label; adjudications are not independent and are left out.
+/// Disagreement within each human rater (their label replicates of one item) and between
+/// human raters (each one's first label replicate of one item), per task. Pass the latest
+/// revision of each label; labels from other sources and adjudications, which are not
+/// independent, are left out.
 pub fn variability<'a>(
     labels: impl IntoIterator<Item = &'a Label>,
 ) -> BTreeMap<String, (LabelDisagreement, LabelDisagreement)> {
     let mut by: BTreeMap<&str, ByItem<'_>> = BTreeMap::new();
     for l in labels {
-        if l.kind() == LabelKind::Adjudication {
+        if l.source != Source::Human || l.kind() == LabelKind::Adjudication {
             continue;
         }
         if let Some(v) = l.value {
@@ -297,8 +298,13 @@ mod tests {
     use crate::records::Record;
 
     fn label(item: &str, rater: &str, replicate: u32, kind: &str, value: bool) -> Label {
+        let source = if rater.starts_with("model") {
+            "model"
+        } else {
+            "human"
+        };
         let json = format!(
-            r#"{{"record":"label","item_id":"{item}","rater_id":"{rater}","source":"human","kind":"{kind}","label_replicate":{replicate},"value":{value},"version":1}}"#
+            r#"{{"record":"label","item_id":"{item}","rater_id":"{rater}","source":"{source}","kind":"{kind}","label_replicate":{replicate},"value":{value},"version":1}}"#
         );
         match Record::from_json(&json).unwrap() {
             Record::Label(l) => l,
@@ -307,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn variability_separates_within_and_between_raters() {
+    fn variability_separates_within_and_between_human_raters() {
         let labels = [
             label("q1", "ana", 0, "independent", true),
             label("q1", "ana", 1, "independent", false),
@@ -315,6 +321,8 @@ mod tests {
             label("q2", "ana", 0, "independent", true),
             label("q2", "ben", 0, "independent", false),
             label("q2", "cy", 0, "adjudication", true),
+            label("q1", "model-a", 0, "independent", false),
+            label("q1", "model-a", 1, "independent", true),
         ];
         let (within, between) = variability(&labels)["default"];
         assert_eq!((within.items, within.pairs, within.disagreeing), (1, 1, 1));

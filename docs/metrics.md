@@ -641,10 +641,11 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
   and `label_replicate` of 1 or more. A correction of an earlier label is `kind =
   "revision"` with a higher `version`; analyses use the latest version. Both blind
   re-labels are kept.
-- **Output (`agree`).** Per task, within-rater disagreement (pairs of one rater's replicates
-  of an item) and between-rater disagreement (pairs of different raters' first labels of an
-  item), each as pairs compared, pairs differing and their rate. If between-rater splits
-  are as common as within-rater ones, the splits come from the items, not from the raters.
+- **Output (`agree`).** Per task, over human labels only, within-rater disagreement (pairs
+  of one rater's replicates of an item) and between-rater disagreement (pairs of different
+  raters' first labels of an item), each as pairs compared, pairs differing and their
+  rate. If between-rater splits are as common as within-rater ones, the splits come from
+  the items, not from the raters.
 - **Adjudications** (`kind = "adjudication"`) were made after seeing others' labels, so they
   are not independent and enter neither agreement nor variability.
 

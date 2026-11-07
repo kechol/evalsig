@@ -83,6 +83,8 @@ longer reproduces.
 - `compare` in unpaired mode: mean scores that are equal within each arm give no
   interval, with the method `zero_variance`, instead of `too_few_units` or a zero-width
   interval left by rounding.
+- `agree`: within- and between-rater disagreement (`variability`) counts human labels
+  only; model, consensus and external labels no longer enter it.
 - `power`: out-of-range settings are usage errors, `--half-width 0` no longer loops, the
   exact power at ψ = 1 is finite, and `--gate` reads the level an approval resolved.
 - `import --mapping`: an integral float such as `3.0` is the ordinal level it spells.
