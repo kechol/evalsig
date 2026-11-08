@@ -1,13 +1,8 @@
 //! Score-type metrics through the report pipeline, and the @k estimands, against the
 //! reference values.
 
-use std::collections::BTreeMap;
-
-use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
-use evalsig_core::missing::MissingPolicy;
-use evalsig_core::records::{Item, Judgment, Record};
 use evalsig_core::replicates::{Rule, at_k};
-use evalsig_core::report::{self, Sections, Settings};
+use evalsig_core::report::{self, Settings};
 mod common;
 
 use common::{cases, close};
@@ -26,49 +21,14 @@ fn report_of(scores: &[f64], weights: &[f64], t: f64) -> report::Report {
             r#"{{"record":"judgment","item_id":"i{i}","run_id":"r","gen_replicate":0,"output_type":"score","value":{s}}}"#
         ));
     }
-    let rs: Vec<Record> = lines
-        .iter()
-        .map(|l| Record::from_json(l).unwrap())
-        .collect();
-    let run = rs
-        .iter()
-        .find_map(|r| match r {
-            Record::Run(x) => Some(x),
-            _ => None,
-        })
-        .unwrap();
-    let judgments: Vec<&Judgment> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Judgment(j) => Some(j),
-            _ => None,
-        })
-        .collect();
-    let items: BTreeMap<&str, &Item> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Item(i) => Some((i.item_id.as_str(), i)),
-            _ => None,
-        })
-        .collect();
-    let settings = Settings {
-        task: "default".into(),
-        positive: None,
-        decision: None,
-        threshold: Some(t),
-        estimand: Estimand::SingleShot,
-        missing: MissingPolicy::default(),
-        reference: ReferenceMode::Soft,
-        rater_design: RaterDesign::Auto,
-        level: 0.95,
-        bootstrap: 200,
-        seed: 1,
-        prevalence: None,
-        sections: Sections::default(),
-        exact_rates: false,
-        proxy: None,
-    };
-    report::build(run, &judgments, &items, &[], &settings).unwrap()
+    common::report_of(
+        &lines,
+        &Settings {
+            positive: None,
+            threshold: Some(t),
+            ..common::settings()
+        },
+    )
 }
 
 #[test]

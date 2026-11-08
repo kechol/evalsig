@@ -2,15 +2,10 @@
 //! the feature likelihood ratios are read on the scale of effective items, and the Brier
 //! score is a weighted mean.
 
-use std::collections::BTreeMap;
-
-use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
 use evalsig_core::features::Class;
-use evalsig_core::missing::MissingPolicy;
-use evalsig_core::records::{Item, Judgment, Label, Record, Value};
-use evalsig_core::report::{self, Report, Sections, Settings};
+use evalsig_core::report::{Report, Sections, Settings};
 use evalsig_core::roc;
-use evalsig_core::rules::Rule;
+mod common;
 
 /// 20 positives and 20 negatives, every item of weight `w`. The system hits 15 positives
 /// and false-alarms on 5 negatives; a rule fires on 12 positives and 6 negatives.
@@ -40,60 +35,17 @@ fn report_with(w: f64, per_class: usize, fired_positives: usize) -> Report {
             r#"{{"record":"judgment","item_id":"t{i}","run_id":"r","gen_replicate":0,"output_type":"binary","value":{judged},"features":[{{"feature_id":"rule.a","fired":{fired}}}]}}"#
         ));
     }
-    let rs: Vec<Record> = lines
-        .iter()
-        .map(|l| Record::from_json(l).unwrap())
-        .collect();
-    let run = rs
-        .iter()
-        .find_map(|r| match r {
-            Record::Run(x) => Some(x),
-            _ => None,
-        })
-        .unwrap();
-    let judgments: Vec<&Judgment> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Judgment(j) => Some(j),
-            _ => None,
-        })
-        .collect();
-    let items: BTreeMap<&str, &Item> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Item(i) => Some((i.item_id.as_str(), i)),
-            _ => None,
-        })
-        .collect();
-    let labels: Vec<&Label> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Label(l) => Some(l),
-            _ => None,
-        })
-        .collect();
-    let settings = Settings {
-        task: "default".into(),
-        positive: Some(Rule::Equals(Value::Bool(true))),
-        decision: None,
-        threshold: None,
-        estimand: Estimand::SingleShot,
-        missing: MissingPolicy::default(),
-        reference: ReferenceMode::Soft,
-        rater_design: RaterDesign::Auto,
-        level: 0.95,
-        bootstrap: 200,
-        seed: 1,
-        prevalence: None,
-        sections: Sections {
-            detail: true,
-            features: true,
-            ..Sections::default()
+    common::report_of(
+        &lines,
+        &Settings {
+            sections: Sections {
+                detail: true,
+                features: true,
+                ..Sections::default()
+            },
+            ..common::settings()
         },
-        exact_rates: false,
-        proxy: None,
-    };
-    report::build(run, &judgments, &items, &labels, &settings).unwrap()
+    )
 }
 
 #[test]

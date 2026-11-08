@@ -1,17 +1,13 @@
 //! Items left out of an @k estimand (metrics spec §6.1): an item needs k replicates
 //! after the missing policy has dropped the ones it drops.
 
-use std::collections::BTreeMap;
-
-use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
-use evalsig_core::missing::MissingPolicy;
-use evalsig_core::records::{Item, Judgment, Label, Record, Value};
-use evalsig_core::report::{self, Sections, Settings};
-use evalsig_core::rules::Rule;
+use evalsig_core::config::Estimand;
+use evalsig_core::report::{self, Settings};
+mod common;
 
 /// Ten items with three generation replicates each; on the first four the third
 /// replicate is a failed grading, which the default policy drops.
-fn records() -> Vec<Record> {
+fn lines() -> Vec<String> {
     let mut lines = vec![
         r#"{"record":"run","run_id":"r","system":{"id":"s","version":"1"},"output_type":"binary"}"#
             .to_owned(),
@@ -34,60 +30,17 @@ fn records() -> Vec<Record> {
         }
     }
     lines
-        .iter()
-        .map(|l| Record::from_json(l).unwrap())
-        .collect()
 }
 
-/// The report of `records()` under an estimand.
+/// The report of `lines()` under an estimand.
 fn report_with(estimand: Estimand) -> report::Report {
-    let rs = records();
-    let run = rs
-        .iter()
-        .find_map(|r| match r {
-            Record::Run(x) => Some(x),
-            _ => None,
-        })
-        .unwrap();
-    let judgments: Vec<&Judgment> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Judgment(j) => Some(j),
-            _ => None,
-        })
-        .collect();
-    let items: BTreeMap<&str, &Item> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Item(i) => Some((i.item_id.as_str(), i)),
-            _ => None,
-        })
-        .collect();
-    let labels: Vec<&Label> = rs
-        .iter()
-        .filter_map(|r| match r {
-            Record::Label(l) => Some(l),
-            _ => None,
-        })
-        .collect();
-    let settings = Settings {
-        task: "default".into(),
-        positive: Some(Rule::Equals(Value::Bool(true))),
-        decision: None,
-        threshold: None,
-        estimand,
-        missing: MissingPolicy::default(),
-        reference: ReferenceMode::Soft,
-        rater_design: RaterDesign::Auto,
-        level: 0.95,
-        bootstrap: 200,
-        seed: 1,
-        prevalence: None,
-        sections: Sections::default(),
-        exact_rates: false,
-        proxy: None,
-    };
-    report::build(run, &judgments, &items, &labels, &settings).unwrap()
+    common::report_of(
+        &lines(),
+        &Settings {
+            estimand,
+            ..common::settings()
+        },
+    )
 }
 
 #[test]
