@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::numeric::Running;
 use crate::records::MissingReason;
 
 /// Which side of the measurement failed.
@@ -229,18 +230,19 @@ pub fn mean_with_missing(
 
 #[derive(Default)]
 struct Acc {
-    sum: f64,
-    weight: f64,
+    sum: Running,
+    weight: Running,
 }
 
 impl Acc {
     fn add(&mut self, v: f64, w: f64) {
-        self.sum += v * w;
-        self.weight += w;
+        self.sum.add(v * w);
+        self.weight.add(w);
     }
 
     fn mean(&self) -> Option<f64> {
-        (self.weight > 0.0).then(|| self.sum / self.weight)
+        let w = self.weight.total();
+        (w > 0.0).then(|| self.sum.total() / w)
     }
 }
 

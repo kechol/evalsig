@@ -127,20 +127,20 @@ pub struct Transition {
 }
 
 impl Transition {
-    /// Add one item: the weight it is positive in the reference, and whether each arm
-    /// judged it positive.
-    pub fn add(&mut self, positive_weight: f64, a: bool, b: bool) {
-        let negative_weight = 1.0 - positive_weight;
-        match (a, b) {
-            (false, true) => {
-                self.new_hits += positive_weight;
-                self.new_false_alarms += negative_weight;
-            }
-            (true, false) => {
-                self.lost_hits += positive_weight;
-                self.cleared_false_alarms += negative_weight;
-            }
-            _ => {}
+    /// The table of items given as (the weight it is positive in the reference, whether
+    /// arm A judged it positive, whether arm B did).
+    pub fn of(items: &[(f64, bool, bool)]) -> Self {
+        let moved = |a: bool, b: bool, weight: fn(f64) -> f64| {
+            sum(items
+                .iter()
+                .filter(|i| (i.1, i.2) == (a, b))
+                .map(|i| weight(i.0)))
+        };
+        Transition {
+            new_hits: moved(false, true, |s| s),
+            lost_hits: moved(true, false, |s| s),
+            new_false_alarms: moved(false, true, |s| 1.0 - s),
+            cleared_false_alarms: moved(true, false, |s| 1.0 - s),
         }
     }
 }
@@ -271,10 +271,7 @@ mod tests {
 
     #[test]
     fn transitions_weight_a_soft_reference() {
-        let mut t = Transition::default();
-        t.add(1.0, false, true);
-        t.add(0.25, true, false);
-        t.add(0.0, false, true);
+        let t = Transition::of(&[(1.0, false, true), (0.25, true, false), (0.0, false, true)]);
         assert_eq!(t.new_hits, 1.0);
         assert_eq!(t.new_false_alarms, 1.0);
         assert_eq!(t.lost_hits, 0.25);

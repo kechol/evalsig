@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use super::{Fill, Prepared, ReportError, Unit};
 use crate::features::{self, Class, Counts, Thresholds};
-use crate::numeric::mean;
+use crate::numeric::{Running, mean, sum};
 use crate::ppi;
 use crate::records::{Item, Label, Source};
 use crate::records::{OutputType, ValueSemantics};
@@ -197,8 +197,8 @@ impl Prepared<'_> {
             auc,
             ci,
             interval,
-            n_positive: pos.iter().map(|w| w.weight).sum(),
-            n_negative: neg.iter().map(|w| w.weight).sum(),
+            n_positive: sum(pos.iter().map(|w| w.weight)),
+            n_negative: sum(neg.iter().map(|w| w.weight)),
             points: roc::roc_points(&pos, &neg),
             zroc,
         })
@@ -209,17 +209,19 @@ impl Prepared<'_> {
     /// §4). `None` unless every ranked item's mean level is a level in range.
     pub fn level_counts(&self, levels: usize) -> Option<(Vec<f64>, Vec<f64>)> {
         let units = self.ranked()?;
-        let (mut pos, mut neg) = (vec![0.0; levels], vec![0.0; levels]);
+        let mut pos = vec![Running::default(); levels];
+        let mut neg = vec![Running::default(); levels];
         for u in &units {
             let l = u.raw?;
             if l.fract() != 0.0 || l < 0.0 || l as usize >= levels {
                 return None;
             }
             let s = u.reference.unwrap_or(0.0);
-            pos[l as usize] += u.weight * s;
-            neg[l as usize] += u.weight * (1.0 - s);
+            pos[l as usize].add(u.weight * s);
+            neg[l as usize].add(u.weight * (1.0 - s));
         }
-        (!units.is_empty()).then_some((pos, neg))
+        let totals = |r: Vec<Running>| r.iter().map(Running::total).collect();
+        (!units.is_empty()).then(|| (totals(pos), totals(neg)))
     }
 
     /// The weighted (hits, positives) and (false alarms, negatives) under the decision
@@ -229,8 +231,8 @@ impl Prepared<'_> {
         let all: Vec<&Unit> = self.units.iter().collect();
         let count = |id| {
             let parts = calc.parts(id, &calc.eligible(id, &all), Fill::Policy);
-            let num: f64 = parts.iter().flatten().map(|p| p.0).sum();
-            let den: f64 = parts.iter().flatten().map(|p| p.1).sum();
+            let num = sum(parts.iter().flatten().map(|p| p.0));
+            let den = sum(parts.iter().flatten().map(|p| p.1));
             (den > 0.0).then_some((num, den))
         };
         Some((
@@ -245,16 +247,19 @@ impl Prepared<'_> {
     /// and the Katz standard error do, whatever the scale of the weights.
     fn class_scales(&self) -> (f64, f64) {
         let kish = |positive: bool| {
-            let (s1, s2) = self
+            let [s1, s2] = self
                 .units
                 .iter()
                 .filter(|u| {
                     u.reference
                         .is_some_and(|s| if positive { s > 0.0 } else { s < 1.0 })
                 })
-                .fold((0.0, 0.0), |(a, b), u| {
-                    (a + u.weight, b + u.weight * u.weight)
+                .fold([Running::default(); 2], |[mut a, mut b], u| {
+                    a.add(u.weight);
+                    b.add(u.weight * u.weight);
+                    [a, b]
                 });
+            let (s1, s2) = (s1.total(), s2.total());
             if s2 > 0.0 { s1 / s2 } else { 1.0 }
         };
         (kish(true), kish(false))
@@ -313,21 +318,21 @@ impl Prepared<'_> {
         let counts: Vec<Counts> = ids
             .iter()
             .map(|id| {
-                let mut c = Counts {
-                    a: 0.0,
-                    n_pos: 0.0,
-                    b: 0.0,
-                    n_neg: 0.0,
-                };
+                let [mut a, mut n_pos, mut b, mut n_neg] = [Running::default(); 4];
                 for u in &units {
                     let s = u.reference.unwrap_or(0.0);
                     let f = u.fired.get(*id).copied().unwrap_or(0.0);
-                    c.a += kp * u.weight * s * f;
-                    c.n_pos += kp * u.weight * s;
-                    c.b += kn * u.weight * (1.0 - s) * f;
-                    c.n_neg += kn * u.weight * (1.0 - s);
+                    a.add(u.weight * s * f);
+                    n_pos.add(u.weight * s);
+                    b.add(u.weight * (1.0 - s) * f);
+                    n_neg.add(u.weight * (1.0 - s));
                 }
-                c
+                Counts {
+                    a: kp * a.total(),
+                    n_pos: kp * n_pos.total(),
+                    b: kn * b.total(),
+                    n_neg: kn * n_neg.total(),
+                }
             })
             .collect();
         let assessed = features::assess(&counts, self.settings.level, thresholds);

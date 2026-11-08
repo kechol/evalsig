@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::numeric::{Running, sum};
 use crate::records::{Label, LabelKind, Source};
 
 /// Ascending distinct categories and the Q×Q table of the pairs `(first, second)`.
@@ -41,7 +42,7 @@ fn proportions(t: &[Vec<f64>]) -> Option<Proportions> {
     if q < 2 || t.iter().any(|r| r.len() != q) {
         return None;
     }
-    let n: f64 = t.iter().flatten().sum();
+    let n = sum(t.iter().flatten().copied());
     if n <= 0.0 {
         return None;
     }
@@ -49,8 +50,8 @@ fn proportions(t: &[Vec<f64>]) -> Option<Proportions> {
         .iter()
         .map(|r| r.iter().map(|x| x / n).collect())
         .collect();
-    let rows = p.iter().map(|r| r.iter().sum()).collect();
-    let cols = (0..q).map(|j| p.iter().map(|r| r[j]).sum()).collect();
+    let rows = p.iter().map(|r| sum(r.iter().copied())).collect();
+    let cols = (0..q).map(|j| sum(p.iter().map(|r| r[j]))).collect();
     Some(Proportions { p, rows, cols })
 }
 
@@ -61,8 +62,8 @@ fn chance_corrected(po: f64, pe: f64) -> Option<f64> {
 /// Cohen's κ = (p_o − p_e)/(1 − p_e).
 pub fn cohen_kappa(t: &[Vec<f64>]) -> Option<f64> {
     let s = proportions(t)?;
-    let po = (0..t.len()).map(|i| s.p[i][i]).sum();
-    let pe = s.rows.iter().zip(&s.cols).map(|(r, c)| r * c).sum();
+    let po = sum((0..t.len()).map(|i| s.p[i][i]));
+    let pe = sum(s.rows.iter().zip(&s.cols).map(|(r, c)| r * c));
     chance_corrected(po, pe)
 }
 
@@ -83,13 +84,9 @@ pub fn quadratic_weighted_kappa_at(levels: &[f64], t: &[Vec<f64>]) -> Option<f64
     }
     let span = levels[q - 1] - levels[0];
     let w = |a: usize, b: usize| ((levels[a] - levels[b]) / span).powi(2);
-    let (mut observed, mut expected) = (0.0, 0.0);
-    for a in 0..q {
-        for b in 0..q {
-            observed += w(a, b) * s.p[a][b];
-            expected += w(a, b) * s.rows[a] * s.cols[b];
-        }
-    }
+    let cells = || (0..q).flat_map(|a| (0..q).map(move |b| (a, b)));
+    let observed = sum(cells().map(|(a, b)| w(a, b) * s.p[a][b]));
+    let expected = sum(cells().map(|(a, b)| w(a, b) * s.rows[a] * s.cols[b]));
     (expected > 0.0).then(|| 1.0 - observed / expected)
 }
 
@@ -98,17 +95,11 @@ pub fn quadratic_weighted_kappa_at(levels: &[f64], t: &[Vec<f64>]) -> Option<f64
 pub fn gwet_ac1(t: &[Vec<f64>]) -> Option<f64> {
     let s = proportions(t)?;
     let q = t.len();
-    let po = (0..q).map(|i| s.p[i][i]).sum();
-    let pe = s
-        .rows
-        .iter()
-        .zip(&s.cols)
-        .map(|(r, c)| {
-            let pi = (r + c) / 2.0;
-            pi * (1.0 - pi)
-        })
-        .sum::<f64>()
-        / (q - 1) as f64;
+    let po = sum((0..q).map(|i| s.p[i][i]));
+    let pe = sum(s.rows.iter().zip(&s.cols).map(|(r, c)| {
+        let pi = (r + c) / 2.0;
+        pi * (1.0 - pi)
+    })) / (q - 1) as f64;
     chance_corrected(po, pe)
 }
 
@@ -149,35 +140,35 @@ pub fn krippendorff_alpha(units: &[Vec<f64>], level: Level) -> Option<f64> {
     categories.dedup();
     let q = categories.len();
     let at = |x: f64| categories.partition_point(|c| c.total_cmp(&(x + 0.0)).is_lt());
-    let mut o = vec![vec![0.0; q]; q];
+    let mut acc = vec![vec![Running::default(); q]; q];
     for u in units.iter().filter(|u| u.len() >= 2) {
         let share = 1.0 / (u.len() - 1) as f64;
         for (i, &x) in u.iter().enumerate() {
             for (j, &y) in u.iter().enumerate() {
                 if i != j {
-                    o[at(x)][at(y)] += share;
+                    acc[at(x)][at(y)].add(share);
                 }
             }
         }
     }
-    let marginals: Vec<f64> = o.iter().map(|r| r.iter().sum()).collect();
-    let n: f64 = marginals.iter().sum();
+    let o: Vec<Vec<f64>> = acc
+        .iter()
+        .map(|r| r.iter().map(Running::total).collect())
+        .collect();
+    let marginals: Vec<f64> = o.iter().map(|r| sum(r.iter().copied())).collect();
+    let n = sum(marginals.iter().copied());
     let delta = |c: usize, k: usize| match level {
         Level::Nominal => f64::from(u8::from(c != k)),
         Level::Ordinal => {
             let (lo, hi) = (c.min(k), c.max(k));
-            let between: f64 = marginals[lo..=hi].iter().sum();
+            let between = sum(marginals[lo..=hi].iter().copied());
             (between - (marginals[c] + marginals[k]) / 2.0).powi(2)
         }
         Level::Interval => (categories[c] - categories[k]).powi(2),
     };
-    let (mut observed, mut expected) = (0.0, 0.0);
-    for c in 0..q {
-        for k in 0..q {
-            observed += o[c][k] * delta(c, k);
-            expected += marginals[c] * marginals[k] * delta(c, k);
-        }
-    }
+    let cells = || (0..q).flat_map(|c| (0..q).map(move |k| (c, k)));
+    let observed = sum(cells().map(|(c, k)| o[c][k] * delta(c, k)));
+    let expected = sum(cells().map(|(c, k)| marginals[c] * marginals[k] * delta(c, k)));
     (expected > 0.0).then(|| 1.0 - (n - 1.0) * observed / expected)
 }
 
@@ -209,12 +200,10 @@ pub fn spearman(x: &[f64], y: &[f64]) -> Option<f64> {
     }
     let (rx, ry) = (midranks(x), midranks(y));
     let mean = (x.len() + 1) as f64 / 2.0;
-    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
-    for (a, b) in rx.iter().zip(&ry) {
-        sxy += (a - mean) * (b - mean);
-        sxx += (a - mean).powi(2);
-        syy += (b - mean).powi(2);
-    }
+    let pairs = || rx.iter().zip(&ry);
+    let sxy = sum(pairs().map(|(a, b)| (a - mean) * (b - mean)));
+    let sxx = sum(rx.iter().map(|a| (a - mean).powi(2)));
+    let syy = sum(ry.iter().map(|b| (b - mean).powi(2)));
     (sxx > 0.0 && syy > 0.0).then(|| sxy / (sxx * syy).sqrt())
 }
 

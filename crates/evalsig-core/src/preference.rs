@@ -13,7 +13,7 @@ use crate::agreement;
 use crate::bootstrap::{self, MIN_UNITS};
 use crate::checks::{Finding, Overrides};
 use crate::interval::wilson_two_sided;
-use crate::numeric::{Rng, mean};
+use crate::numeric::{Rng, Running, mean, sum};
 use crate::records::{Preference, PreferenceOutcome};
 
 /// One judgment of the pair (A, B), normalised to B's side.
@@ -401,19 +401,16 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
             (s, p, n)
         };
     let loglik = |x: &[f64]| -> f64 {
-        comparisons
-            .iter()
-            .map(|c| {
-                let (slots, v, o) = local(c);
-                softmax(&slots, &v, x).0[o]
-            })
-            .sum()
+        sum(comparisons.iter().map(|c| {
+            let (slots, v, o) = local(c);
+            softmax(&slots, &v, x).0[o]
+        }))
     };
     let mut x = vec![0.0; dim];
     let mut converged = false;
     for _ in 0..MAX_ITERATIONS {
-        let mut g = vec![0.0; dim];
-        let mut h = vec![vec![0.0; dim]; dim];
+        let mut g = vec![Running::default(); dim];
+        let mut h = vec![vec![Running::default(); dim]; dim];
         for c in comparisons {
             let (slots, v, observed) = local(c);
             let (_, p, n) = softmax(&slots, &v, &x);
@@ -423,15 +420,20 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
             }
             for d in 0..3 {
                 let Some(gd) = slots[d] else { continue };
-                g[gd] += v[observed][d] - mu[d];
+                g[gd].add(v[observed][d] - mu[d]);
                 for e in 0..3 {
                     let Some(ge) = slots[e] else { continue };
                     let second: f64 = (0..n).map(|k| p[k] * v[k][d] * v[k][e]).sum();
-                    h[gd][ge] += second - mu[d] * mu[e];
+                    h[gd][ge].add(second - mu[d] * mu[e]);
                 }
             }
         }
-        let step = solve(h, g.clone()).ok_or(RankingError::NotEstimable)?;
+        let g: Vec<f64> = g.iter().map(Running::total).collect();
+        let h = h
+            .iter()
+            .map(|r| r.iter().map(Running::total).collect())
+            .collect();
+        let step = solve(h, g).ok_or(RankingError::NotEstimable)?;
         let before = loglik(&x);
         let mut t = 1.0;
         let next = loop {
@@ -461,7 +463,7 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
     let mut log_strength: Vec<f64> = std::iter::once(0.0)
         .chain(x[..arms - 1].iter().copied())
         .collect();
-    let centre = log_strength.iter().sum::<f64>() / arms as f64;
+    let centre = sum(log_strength.iter().copied()) / arms as f64;
     for v in &mut log_strength {
         *v -= centre;
     }

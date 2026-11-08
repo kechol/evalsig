@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::interval::{clopper_pearson, clopper_pearson_upper};
+use crate::numeric::sum;
 use crate::records::Judgment;
 
 /// A condition rule of a gate.
@@ -149,7 +150,7 @@ pub fn missing_counts(judgments: &[&Judgment], counts: impl Fn(&Judgment) -> boo
         *all += 1.0;
     }
     let shares = per_item.values().map(|(missing, all)| missing / all);
-    (shares.sum(), per_item.len() as f64)
+    (sum(shares), per_item.len() as f64)
 }
 
 /// The missing rate on the holdout from `missing_counts`, with the exact interval at

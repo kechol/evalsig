@@ -1,7 +1,7 @@
 //! Power and sample size (metrics spec §12) and the tables of `docs/sample-size.md`,
 //! which `scripts/sample_size.py` also writes; a test checks that both agree.
 
-use crate::numeric::{norm_cdf, norm_ppf};
+use crate::numeric::{Running, norm_cdf, norm_ppf, sum};
 
 /// ln(k!) for k = 0 … n.
 fn log_factorials(n: usize) -> Vec<f64> {
@@ -88,10 +88,11 @@ impl McNemar {
         let lf = &self.lf;
         let pmf = |b: usize, p: f64| ln_pmf(lf, b, d, p).exp();
         let t = if self.two_sided {
-            let (mut k, mut cdf) = (-1_i64, 0.0);
+            let (mut k, mut cdf) = (-1_i64, Running::default());
             while k < (d / 2) as i64 {
-                let next = cdf + pmf((k + 1) as usize, 0.5);
-                if (2.0 * next).min(1.0) > self.alpha {
+                let mut next = cdf;
+                next.add(pmf((k + 1) as usize, 0.5));
+                if (2.0 * next.total()).min(1.0) > self.alpha {
                     break;
                 }
                 cdf = next;
@@ -101,36 +102,36 @@ impl McNemar {
                 0.0
             } else {
                 let k = k as usize;
-                (0..=k).map(|b| pmf(b, self.q)).sum::<f64>()
-                    + (d - k..=d).map(|b| pmf(b, self.q)).sum::<f64>()
+                sum((0..=k).chain(d - k..=d).map(|b| pmf(b, self.q)))
             }
         } else {
             let mut c = d + 1;
-            let mut upper = 0.0;
+            let mut upper = Running::default();
             while c > 0 {
-                let next = upper + pmf(c - 1, 0.5);
-                if next > self.alpha {
+                let mut next = upper;
+                next.add(pmf(c - 1, 0.5));
+                if next.total() > self.alpha {
                     break;
                 }
                 upper = next;
                 c -= 1;
             }
-            (c..=d).map(|b| pmf(b, self.q)).sum()
+            sum((c..=d).map(|b| pmf(b, self.q)))
         };
         self.tails[d] = Some(t);
         t
     }
 
     fn power(&mut self, n: usize) -> f64 {
-        let mut total = 0.0;
+        let mut total = Running::default();
         for d in 0..=n {
             let pd = ln_pmf(&self.lf, d, n, self.psi).exp();
             if pd < NEGLIGIBLE {
                 continue;
             }
-            total += pd * self.reject(d);
+            total.add(pd * self.reject(d));
         }
-        total
+        total.total()
     }
 }
 

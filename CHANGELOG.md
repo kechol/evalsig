@@ -91,6 +91,10 @@ longer reproduces.
   only; model, consensus and external labels no longer enter it.
 - `split` and `split --holdout`: a time or random split of items that all share one
   cluster is refused instead of giving an empty validation part or holdout.
+- Sums behind results use Neumaier compensation throughout, as metrics spec §0 says
+  (feature counts, SDT counts, agreement tables, clustered DeLong, PPI, confidence
+  sequences, exact power, Bradley-Terry); a feature whose weighted firings come to 10
+  is no longer `insufficient` by rounding.
 - `power`: out-of-range settings are usage errors, `--half-width 0` no longer loops, the
   exact power at ψ = 1 is finite, and `--gate` reads the level an approval resolved.
 - `import --mapping`: an integral float such as `3.0` is the ordinal level it spells.

@@ -12,7 +12,7 @@ use crate::bootstrap::{self, Strata};
 use crate::config::{Estimand, RaterDesign, ReferenceMode};
 use crate::interval::{clopper_pearson, wilson_two_sided};
 use crate::missing::{MissingPolicy, Policy, Side};
-use crate::numeric::{Rng, mean, sum};
+use crate::numeric::{Rng, Running, mean, sum};
 use crate::records::{
     Item, Judgment, Label, MissingReason, OutputType, Run, Value, ValueSemantics,
 };
@@ -1115,15 +1115,17 @@ impl Calc<'_> {
             // The effective number of items is Kish's over the clusters' denominators:
             // the item count when every item is its own cluster with unit weight, the
             // cluster count when clusters are equal.
-            let mut by_cluster: BTreeMap<&str, f64> = BTreeMap::new();
+            let mut by_cluster: BTreeMap<&str, Running> = BTreeMap::new();
             for (u, p) in units.iter().zip(&point_parts) {
                 if let Some((_, d)) = p {
-                    *by_cluster.entry(u.cluster.as_str()).or_default() += d;
+                    by_cluster.entry(u.cluster.as_str()).or_default().add(*d);
                 }
             }
-            let (s1, s2) = by_cluster
-                .values()
-                .fold((0.0, 0.0), |(a, b), d| (a + d, b + d * d));
+            let totals: Vec<f64> = by_cluster.values().map(Running::total).collect();
+            let (s1, s2) = (
+                sum(totals.iter().copied()),
+                sum(totals.iter().map(|d| d * d)),
+            );
             let n_eff = s1 * s1 / s2;
             let k = value.unwrap_or_default() * n_eff;
             (

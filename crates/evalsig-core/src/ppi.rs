@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::numeric::{mean, norm_ppf, variance};
+use crate::numeric::{mean, norm_ppf, sum, variance};
 
 /// The PPI++ estimate of a mean with its normal interval.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -51,12 +51,7 @@ pub fn mean_estimate(
             mean(y.iter().copied()).unwrap_or(0.0),
             mean(f.iter().copied()).unwrap_or(0.0),
         );
-        let cov = y
-            .iter()
-            .zip(&f)
-            .map(|(a, b)| (a - my) * (b - mf))
-            .sum::<f64>()
-            / n as f64;
+        let cov = sum(y.iter().zip(&f).map(|(a, b)| (a - my) * (b - mf))) / n as f64;
         let all: Vec<f64> = f.iter().chain(unlabelled).copied().collect();
         let var_f = variance(&all, 1);
         let denom = (1.0 + n as f64 / big_n as f64) * var_f;

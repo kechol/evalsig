@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use evalsig_core::config::{Estimand, RaterDesign, ReferenceMode};
+use evalsig_core::features::Class;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::records::{Item, Judgment, Label, Record, Value};
 use evalsig_core::report::{self, Report, Sections, Settings};
@@ -14,15 +15,21 @@ use evalsig_core::rules::Rule;
 /// 20 positives and 20 negatives, every item of weight `w`. The system hits 15 positives
 /// and false-alarms on 5 negatives; a rule fires on 12 positives and 6 negatives.
 fn report_at(w: f64) -> Report {
+    report_with(w, 20, 12)
+}
+
+/// `per_class` positives and as many negatives of weight `w`; the rule fires on
+/// `fired_positives` positives and 6 negatives.
+fn report_with(w: f64, per_class: usize, fired_positives: usize) -> Report {
     let mut lines = vec![
         r#"{"record":"run","run_id":"r","system":{"id":"s","version":"1"},"output_type":"binary"}"#
             .to_owned(),
     ];
-    for i in 0..40 {
-        let positive = i < 20;
-        let k = if positive { i } else { i - 20 };
+    for i in 0..2 * per_class {
+        let positive = i < per_class;
+        let k = if positive { i } else { i - per_class };
         let judged = if positive { k < 15 } else { k < 5 };
-        let fired = if positive { k < 12 } else { k < 6 };
+        let fired = if positive { k < fired_positives } else { k < 6 };
         lines.push(format!(
             r#"{{"record":"item","item_id":"t{i}","weight":{w}}}"#
         ));
@@ -115,4 +122,18 @@ fn the_brier_score_is_a_weighted_mean() {
     assert!((brier - 0.49).abs() < 1e-12, "{brier}");
     let bin = bins.iter().find(|b| b.bin == 8).unwrap();
     assert_eq!(bin.n, 1);
+}
+
+#[test]
+fn ten_weighted_firings_are_enough_to_classify() {
+    // 4 + 6 firings at weight 0.1 rescale to 10 effective firings, not 9.999…
+    for w in [0.1, 0.05, 1.1] {
+        let r = report_with(w, 30, 4);
+        let f = &r.features.as_ref().unwrap()[0];
+        assert!(
+            (f.fired_positive + f.fired_negative - 10.0).abs() < 1e-12,
+            "{w}"
+        );
+        assert_ne!(f.class, Class::Insufficient, "{w}");
+    }
 }

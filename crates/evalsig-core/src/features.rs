@@ -109,7 +109,9 @@ impl Default for Thresholds {
 
 /// The class of a feature from its counts and its (adjusted) likelihood ratio interval.
 pub fn classify(c: Counts, interval: (f64, f64), t: Thresholds) -> Class {
-    if c.fired() < t.min_fired {
+    // Rescaled weighted counts carry rounding error, so a count within 1e-9 of the
+    // threshold (relative) reaches it.
+    if c.fired() < t.min_fired * (1.0 - 1e-9) {
         Class::Insufficient
     } else if interval.0 <= 1.0 && 1.0 <= interval.1 {
         Class::Uninformative

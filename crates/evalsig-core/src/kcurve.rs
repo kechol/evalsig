@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::config::Estimand;
+use crate::numeric::Running;
 use crate::records::{Item, Judgment, Label, Run};
 use crate::report::{self, Metric, ReportError, Sections, Settings};
 
@@ -59,12 +60,12 @@ pub fn build(
         .min()
         .ok_or_else(|| ReportError::NoJudgments(run.run_id.clone(), s.task.clone()))?;
     // Mean cost of one judgment per key, over the judgments that report it.
-    let mut sums: BTreeMap<String, (f64, u32)> = BTreeMap::new();
+    let mut sums: BTreeMap<String, (Running, u32)> = BTreeMap::new();
     for j in &task {
         for (k, v) in j.cost.iter().flatten() {
             if let Some(x) = v.as_f64() {
                 let e = sums.entry(k.clone()).or_default();
-                e.0 += x;
+                e.0.add(x);
                 e.1 += 1;
             }
         }
@@ -91,7 +92,9 @@ pub fn build(
                 metrics: r.metrics,
                 cost_per_item: sums
                     .iter()
-                    .map(|(key, (sum, n))| (key.clone(), f64::from(k) * sum / f64::from(*n)))
+                    .map(|(key, (sum, n))| {
+                        (key.clone(), f64::from(k) * sum.total() / f64::from(*n))
+                    })
                     .collect(),
             });
         }

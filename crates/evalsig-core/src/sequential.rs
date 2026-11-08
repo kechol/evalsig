@@ -11,6 +11,8 @@
 //!
 //! intersected with [0, 1] and with every earlier interval.
 
+use crate::numeric::Running;
+
 /// The largest bet; Waudby-Smith & Ramdas suggest ½ or ¾.
 const MAX_BET: f64 = 0.5;
 
@@ -18,9 +20,9 @@ const MAX_BET: f64 = 0.5;
 /// `level`.
 pub fn bounded_mean(xs: &[f64], level: f64) -> Vec<(f64, f64)> {
     let log_term = (2.0 / (1.0 - level)).ln();
-    let (mut sum_x, mut sum_sq) = (0.0, 0.0);
+    let [mut sum_x, mut sum_sq] = [Running::default(); 2];
     let (mut mu_prev, mut var_prev) = (0.5, 0.25);
-    let (mut sum_lambda, mut sum_lambda_x, mut sum_penalty) = (0.0, 0.0, 0.0);
+    let [mut sum_lambda, mut sum_lambda_x, mut sum_penalty] = [Running::default(); 3];
     let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
     let mut out = Vec::with_capacity(xs.len());
     for (k, &x) in xs.iter().enumerate() {
@@ -30,19 +32,19 @@ pub fn bounded_mean(xs: &[f64], level: f64) -> Vec<(f64, f64)> {
             .min(MAX_BET);
         let v = 4.0 * (x - mu_prev).powi(2);
         let psi = (-(1.0 - lambda).ln() - lambda) / 4.0;
-        sum_lambda += lambda;
-        sum_lambda_x += lambda * x;
-        sum_penalty += v * psi;
-        let centre = sum_lambda_x / sum_lambda;
-        let radius = (log_term + sum_penalty) / sum_lambda;
+        sum_lambda.add(lambda);
+        sum_lambda_x.add(lambda * x);
+        sum_penalty.add(v * psi);
+        let centre = sum_lambda_x.total() / sum_lambda.total();
+        let radius = (log_term + sum_penalty.total()) / sum_lambda.total();
         lo = lo.max(centre - radius);
         hi = hi.min(centre + radius);
         out.push((lo, hi.max(lo)));
-        sum_x += x;
-        let mu = (0.5 + sum_x) / (t + 1.0);
-        sum_sq += (x - mu).powi(2);
+        sum_x.add(x);
+        let mu = (0.5 + sum_x.total()) / (t + 1.0);
+        sum_sq.add((x - mu).powi(2));
         mu_prev = mu;
-        var_prev = (0.25 + sum_sq) / (t + 1.0);
+        var_prev = (0.25 + sum_sq.total()) / (t + 1.0);
     }
     out
 }

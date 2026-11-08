@@ -251,16 +251,20 @@ pub fn delong_clustered(pos: &[(f64, usize)], neg: &[(f64, usize)], level: f64) 
     let (v10, v01) = components(&ps, &ns);
     let (m, n) = (pos.len() as f64, neg.len() as f64);
     let auc = sum(v10.iter().copied()) / m;
-    let (mut c10, mut c01, mut mk, mut nk) =
-        (vec![0.0; k], vec![0.0; k], vec![0.0; k], vec![0.0; k]);
+    let (mut c10, mut c01) = (vec![Running::default(); k], vec![Running::default(); k]);
+    let (mut mk, mut nk) = (vec![0.0; k], vec![0.0; k]);
     for (v, (_, c)) in v10.iter().zip(pos) {
-        c10[*c] += v;
+        c10[*c].add(*v);
         mk[*c] += 1.0;
     }
     for (v, (_, c)) in v01.iter().zip(neg) {
-        c01[*c] += v;
+        c01[*c].add(*v);
         nk[*c] += 1.0;
     }
+    let (c10, c01): (Vec<f64>, Vec<f64>) = (
+        c10.iter().map(Running::total).collect(),
+        c01.iter().map(Running::total).collect(),
+    );
     let kf = k as f64;
     let d10: Vec<f64> = (0..k).map(|c| c10[c] - mk[c] * auc).collect();
     let d01: Vec<f64> = (0..k).map(|c| c01[c] - nk[c] * auc).collect();

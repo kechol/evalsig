@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
 use crate::interval::newcombe;
-use crate::numeric::{Rng, mean, norm_ppf, sum, variance};
+use crate::numeric::{Rng, Running, mean, norm_ppf, sum, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
 
@@ -214,14 +214,14 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
         })
         .collect();
     let transition = a.positive().map(|_| {
-        let mut t = Transition::default();
-        for item in &paired {
-            let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
-            if let Some(s) = s {
-                t.add(s, va >= 0.5, vb >= 0.5);
-            }
-        }
-        t
+        let items: Vec<(f64, bool, bool)> = paired
+            .iter()
+            .filter_map(|item| {
+                let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
+                s.map(|s| (s, va >= 0.5, vb >= 0.5))
+            })
+            .collect();
+        Transition::of(&items)
     });
     Comparison {
         n_used: paired.len(),
@@ -383,13 +383,15 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
 
 /// Each cluster's (numerator, denominator) totals.
 fn cluster_totals(v: &BTreeMap<String, ItemValue>) -> Vec<[f64; 2]> {
-    let mut c: BTreeMap<&str, [f64; 2]> = BTreeMap::new();
+    let mut c: BTreeMap<&str, [Running; 2]> = BTreeMap::new();
     for x in v.values() {
         let e = c.entry(x.cluster.as_str()).or_default();
-        e[0] += x.numerator;
-        e[1] += x.denominator;
+        e[0].add(x.numerator);
+        e[1].add(x.denominator);
     }
-    c.into_values().collect()
+    c.into_values()
+        .map(|[k, n]| [k.total(), n.total()])
+        .collect()
 }
 
 /// The pooled ratio Σ numerator / Σ denominator of item values; none when empty.
@@ -496,9 +498,8 @@ fn unpaired_delta(
             // The arms are independent, so each draws its own clusters.
             let (mut ra, mut rb) = (Rng::new(o.seed), Rng::new(o.seed.wrapping_add(1)));
             let ratio_of = |c: &[[f64; 2]], drawn: &[usize]| {
-                let (k, n) = drawn
-                    .iter()
-                    .fold((0.0, 0.0), |(k, n), &g| (k + c[g][0], n + c[g][1]));
+                let k = sum(drawn.iter().map(|&g| c[g][0]));
+                let n = sum(drawn.iter().map(|&g| c[g][1]));
                 (n > 0.0).then(|| k / n)
             };
             let (reps, _) = bootstrap::replicates(ca.len(), None, o.bootstrap, &mut ra, |da| {

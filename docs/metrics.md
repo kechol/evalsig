@@ -292,7 +292,8 @@ feature counts as not firing it. Only items with a reference count.
 - **Interval.** Katz log method: SE = √(1/a − 1/n_pos + 1/b − 1/n_neg), interval
   LR·exp(±z·SE), on the corrected cells when a correction was made.
 - **Class.** Decided on the multiplicity-adjusted interval below: `insufficient` (fired
-  fewer than 10 times in all), then `uninformative` (the interval contains 1), `strong`
+  fewer than 10 times in all; a weighted count within a relative 10⁻⁹ of 10 reaches it),
+  then `uninformative` (the interval contains 1), `strong`
   (the lower end is at least 3), otherwise `informative`.
 - **Posterior.** With a prevalence π: p = LR·o / (1 + LR·o), o = π/(1−π).
 - **Many features at once.** The class uses an interval at the level 1 − max(R, 1)·α/m,
