@@ -1169,13 +1169,13 @@ impl Calc<'_> {
                     let picked = drawn
                         .iter()
                         .flat_map(|&g| groups[g].iter().map(|&i| point_parts[i]));
-                    let (mut num, mut den) = (Vec::new(), Vec::new());
+                    let (mut num, mut den) = (Running::default(), Running::default());
                     for p in picked.flatten() {
-                        num.push(p.0);
-                        den.push(p.1);
+                        num.add(p.0);
+                        den.add(p.1);
                     }
-                    let d = sum(den);
-                    (d > 0.0).then(|| sum(num) / d)
+                    let d = den.total();
+                    (d > 0.0).then(|| num.total() / d)
                 },
             );
             (
