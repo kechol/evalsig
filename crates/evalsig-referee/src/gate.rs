@@ -10,7 +10,7 @@ use std::path::Path;
 use evalsig_core::checks::Overrides;
 use evalsig_core::compare::{self, Baseline, Options};
 use evalsig_core::config::Estimand;
-use evalsig_core::gate::{self, Evidence, Outcome, Rule as GateRule, Sided};
+use evalsig_core::gate::{self, Evidence, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::parity::{self, Adjustment, ParityVerdict};
@@ -592,7 +592,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
         budget: approved.budget(),
     };
     let mut rows = Vec::new();
-    let mut outcomes: Vec<Outcome> = Vec::new();
+    let mut outcomes: Vec<Option<bool>> = Vec::new();
     for c in &approved.conditions {
         let level = c.level.unwrap_or(r.level);
         let at = Settings {
@@ -628,9 +628,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
         };
         let o = gate::judge(c.rule, c.value.unwrap_or(0.0), c.min_effect, evidence);
         outcomes.push(o);
-        rows.push(
-            json!({ "metric": c.metric, "rule": c.rule, "value": c.value, "passed": o.passed }),
-        );
+        rows.push(json!({ "metric": c.metric, "rule": c.rule, "value": c.value, "passed": o }));
     }
     let (code, text) = match gate::overall(&outcomes) {
         Some(true) => (

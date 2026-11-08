@@ -196,7 +196,7 @@ impl Default for Stats {
     fn default() -> Self {
         Stats {
             level: 0.95,
-            bootstrap: 2000,
+            bootstrap: crate::bootstrap::DEFAULT_B,
             seed: None,
             estimand: Estimand::default(),
         }

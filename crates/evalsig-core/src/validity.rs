@@ -6,9 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::checks::{Finding, Overrides};
 use crate::interval::{Z95, newcombe};
-use crate::records::{
-    GraderRef, Label, LabelKind, MissingReason, OutputType, Record, Source, Value,
-};
+use crate::records::{GraderRef, MissingReason, OutputType, Record, Source, Value};
 
 /// Checks over one dataset (the records of a project or a snapshot).
 pub fn dataset(records: &[Record], overrides: &Overrides) -> Vec<Finding> {
@@ -333,16 +331,6 @@ pub fn secret_shape(s: &str) -> Option<&'static str> {
         }
     }
     None
-}
-
-/// Labels that may enter agreement metrics and the alternative annotator test:
-/// adjudications are decided after seeing other labels, so they are never
-/// independent (SPEC §7).
-pub fn agreement_labels<'a>(labels: impl IntoIterator<Item = &'a Label>) -> Vec<&'a Label> {
-    labels
-        .into_iter()
-        .filter(|l| l.kind() != LabelKind::Adjudication)
-        .collect()
 }
 
 /// Whether two arms were graded alike. A grader recorded for only one arm cannot be

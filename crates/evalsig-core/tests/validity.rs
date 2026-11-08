@@ -4,10 +4,9 @@
 use std::collections::BTreeMap;
 
 use evalsig_core::checks::{Action, Finding, Overrides};
-use evalsig_core::records::{GraderRef, Label, Record};
+use evalsig_core::records::{GraderRef, Record};
 use evalsig_core::validity::{
-    agreement_labels, dataset, missing_rate_differs, mixed_grader, pair,
-    run_variance_exceeds_delta, secret_shape,
+    dataset, missing_rate_differs, mixed_grader, pair, run_variance_exceeds_delta, secret_shape,
 };
 
 fn recs(lines: &[&str]) -> Vec<Record> {
@@ -212,20 +211,6 @@ fn secret_in_content() {
         "1".repeat(24)
     )]);
     assert!(fired(&run, "secret_in_content").is_some());
-}
-
-#[test]
-fn adjudication_never_enters_agreement() {
-    let labels: Vec<Label> = recs(&[
-        &label("a", ""),
-        r#"{"record":"label","item_id":"a","rater_id":"lead","source":"human","kind":"adjudication","version":1,"value":true}"#,
-    ])
-    .into_iter()
-    .filter_map(|r| if let Record::Label(l) = r { Some(l) } else { None })
-    .collect();
-    let kept = agreement_labels(&labels);
-    assert_eq!(kept.len(), 1);
-    assert_eq!(kept[0].rater_id, "u");
 }
 
 #[test]

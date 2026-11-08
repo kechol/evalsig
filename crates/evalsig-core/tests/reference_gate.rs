@@ -39,7 +39,7 @@ fn each_rule_has_a_passing_and_a_failing_case() {
             Some(evidence(&i["evidence"])),
         );
         let want = c["expected"]["passed"].as_bool().unwrap();
-        assert_eq!(out.passed, Some(want), "{i}");
+        assert_eq!(out, Some(want), "{i}");
         seen.insert((i["rule"].as_str().unwrap().to_owned(), want));
     }
     for rule in [
@@ -79,5 +79,5 @@ fn the_missing_rate_counts_every_missing_value_with_the_exact_bound() {
     };
     close(hi, &c["expected"]["upper"], "upper");
     let out = gate::judge(Rule::UpperBoundAtMost, 0.05, None, Some(e));
-    assert_eq!(out.passed, Some(true));
+    assert_eq!(out, Some(true));
 }

@@ -111,7 +111,9 @@ longer reproduces.
 - Library functions no command calls (D-039): the `score` module, whose
   `rate_at_least` read each item's mean score where reports read its replicates;
   `missing::mean_with_missing`, `paired::paired_mean_difference`, `paired::mcnemar`,
-  `power::gate_pass_probability`, and `sdt::Confusion`'s counting and raw rates.
+  `power::gate_pass_probability`, `validity::agreement_labels`, the unread bound of a
+  gate outcome (`gate::judge` returns whether the condition passed), and
+  `sdt::Confusion`'s counting and raw rates.
   Reference cases are checked through `report` instead.
 
 ## [0.1.0] - 2026-11-07

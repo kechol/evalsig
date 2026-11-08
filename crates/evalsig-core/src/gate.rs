@@ -66,15 +66,6 @@ pub enum Evidence {
     Verdict(bool),
 }
 
-/// The result of evaluating a rule on its evidence.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Outcome {
-    /// `None` when the evidence does not fit the rule or is missing.
-    pub passed: Option<bool>,
-    /// The bound the rule read.
-    pub bound: Option<f64>,
-}
-
 impl Rule {
     /// Whether the rule reads the delta rather than the candidate's value.
     pub fn on_delta(self) -> bool {
@@ -94,44 +85,31 @@ pub fn interval_level(level: f64, budget: u32, sided: Sided) -> f64 {
 
 /// Judge one condition. The difference rules are strict, so a candidate no different from
 /// the baseline (an interval of zero width at 0) does not pass `better_by = 0`.
-/// `min_effect` applies to `better_by`: the point difference must reach it.
+/// `min_effect` applies to `better_by`: the point difference must reach it. `None` when
+/// the evidence is missing or does not fit the rule.
 pub fn judge(
     rule: Rule,
     value: f64,
     min_effect: Option<f64>,
     evidence: Option<Evidence>,
-) -> Outcome {
-    let none = Outcome {
-        passed: None,
-        bound: None,
-    };
-    let Some(e) = evidence else { return none };
+) -> Option<bool> {
     let m = min_effect.unwrap_or(0.0);
-    let (passed, bound) = match (rule, e) {
-        (Rule::LowerBoundAtLeast, Evidence::Value { lo, .. }) => (lo >= value, lo),
-        (Rule::UpperBoundAtMost, Evidence::Value { hi, .. }) => (hi <= value, hi),
-        (Rule::BetterBy, Evidence::Delta { point, lo, .. }) => (lo > value && point >= m, lo),
-        (Rule::NotWorseThan, Evidence::Delta { lo, .. }) => (lo > -value, lo),
-        (Rule::Pass, Evidence::Verdict(v)) => {
-            return Outcome {
-                passed: Some(v),
-                bound: None,
-            };
-        }
-        _ => return none,
-    };
-    Outcome {
-        passed: Some(passed),
-        bound: Some(bound),
+    match (rule, evidence?) {
+        (Rule::LowerBoundAtLeast, Evidence::Value { lo, .. }) => Some(lo >= value),
+        (Rule::UpperBoundAtMost, Evidence::Value { hi, .. }) => Some(hi <= value),
+        (Rule::BetterBy, Evidence::Delta { point, lo, .. }) => Some(lo > value && point >= m),
+        (Rule::NotWorseThan, Evidence::Delta { lo, .. }) => Some(lo > -value),
+        (Rule::Pass, Evidence::Verdict(v)) => Some(v),
+        _ => None,
     }
 }
 
 /// All conditions must hold (an intersection-union test, Berger 1982): one failure
 /// fails, otherwise an undecided condition leaves the gate undecided.
-pub fn overall(outcomes: &[Outcome]) -> Option<bool> {
-    if outcomes.iter().any(|o| o.passed == Some(false)) {
+pub fn overall(outcomes: &[Option<bool>]) -> Option<bool> {
+    if outcomes.contains(&Some(false)) {
         Some(false)
-    } else if outcomes.iter().any(|o| o.passed.is_none()) {
+    } else if outcomes.contains(&None) {
         None
     } else {
         Some(true)
@@ -243,28 +221,13 @@ mod tests {
             hi: 1.0,
         };
         assert_eq!(
-            judge(Rule::LowerBoundAtLeast, 0.8, None, Some(wide)).passed,
+            judge(Rule::LowerBoundAtLeast, 0.8, None, Some(wide)),
             Some(false)
         );
         // Evidence of the wrong kind or none: undecided.
-        assert_eq!(
-            judge(Rule::NotWorseThan, 0.05, None, Some(wide)).passed,
-            None
-        );
-        assert_eq!(judge(Rule::Pass, 0.0, None, None).passed, None);
-        assert_eq!(
-            overall(&[
-                Outcome {
-                    passed: Some(true),
-                    bound: None
-                },
-                Outcome {
-                    passed: None,
-                    bound: None
-                }
-            ]),
-            None
-        );
+        assert_eq!(judge(Rule::NotWorseThan, 0.05, None, Some(wide)), None);
+        assert_eq!(judge(Rule::Pass, 0.0, None, None), None);
+        assert_eq!(overall(&[Some(true), None]), None);
         assert!((interval_level(0.95, 5, Sided::One) - 0.98).abs() < 1e-12);
         // A candidate identical to the baseline gives a zero-width interval at 0: it is
         // not better by 0, though it is not worse than a margin.
@@ -273,16 +236,13 @@ mod tests {
             lo: 0.0,
             hi: 0.0,
         };
+        assert_eq!(judge(Rule::BetterBy, 0.0, None, Some(same)), Some(false));
         assert_eq!(
-            judge(Rule::BetterBy, 0.0, None, Some(same)).passed,
-            Some(false)
-        );
-        assert_eq!(
-            judge(Rule::NotWorseThan, 0.02, None, Some(same)).passed,
+            judge(Rule::NotWorseThan, 0.02, None, Some(same)),
             Some(true)
         );
         assert_eq!(
-            judge(Rule::NotWorseThan, 0.0, None, Some(same)).passed,
+            judge(Rule::NotWorseThan, 0.0, None, Some(same)),
             Some(false)
         );
         let all = Evidence::Delta {
@@ -290,10 +250,7 @@ mod tests {
             lo: 1.0,
             hi: 1.0,
         };
-        assert_eq!(
-            judge(Rule::BetterBy, 0.0, None, Some(all)).passed,
-            Some(true)
-        );
+        assert_eq!(judge(Rule::BetterBy, 0.0, None, Some(all)), Some(true));
         assert!((interval_level(0.95, 5, Sided::Two) - 0.99).abs() < 1e-12);
     }
 }
