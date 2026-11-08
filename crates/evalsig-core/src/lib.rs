@@ -35,7 +35,6 @@ pub mod replicates;
 pub mod report;
 pub mod roc;
 pub mod rules;
-pub mod score;
 pub mod sdt;
 pub mod sequential;
 pub mod split;

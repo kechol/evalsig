@@ -108,10 +108,11 @@ longer reproduces.
 - `[stats] interval` (D-039): no command applied it; the interval of each metric is
   fixed by metrics spec §1.1, and a configuration that sets it is refused. The library's
   interval chooser goes with it.
-- Library functions no command calls (D-039): `missing::mean_with_missing`,
-  `paired::paired_mean_difference`, `paired::mcnemar`, `power::gate_pass_probability`
-  and `sdt::Confusion`'s counting and raw rates. Reference cases are checked through
-  `report` instead.
+- Library functions no command calls (D-039): the `score` module, whose
+  `rate_at_least` read each item's mean score where reports read its replicates;
+  `missing::mean_with_missing`, `paired::paired_mean_difference`, `paired::mcnemar`,
+  `power::gate_pass_probability`, and `sdt::Confusion`'s counting and raw rates.
+  Reference cases are checked through `report` instead.
 
 ## [0.1.0] - 2026-11-07
 
