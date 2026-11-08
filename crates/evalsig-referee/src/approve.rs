@@ -389,7 +389,7 @@ impl Approval<'_> {
             return Ok(None);
         };
         let values = p.item_values(id, Fill::Policy);
-        let n: f64 = values.values().map(|v| v.denominator).sum();
+        let n = evalsig_core::numeric::sum(values.values().map(|v| v.denominator));
         Ok(evalsig_core::compare::total_ratio(&values).map(|v| (v, n, id.higher_is_better())))
     }
 
