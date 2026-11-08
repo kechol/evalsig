@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::interval::{clopper_pearson, clopper_pearson_upper};
-use crate::numeric::sum;
+use crate::numeric::{round_output, sum};
 use crate::records::Judgment;
 
 /// A condition rule of a gate.
@@ -181,7 +181,7 @@ pub fn round_toward(value: f64, baseline: f64, step: f64) -> f64 {
     } else {
         (k - TOLERANCE).ceil()
     };
-    (k * step * 1e10).round() / 1e10
+    round_output(k * step)
 }
 
 #[cfg(test)]
@@ -210,6 +210,10 @@ mod tests {
         // A value on the grid keeps its step, and the result carries no float noise.
         assert_eq!(round_toward(0.3, 0.0, 0.1), 0.3);
         assert_eq!(round_toward(0.85, 0.5, 0.05), 0.85);
+        // The grid value is written as the output rounding writes it, ties included.
+        let step = 0.154_436_278_848_75;
+        assert_eq!(round_toward(6.18, 0.0, step), round_output(40.0 * step));
+        assert_eq!(round_toward(6.18, 0.0, step), 6.177_451_153_9);
     }
 
     #[test]

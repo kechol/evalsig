@@ -277,15 +277,7 @@ pub fn to_canonical_bytes<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, C
     Canonical::from_serialize(value).map(|v| v.to_bytes())
 }
 
-/// Round a number written to an output envelope to 10 decimal places (metrics spec
-/// §0), so that `verify` compares values that do not depend on the last bits.
-pub fn round_output(x: f64) -> f64 {
-    if !x.is_finite() {
-        return x;
-    }
-    let rounded: f64 = format!("{x:.10}").parse().expect("formatted float parses");
-    if rounded == 0.0 { 0.0 } else { rounded }
-}
+pub use evalsig_core::numeric::round_output;
 
 fn nfc(s: &str) -> Cow<'_, str> {
     if s.is_ascii() || is_nfc_quick(s.chars()) == IsNormalized::Yes {

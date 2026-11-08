@@ -82,6 +82,17 @@ impl Running {
     }
 }
 
+/// A number rounded to 10 decimal places (metrics spec §0), as outputs carry it, so that
+/// `verify` compares values that do not depend on the last bits. The decimal string
+/// decides ties, as in the written output.
+pub fn round_output(x: f64) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    let rounded: f64 = format!("{x:.10}").parse().expect("formatted float parses");
+    if rounded == 0.0 { 0.0 } else { rounded }
+}
+
 /// Neumaier-compensated sum in iteration order. Callers iterate in a fixed order, so
 /// the result does not depend on threads or hash maps.
 pub fn sum(values: impl IntoIterator<Item = f64>) -> f64 {
