@@ -1,8 +1,7 @@
-//! Paired and unpaired differences, Tango's score test and McNemar's test against the
-//! reference values.
+//! Paired and unpaired differences and Tango's score test against the reference values.
 
 use evalsig_core::interval::{Z95, newcombe};
-use evalsig_core::paired::{Discordant, mcnemar, tango, tango_p};
+use evalsig_core::paired::{Discordant, tango, tango_p};
 mod common;
 
 use common::{cases, close};
@@ -49,26 +48,5 @@ fn newcombe_intervals_match_including_the_published_example() {
                 (lit[0].as_f64().unwrap(), lit[1].as_f64().unwrap())
             );
         }
-    }
-}
-
-#[test]
-fn mcnemar_matches() {
-    for c in cases("mcnemar") {
-        let (b, cc) = (
-            c["input"]["b"].as_u64().unwrap(),
-            c["input"]["c"].as_u64().unwrap(),
-        );
-        let (exact, mid) = mcnemar(b, cc);
-        close(
-            exact,
-            &c["expected"]["exact_two_sided_p"],
-            &format!("exact {b},{cc}"),
-        );
-        close(
-            mid,
-            &c["expected"]["mid_p_two_sided"],
-            &format!("mid-p {b},{cc}"),
-        );
     }
 }

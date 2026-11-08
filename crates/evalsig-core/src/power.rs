@@ -227,12 +227,6 @@ pub fn bonferroni(alpha: f64, budget: u32) -> f64 {
     alpha / f64::from(budget.max(1))
 }
 
-/// The probability that a gate passes with n paired items when the effect is as
-/// hypothesised: the one-sided exact McNemar power at α/B.
-pub fn gate_pass_probability(n: u64, p10: f64, p01: f64, alpha: f64, budget: u32) -> f64 {
-    mcnemar_power(n as usize, p10, p01, bonferroni(alpha, budget), false)
-}
-
 /// The probability that a difference condition passes on `n` paired items with
 /// discordance `psi` when the candidate is truly better by `effect` (positive is better;
 /// metrics spec §11.1): the difference's lower bound, with `tail` beyond it, must exceed
@@ -381,7 +375,7 @@ mod tests {
         let d = minimum_detectable_difference(246, 0.10, 0.8, 0.05, false).unwrap();
         assert!(d <= 0.05 && d > 0.049);
         assert_eq!(with_design_effect(100, 3.0, 0.5), 200);
-        let p = gate_pass_probability(530, p10, p01, 0.05, 20);
+        let p = mcnemar_power(530, p10, p01, bonferroni(0.05, 20), false);
         assert!(p > 0.7 && p < 0.9, "{p}");
     }
 

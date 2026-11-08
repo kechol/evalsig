@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::numeric::Running;
 use crate::records::MissingReason;
 
 /// Which side of the measurement failed.
@@ -115,20 +114,6 @@ impl MissingPolicy {
     }
 }
 
-/// A value, or the reason it is missing.
-pub type Observed<T> = Result<T, MissingReason>;
-
-/// Counts reported next to every metric.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct MissingCounts {
-    /// Observations entering the denominator, including filled ones.
-    pub n_used: u64,
-    /// Missing observations, filled or dropped.
-    pub n_missing: u64,
-    /// Missing observations counted per reason.
-    pub missing_by_reason: BTreeMap<MissingReason, u64>,
-}
-
 /// Values and missing markers across the judgments, labels and preferences of a
 /// dataset, before any policy applies.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -163,89 +148,6 @@ pub fn tally(records: &[crate::records::Record]) -> Tally {
     t
 }
 
-/// A weighted mean under a missing policy, with Manski bounds when system-side
-/// values are missing.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MeanWithMissing {
-    /// `None` when nothing is left in the denominator.
-    pub point: Option<f64>,
-    /// System-side missing values filled with the best and the worst value, other
-    /// reasons handled by the policy. Present only if a system-side value is missing.
-    pub bounds: Option<(f64, f64)>,
-    /// Counts of observations used and missing.
-    pub counts: MissingCounts,
-}
-
-/// Weighted mean of per-item values in `[worst, best]` order of preference, where a
-/// missing value is filled or dropped by `policy`. `worst` and `best` are the values
-/// the metric assigns to the worst and best possible judgment (for a rate, 0 and 1).
-pub fn mean_with_missing(
-    values: &[(Observed<f64>, f64)],
-    policy: &MissingPolicy,
-    worst: f64,
-    best: f64,
-) -> MeanWithMissing {
-    let mut counts = MissingCounts::default();
-    let mut point = Acc::default();
-    let mut low = Acc::default();
-    let mut high = Acc::default();
-    let mut system_missing = false;
-    for &(obs, w) in values {
-        match obs {
-            Ok(v) => {
-                counts.n_used += 1;
-                for acc in [&mut point, &mut low, &mut high] {
-                    acc.add(v, w);
-                }
-            }
-            Err(reason) => {
-                counts.n_missing += 1;
-                *counts.missing_by_reason.entry(reason).or_default() += 1;
-                let filled = policy.policy(reason).fill(worst, best);
-                if let Some(v) = filled {
-                    counts.n_used += 1;
-                    point.add(v, w);
-                }
-                if reason.side() == Side::System {
-                    system_missing = true;
-                    low.add(worst, w);
-                    high.add(best, w);
-                } else if let Some(v) = filled {
-                    low.add(v, w);
-                    high.add(v, w);
-                }
-            }
-        }
-    }
-    let bounds = system_missing.then(|| {
-        let (a, b) = (low.mean().unwrap_or(worst), high.mean().unwrap_or(best));
-        (a.min(b), a.max(b))
-    });
-    MeanWithMissing {
-        point: point.mean(),
-        bounds,
-        counts,
-    }
-}
-
-#[derive(Default)]
-struct Acc {
-    sum: Running,
-    weight: Running,
-}
-
-impl Acc {
-    fn add(&mut self, v: f64, w: f64) {
-        self.sum.add(v * w);
-        self.weight.add(w);
-    }
-
-    fn mean(&self) -> Option<f64> {
-        let w = self.weight.total();
-        (w > 0.0).then(|| self.sum.total() / w)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,17 +159,6 @@ mod tests {
         MissingReason::InvalidOutput,
         MissingReason::Limit,
     ];
-
-    /// Three correct, one wrong, one missing with `reason`.
-    fn sample(reason: MissingReason) -> Vec<(Observed<f64>, f64)> {
-        vec![
-            (Ok(1.0), 1.0),
-            (Ok(1.0), 1.0),
-            (Ok(1.0), 1.0),
-            (Ok(0.0), 1.0),
-            (Err(reason), 1.0),
-        ]
-    }
 
     #[test]
     fn sides_and_defaults_cover_all_ten_reasons() {
@@ -292,40 +183,24 @@ mod tests {
     fn default_handling_for_each_reason() {
         let policy = MissingPolicy::default();
         for r in MissingReason::ALL {
-            let m = mean_with_missing(&sample(r), &policy, 0.0, 1.0);
-            assert_eq!(m.counts.n_missing, 1);
-            assert_eq!(m.counts.missing_by_reason.get(&r), Some(&1));
-            if r.side() == Side::System {
-                assert_eq!(m.point, Some(3.0 / 5.0), "{r:?}");
-                assert_eq!(m.counts.n_used, 5);
-                assert_eq!(m.bounds, Some((3.0 / 5.0, 4.0 / 5.0)));
-            } else {
-                assert_eq!(m.point, Some(3.0 / 4.0), "{r:?}");
-                assert_eq!(m.counts.n_used, 4);
-                assert_eq!(m.bounds, None);
-            }
+            // Worst 0, best 1: a system-side gap takes the worst, the rest are dropped.
+            let filled = policy.policy(r).fill(0.0, 1.0);
+            let expected = (r.side() == Side::System).then_some(0.0);
+            assert_eq!(filled, expected, "{r:?}");
         }
     }
 
     #[test]
     fn overridden_handling_for_each_reason() {
         for r in MissingReason::ALL {
-            for (p, expected, used) in [
-                (Policy::Worst, 3.0 / 5.0, 5),
-                (Policy::Best, 4.0 / 5.0, 5),
-                (Policy::Drop, 3.0 / 4.0, 4),
+            for (p, expected) in [
+                (Policy::Worst, Some(0.0)),
+                (Policy::Best, Some(1.0)),
+                (Policy::Drop, None),
             ] {
                 let policy = MissingPolicy::default().with_override(r, p);
                 assert_eq!(policy.policy(r), p);
-                let m = mean_with_missing(&sample(r), &policy, 0.0, 1.0);
-                assert_eq!(m.point, Some(expected), "{r:?} {p:?}");
-                assert_eq!(m.counts.n_used, used);
-                // Bounds always span best and worst for system-side reasons.
-                if r.side() == Side::System {
-                    assert_eq!(m.bounds, Some((3.0 / 5.0, 4.0 / 5.0)));
-                } else if p == Policy::Drop {
-                    assert_eq!(m.bounds, None);
-                }
+                assert_eq!(policy.policy(r).fill(0.0, 1.0), expected, "{r:?} {p:?}");
             }
             // Other reasons keep their defaults.
             let policy = MissingPolicy::default().with_override(r, Policy::Best);
@@ -340,29 +215,14 @@ mod tests {
         let policy = MissingPolicy::holdout();
         for r in MissingReason::ALL {
             assert_eq!(policy.policy(r), Policy::Worst);
-            let m = mean_with_missing(&sample(r), &policy, 0.0, 1.0);
-            assert_eq!(m.point, Some(3.0 / 5.0));
         }
         assert!(policy.table().values().all(|p| *p == Policy::Worst));
     }
 
     #[test]
     fn worst_depends_on_the_metric_direction() {
-        // For a false alarm rate, the worst judgment is a false alarm (1).
-        let values = [(Ok(0.0), 1.0), (Err(MissingReason::Timeout), 1.0)];
-        let m = mean_with_missing(&values, &MissingPolicy::default(), 1.0, 0.0);
-        assert_eq!(m.point, Some(0.5));
-        assert_eq!(m.bounds, Some((0.0, 0.5)));
-    }
-
-    #[test]
-    fn weights_and_empty_denominators() {
-        let values = [(Ok(1.0), 3.0), (Ok(0.0), 1.0)];
-        let m = mean_with_missing(&values, &MissingPolicy::default(), 0.0, 1.0);
-        assert_eq!(m.point, Some(0.75));
-        let only_dropped = [(Err(MissingReason::NotRun), 1.0)];
-        let m = mean_with_missing(&only_dropped, &MissingPolicy::default(), 0.0, 1.0);
-        assert_eq!(m.point, None);
-        assert_eq!(m.counts.n_used, 0);
+        // For a false alarm rate the worst judgment is a false alarm (1).
+        assert_eq!(Policy::Worst.fill(1.0, 0.0), Some(1.0));
+        assert_eq!(Policy::Best.fill(1.0, 0.0), Some(0.0));
     }
 }

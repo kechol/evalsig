@@ -551,21 +551,6 @@ def lr_cases():
     return out
 
 
-def mcnemar_cases():
-    out = []
-    for b, c in [(0, 0), (1, 9), (5, 15), (10, 12), (3, 0), (40, 60)]:
-        n = b + c
-        if n == 0:
-            p, mid = 1.0, 1.0
-        else:
-            p = stats.binomtest(b, n, 0.5).pvalue
-            m = min(b, c)
-            mid = min(1.0, 2 * (stats.binom.cdf(m, n, 0.5) - 0.5 * stats.binom.pmf(m, n, 0.5)))
-        out.append({"input": {"b": b, "c": c}, "source": f"scipy {scipy.__version__} binomtest (exact binomial)",
-                    "expected": {"exact_two_sided_p": r(p), "mid_p_two_sided": r(mid)}})
-    return out
-
-
 def cohen_kappa(table):
     t = np.asarray(table, dtype=float)
     n = t.sum()
@@ -902,7 +887,6 @@ def main():
             "cost": cost_cases(),
             "feature_likelihood_ratio": lr_cases(),
             "feature_likelihood_ratio_bh": lr_bh_cases(),
-            "mcnemar": mcnemar_cases(),
             "agreement": agreement_cases(),
             "agreement_prevalence_robust": agreement_extra_cases(),
             "agreement_ordinal": agreement_ordinal_cases(),

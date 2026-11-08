@@ -5,7 +5,6 @@
 //! where positive is better.
 
 use serde::Serialize;
-use statrs::distribution::{Binomial, Discrete, DiscreteCDF};
 
 use crate::numeric::{norm_cdf, sum};
 
@@ -95,20 +94,6 @@ pub fn tango_p(d: Discordant) -> f64 {
     }
     let z = (d.only_b as f64 - d.only_a as f64).abs() / discordant.sqrt();
     (2.0 * norm_cdf(-z)).min(1.0)
-}
-
-/// McNemar's exact test on the discordant counts: the two-sided exact binomial
-/// p-value and the mid-p value.
-pub fn mcnemar(only_a: u64, only_b: u64) -> (f64, f64) {
-    let n = only_a + only_b;
-    if n == 0 {
-        return (1.0, 1.0);
-    }
-    let bin = Binomial::new(0.5, n).expect("valid binomial");
-    let m = only_a.min(only_b);
-    let exact = (2.0 * bin.cdf(m)).min(1.0);
-    let mid = (2.0 * (bin.cdf(m) - 0.5 * bin.pmf(m))).min(1.0);
-    (exact, mid)
 }
 
 /// Movement of items between the arms (metrics spec §7). Weighted counts, so a soft
@@ -201,26 +186,6 @@ pub fn holm(p: &[f64]) -> Option<Vec<f64>> {
     Some(adjusted)
 }
 
-/// One resampling unit of a paired comparison: the sums of an outcome in each arm and
-/// the number of paired observations in the unit.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PairedUnit {
-    /// Sum of the outcome in arm A.
-    pub a: f64,
-    /// Sum of the outcome in arm B.
-    pub b: f64,
-    /// Number of paired observations in the unit.
-    pub n: f64,
-}
-
-/// The difference of means B − A over the drawn units (both arms share the draw).
-pub fn paired_mean_difference(units: &[PairedUnit], drawn: &[usize]) -> Option<f64> {
-    let n = sum(drawn.iter().map(|&i| units[i].n));
-    (n > 0.0).then(|| {
-        (sum(drawn.iter().map(|&i| units[i].b)) - sum(drawn.iter().map(|&i| units[i].a))) / n
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,23 +241,5 @@ mod tests {
         assert_eq!(t.new_false_alarms, 1.0);
         assert_eq!(t.lost_hits, 0.25);
         assert_eq!(t.cleared_false_alarms, 0.75);
-    }
-
-    #[test]
-    fn paired_bootstrap_difference() {
-        let units = [
-            PairedUnit {
-                a: 1.0,
-                b: 2.0,
-                n: 2.0,
-            },
-            PairedUnit {
-                a: 0.0,
-                b: 1.0,
-                n: 1.0,
-            },
-        ];
-        assert_eq!(paired_mean_difference(&units, &[0, 1]), Some(2.0 / 3.0));
-        assert_eq!(paired_mean_difference(&units, &[]), None);
     }
 }

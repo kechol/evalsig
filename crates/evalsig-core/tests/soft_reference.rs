@@ -12,7 +12,6 @@ use evalsig_core::reference;
 use evalsig_core::report::{self, Metric, Sections, Settings};
 use evalsig_core::roc::{self, SoftItem};
 use evalsig_core::rules::Rule;
-use evalsig_core::sdt::Confusion;
 
 const TOL: f64 = 1e-12;
 
@@ -173,19 +172,17 @@ fn rates_and_accuracy_match_the_soft_definitions() {
     // Accuracy = mean[y·s + (1−y)(1−s)] = 13/24.
     assert!((metric("accuracy") - 13.0 / 24.0).abs() < TOL);
 
-    // d′ and c come from the same H and F through the weighted confusion counts.
-    let mut c = Confusion::default();
-    for i in 0..4 {
-        c.add_shares(s[i], y[i], 1.0);
-    }
-    assert!((c.hit_rate().unwrap() - h).abs() < TOL);
-    assert!((c.false_alarm_rate().unwrap() - f).abs() < TOL);
+    // Weighted cells: item i adds s_i to the positives and 1 − s_i to the negatives.
+    let hits = dot(&|i| s[i] * y[i]);
+    let misses = dot(&|i| s[i] * (1.0 - y[i]));
+    let false_alarms = dot(&|i| (1.0 - s[i]) * y[i]);
+    let correct_rejections = dot(&|i| (1.0 - s[i]) * (1.0 - y[i]));
 
     // Expected cost and likelihood ratios count item i as s_i positive, 1 − s_i negative.
     let matrix = [[0.0, 1.0], [5.0, 0.0]];
     let ec = cost::expected_cost(
-        &[c.misses, c.hits],
-        &[c.correct_rejections, c.false_alarms],
+        &[misses, hits],
+        &[correct_rejections, false_alarms],
         &matrix.map(Vec::from),
         0.1,
     )
@@ -193,10 +190,10 @@ fn rates_and_accuracy_match_the_soft_definitions() {
     assert!((ec - cost::binary_cost(h, f, &matrix, 0.1)).abs() < TOL);
     let lr = features::likelihood_ratio(
         Counts {
-            a: c.hits,
-            n_pos: c.positives(),
-            b: c.false_alarms,
-            n_neg: c.negatives(),
+            a: hits,
+            n_pos: hits + misses,
+            b: false_alarms,
+            n_neg: false_alarms + correct_rejections,
         },
         0.95,
     )
