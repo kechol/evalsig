@@ -100,18 +100,35 @@ pub struct Baseline<'p, 'a> {
     judged: BTreeMap<String, (f64, Option<f64>)>,
 }
 
-fn values_of(p: &Prepared<'_>, id: MetricId) -> Filled {
-    [Fill::Policy, Fill::Worst, Fill::Best].map(|f| p.item_values(id, f))
+/// With `bounds` false the worst and best fills are left empty, for a comparison that
+/// will not read them.
+fn values_of(p: &Prepared<'_>, id: MetricId, bounds: bool) -> Filled {
+    let v = |f| p.item_values(id, f);
+    if bounds {
+        [v(Fill::Policy), v(Fill::Worst), v(Fill::Best)]
+    } else {
+        [v(Fill::Policy), BTreeMap::new(), BTreeMap::new()]
+    }
 }
 
 impl<'p, 'a> Baseline<'p, 'a> {
     /// Compute the per-metric item values of a prepared run once for reuse across
     /// comparisons.
     pub fn new(prepared: &'p Prepared<'a>) -> Self {
+        Self::of(prepared, |_| true)
+    }
+
+    /// The same for the metric named `metric` alone, so a comparison computes only it.
+    pub fn only(prepared: &'p Prepared<'a>, metric: &str) -> Self {
+        Self::of(prepared, |id| id.name() == metric)
+    }
+
+    fn of(prepared: &'p Prepared<'a>, keep: impl Fn(MetricId) -> bool) -> Self {
         let values = prepared
             .metric_ids()
             .into_iter()
-            .map(|id| (id, values_of(prepared, id)))
+            .filter(|id| keep(*id))
+            .map(|id| (id, values_of(prepared, id, id.has_missing_bounds())))
             .collect();
         Baseline {
             prepared,
@@ -180,10 +197,14 @@ fn bounds(x: Option<f64>, y: Option<f64>) -> Option<(f64, f64)> {
     x.zip(y).map(|(x, y)| (x.min(y), x.max(y)))
 }
 
-/// Compare the baseline with one candidate on the items both have.
+/// Compare the baseline with one candidate on the items both have, on the metrics the
+/// baseline holds values for.
 pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Comparison {
     let a = base.prepared;
-    let ids = shared_ids(a, b);
+    let ids: Vec<MetricId> = shared_ids(a, b)
+        .into_iter()
+        .filter(|id| base.values.contains_key(id))
+        .collect();
     let judged_b = b.judged();
     let in_scope = |k: &&String| o.scope.as_ref().is_none_or(|s| s.contains(*k));
     let in_both: BTreeSet<&str> = base
@@ -210,7 +231,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
             metric_delta(
                 id,
                 &base.values[&id],
-                &values_of(b, id),
+                &values_of(b, id, system_missing && id.has_missing_bounds()),
                 &paired,
                 independent,
                 system_missing,

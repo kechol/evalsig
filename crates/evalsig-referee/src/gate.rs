@@ -698,7 +698,7 @@ fn ladder(j: &Judging, h: &Holdout) -> Result<Option<NewBest>, Error> {
         scope: None,
     };
     // MetricDelta is oriented so that positive is better.
-    let Some(m) = compare::compare(&Baseline::new(&best), &cand, &options)
+    let Some(m) = compare::compare(&Baseline::only(&best, &l.metric), &cand, &options)
         .metrics
         .into_iter()
         .find(|m| m.metric == l.metric)
@@ -783,7 +783,7 @@ fn evidence(
             excluded: BTreeSet::new(),
             scope: None,
         };
-        let c = compare::compare(&Baseline::new(&pa), &pb, &options);
+        let c = compare::compare(&Baseline::only(&pa, metric), &pb, &options);
         let Some(m) = c.metrics.iter().find(|m| m.metric == metric) else {
             return Err(not_computed(metric));
         };
