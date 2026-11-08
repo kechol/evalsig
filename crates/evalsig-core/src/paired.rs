@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 
-use crate::numeric::{norm_sf, sum};
+use crate::numeric::{Running, norm_sf};
 
 /// Discordant counts of a paired binary outcome (correct, or positive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
@@ -114,18 +114,31 @@ pub struct Transition {
 impl Transition {
     /// The table of items given as (the weight it is positive in the reference, whether
     /// arm A judged it positive, whether arm B did).
-    pub fn of(items: &[(f64, bool, bool)]) -> Self {
-        let moved = |a: bool, b: bool, weight: fn(f64) -> f64| {
-            sum(items
-                .iter()
-                .filter(|i| (i.1, i.2) == (a, b))
-                .map(|i| weight(i.0)))
-        };
+    pub fn of(items: impl IntoIterator<Item = (f64, bool, bool)>) -> Self {
+        let [
+            mut new_hits,
+            mut lost_hits,
+            mut new_false_alarms,
+            mut cleared_false_alarms,
+        ] = [Running::default(); 4];
+        for (s, a, b) in items {
+            match (a, b) {
+                (false, true) => {
+                    new_hits.add(s);
+                    new_false_alarms.add(1.0 - s);
+                }
+                (true, false) => {
+                    lost_hits.add(s);
+                    cleared_false_alarms.add(1.0 - s);
+                }
+                _ => {}
+            }
+        }
         Transition {
-            new_hits: moved(false, true, |s| s),
-            lost_hits: moved(true, false, |s| s),
-            new_false_alarms: moved(false, true, |s| 1.0 - s),
-            cleared_false_alarms: moved(true, false, |s| 1.0 - s),
+            new_hits: new_hits.total(),
+            lost_hits: lost_hits.total(),
+            new_false_alarms: new_false_alarms.total(),
+            cleared_false_alarms: cleared_false_alarms.total(),
         }
     }
 }
@@ -236,7 +249,7 @@ mod tests {
 
     #[test]
     fn transitions_weight_a_soft_reference() {
-        let t = Transition::of(&[(1.0, false, true), (0.25, true, false), (0.0, false, true)]);
+        let t = Transition::of([(1.0, false, true), (0.25, true, false), (0.0, false, true)]);
         assert_eq!(t.new_hits, 1.0);
         assert_eq!(t.new_false_alarms, 1.0);
         assert_eq!(t.lost_hits, 0.25);

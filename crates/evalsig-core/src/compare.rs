@@ -240,14 +240,10 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
         })
         .collect();
     let transition = a.positive().map(|_| {
-        let items: Vec<(f64, bool, bool)> = paired
-            .iter()
-            .filter_map(|item| {
-                let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
-                s.map(|s| (s, decided_positive(va), decided_positive(vb)))
-            })
-            .collect();
-        Transition::of(&items)
+        Transition::of(paired.iter().filter_map(|item| {
+            let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
+            s.map(|s| (s, decided_positive(va), decided_positive(vb)))
+        }))
     });
     Comparison {
         n_used: paired.len(),
