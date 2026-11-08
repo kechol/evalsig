@@ -21,7 +21,7 @@ pub struct Config {
     pub project: Project,
     /// How content is stored.
     pub store: Store,
-    /// Interval level, resampling, estimand and interval method.
+    /// Interval level, resampling and estimand.
     pub stats: Stats,
     /// Missing policy per missing reason; unlisted reasons keep their default.
     pub missing: BTreeMap<MissingReason, Policy>,
@@ -177,23 +177,6 @@ impl<'de> Deserialize<'de> for Estimand {
     }
 }
 
-/// Interval method for rates (metrics spec §1.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IntervalMethod {
-    /// Choose a method from the data (default).
-    #[default]
-    Auto,
-    /// Wilson score interval.
-    Wilson,
-    /// Clopper-Pearson exact interval.
-    ClopperPearson,
-    /// Jeffreys interval.
-    Jeffreys,
-    /// Bootstrap percentile interval.
-    Bootstrap,
-}
-
 /// Interval and resampling settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -207,8 +190,6 @@ pub struct Stats {
     pub seed: Option<u64>,
     /// Which performance is estimated; default `single_shot`.
     pub estimand: Estimand,
-    /// Interval method for rates; default `auto`.
-    pub interval: IntervalMethod,
 }
 
 impl Default for Stats {
@@ -218,7 +199,6 @@ impl Default for Stats {
             bootstrap: 2000,
             seed: None,
             estimand: Estimand::default(),
-            interval: IntervalMethod::default(),
         }
     }
 }

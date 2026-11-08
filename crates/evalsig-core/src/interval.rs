@@ -1,11 +1,8 @@
-//! Intervals for rates and how to choose one (metrics spec §1, §1.1).
+//! Intervals for rates (metrics spec §1).
 //!
 //! Counts are `f64` so that effective sizes (clusters, Kish n_eff) can stand in for
 //! item counts, as the specification requires when items are not independent.
 
-use serde::Serialize;
-
-use crate::config::IntervalMethod;
 use crate::numeric::{beta_ppf, norm_ppf};
 
 /// z for a two-sided 95% interval, Φ⁻¹(0.975).
@@ -116,123 +113,9 @@ pub fn zero_event_items(bound: f64, level: f64) -> Option<(u64, u64)> {
     Some((smallest(clopper_pearson_upper), smallest(wilson_upper)))
 }
 
-/// What an interval is for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Purpose {
-    /// Shown in reports (two-sided).
-    Display,
-    /// A gate's one-sided bound.
-    Gate,
-}
-
-/// The shape of the estimate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Estimate {
-    /// One rate: accuracy, H, F, disagreement, missing rate, share at or above t.
-    Rate,
-    /// A paired difference of two rates.
-    PairedRateDifference,
-    /// Mean-score differences, d′, expected cost, κ, win rates.
-    Other,
-    /// AUC against a binary reference.
-    AucBinary,
-    /// AUC against a soft or latent reference.
-    AucSoft,
-}
-
-/// The method that computes an interval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Method {
-    /// Wilson score interval for a proportion.
-    Wilson,
-    /// Clopper-Pearson exact interval for a proportion.
-    ClopperPearson,
-    /// Jeffreys Bayesian interval (Beta(½, ½) prior) for a proportion.
-    Jeffreys,
-    /// Percentile bootstrap interval.
-    Bootstrap,
-    /// Tango score interval for a paired difference of proportions.
-    Tango,
-    /// DeLong interval for an AUC.
-    DeLong,
-}
-
-/// Choose the interval method (metrics spec §1.1). `dependent` means replicates,
-/// clusters or weights are present, so counts become effective sizes or the
-/// bootstrap is used. `events` is the event count of a rate-type gate condition.
-pub fn select(
-    estimate: Estimate,
-    dependent: bool,
-    purpose: Purpose,
-    configured: IntervalMethod,
-    events: Option<u64>,
-) -> Result<Method, String> {
-    let auto = match (estimate, dependent, purpose) {
-        (Estimate::Rate, false, Purpose::Display) => Method::Wilson,
-        (Estimate::Rate, _, Purpose::Gate) => Method::ClopperPearson,
-        (Estimate::Rate, true, Purpose::Display) => Method::Bootstrap,
-        (Estimate::PairedRateDifference, false, _) => Method::Tango,
-        (Estimate::PairedRateDifference, true, _) => Method::Bootstrap,
-        (Estimate::Other, _, _) => Method::Bootstrap,
-        (Estimate::AucBinary, _, _) => Method::DeLong,
-        (Estimate::AucSoft, _, _) => Method::Bootstrap,
-    };
-    let chosen = match configured {
-        IntervalMethod::Auto => auto,
-        IntervalMethod::Wilson => Method::Wilson,
-        IntervalMethod::ClopperPearson => Method::ClopperPearson,
-        IntervalMethod::Jeffreys => Method::Jeffreys,
-        IntervalMethod::Bootstrap => Method::Bootstrap,
-    };
-    let rate_method = matches!(
-        chosen,
-        Method::Wilson | Method::ClopperPearson | Method::Jeffreys
-    );
-    if rate_method && estimate != Estimate::Rate {
-        return Err(format!("{chosen:?} applies to single rates only"));
-    }
-    if purpose == Purpose::Gate
-        && estimate == Estimate::Rate
-        && chosen == Method::Bootstrap
-        && events.is_some_and(|e| e <= 5)
-    {
-        return Err(
-            "bootstrap bounds degenerate with 5 or fewer events; use the exact method".into(),
-        );
-    }
-    Ok(chosen)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn selection_follows_the_table() {
-        use Estimate::*;
-        use Purpose::*;
-        let auto = |e, d, p| select(e, d, p, IntervalMethod::Auto, None).unwrap();
-        assert_eq!(auto(Rate, false, Display), Method::Wilson);
-        assert_eq!(auto(Rate, false, Gate), Method::ClopperPearson);
-        assert_eq!(auto(Rate, true, Gate), Method::ClopperPearson);
-        assert_eq!(auto(Rate, true, Display), Method::Bootstrap);
-        assert_eq!(auto(PairedRateDifference, false, Display), Method::Tango);
-        assert_eq!(auto(PairedRateDifference, true, Display), Method::Bootstrap);
-        assert_eq!(auto(Other, false, Display), Method::Bootstrap);
-        assert_eq!(auto(AucBinary, false, Display), Method::DeLong);
-        assert_eq!(auto(AucSoft, false, Display), Method::Bootstrap);
-        assert_eq!(
-            select(Rate, false, Display, IntervalMethod::Jeffreys, None),
-            Ok(Method::Jeffreys)
-        );
-        assert!(select(Other, false, Display, IntervalMethod::Wilson, None).is_err());
-        assert!(select(Rate, false, Gate, IntervalMethod::Bootstrap, Some(5)).is_err());
-        assert_eq!(
-            select(Rate, false, Gate, IntervalMethod::Bootstrap, Some(6)),
-            Ok(Method::Bootstrap)
-        );
-    }
 
     #[test]
     fn empty_denominators_are_vacuous() {

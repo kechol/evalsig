@@ -1280,3 +1280,28 @@ after the entry is `Accepted`.
   winning share (not taken: raters share items, so their wins are not independent).
 - Consequences: a gate's `human_parity` is harder to pass than `agree --parity` on the
   same data when there are many raters, and a pass carries the gate's guarantee.
+
+## D-039 The core library offers what the commands compute
+
+- Status: Accepted
+- Date: 2026-11-08
+- Context: `evalsig-core` carried tested functions that no command calls, beside the
+  pipeline that does the same work: a chooser of interval methods and the
+  `[stats] interval` setting it read, which nothing applied; `score.rs`, whose
+  `rate_at_least` differs from the pipeline's; `missing::mean_with_missing`;
+  `paired::paired_mean_difference`; `paired::mcnemar`; `power::gate_pass_probability`;
+  and `sdt::Confusion`'s own counting and rates. Their reference and unit tests
+  certified the copy that ships nowhere, and a setting that changes nothing misleads.
+- Decision:
+  - A public function of `evalsig-core` is one a command uses. The unused twins and the
+    `[stats] interval` setting are removed; a configuration that sets `interval` is
+    refused as an unknown key.
+  - Reference cases are checked through the functions the commands call (for example
+    score metrics through `report::build`).
+- Alternatives: wiring the chooser and the setting into `report` (not taken: the
+  methods each metric takes are fixed by metrics spec §1.1, and the other choices would
+  let a display interval degenerate where the spec avoids it); keeping the twins as
+  library extras (not taken: they drift from the pipeline unseen).
+- Consequences: a library user who called the removed functions computes the same
+  quantities through `report`, `compare` and `power`.
+

@@ -17,7 +17,6 @@ level = 0.95
 bootstrap = 2000
 # seed = 12345            # Fix to make bootstrap intervals reproducible
 estimand = "single_shot"  # single_shot / majority@k / any@k / all@k
-interval = "auto"
 
 [missing]
 # System-side reasons (error, timeout, refused, invalid_output, limit) default to worst;

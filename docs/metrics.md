@@ -141,8 +141,8 @@ Every interval function returns the vacuous [0, 1] when n = 0.
   clusters, and smaller for unequal weights, clusters or soft references; the event count
   is p̂ · n_eff. The `missing_rate` condition (p̂ is the mean over items of each item's
   share of missing judgments, n the number of items) and the replicate-disagreement upper
-  bound (§6.2) use the exact method too. The library also provides Jeffreys and a method
-  chooser, which no command calls.
+  bound (§6.2) use the exact method too. The library also provides Jeffreys, which no
+  command uses.
 - **Why exact.** With no events the Wilson one-sided upper bound is smaller than the
   exact one, 1.645²/(n + 1.645²) against 1 − α^(1/n) at α = 0.05, and a percentile
   bootstrap returns 0, which would pass a rate condition on no evidence. At n = 300 and a
@@ -152,7 +152,7 @@ Every interval function returns the vacuous [0, 1] when n = 0.
   claim a rate below u with no events: `docs/sample-size.md`, table 1.
 - Reference case: `proportion_interval`.
 
-### 1.1 Choosing the interval method (`interval = "auto"`)
+### 1.1 Which interval each metric gets
 
 | Metric | Replicates, clusters or weights | Method |
 |---|---|---|

@@ -18,7 +18,6 @@ level = 0.95
 bootstrap = 2000                      # Gates at one-sided alpha/B require at least 50/(alpha/B)
 seed = 20261029
 estimand = "single_shot"              # single_shot (one production run) / majority@k / any@k / all@k
-interval = "auto"                     # auto / wilson / clopper_pearson / jeffreys / bootstrap
 
 [missing]                             # worst / best / drop per reason; unlisted reasons keep their default
 # System side (error, timeout, refused, invalid_output, limit) defaults to worst.

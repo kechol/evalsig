@@ -377,7 +377,7 @@ canonicalized, so equivalent files hash the same. Tables:
 |---|---|
 | `[project]` | `name`, the positive definition `positive`, the decision rule `decision`, per-task overrides in `[project.tasks.<task>]` |
 | `[store]` | `content` (`full`, `hash`, `redact`), `redact_patterns` |
-| `[stats]` | `level` (0.95), `bootstrap` (2000), `seed` (default 0, recorded in every result), `estimand`, `interval` (`auto`, `wilson`, `clopper_pearson`, `jeffreys`, `bootstrap`) |
+| `[stats]` | `level` (0.95), `bootstrap` (2000), `seed` (default 0, recorded in every result), `estimand` |
 | `[missing]` | `worst`, `best` or `drop` per missing reason |
 | `[reference]` | `mode` (`single`, `majority`, `soft`), `rater_design` (`auto`, `nested`, `crossed`) |
 | `[compare]` | `min_effect` per metric, `validation_warn_after` (20) |

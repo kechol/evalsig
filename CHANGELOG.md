@@ -103,6 +103,12 @@ longer reproduces.
   a decimal split share is not rounded up by floating-point error; the ROC sweep is
   linear in the number of distinct scores, and a NaN score no longer stops it.
 
+### Removed
+
+- `[stats] interval` (D-039): no command applied it; the interval of each metric is
+  fixed by metrics spec §1.1, and a configuration that sets it is refused. The library's
+  interval chooser goes with it.
+
 ## [0.1.0] - 2026-11-07
 
 ### Added
