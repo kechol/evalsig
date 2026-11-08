@@ -384,16 +384,8 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
     if na < 2.0 || nb < 2.0 {
         return None;
     }
-    // An arm of equal values has no spread; computing it would leave rounding noise.
-    let spread = |x: &[f64]| {
-        if x.iter().all(|v| *v == x[0]) {
-            0.0
-        } else {
-            variance(x, 1)
-        }
-    };
     let (ma, mb) = (mean(a.iter().copied())?, mean(b.iter().copied())?);
-    let (sa, sb) = (spread(a) / na, spread(b) / nb);
+    let (sa, sb) = (variance(a, 1) / na, variance(b, 1) / nb);
     let se = (sa + sb).sqrt();
     if se == 0.0 {
         return None;

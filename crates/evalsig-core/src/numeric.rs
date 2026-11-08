@@ -117,10 +117,14 @@ pub fn mean(values: impl IntoIterator<Item = f64>) -> Option<f64> {
     (n > 0).then(|| total / n as f64)
 }
 
-/// Variance with divisor n − ddof (0: population, 1: sample); NaN when n ≤ ddof.
+/// Variance with divisor n − ddof (0: population, 1: sample); NaN when n ≤ ddof, and
+/// exactly 0 for equal values, whose computed mean can sit an ulp away from them.
 pub fn variance(xs: &[f64], ddof: usize) -> f64 {
     if xs.len() <= ddof {
         return f64::NAN;
+    }
+    if xs.iter().all(|x| *x == xs[0]) {
+        return 0.0;
     }
     let m = mean(xs.iter().copied()).unwrap_or(f64::NAN);
     sum(xs.iter().map(|x| (x - m) * (x - m))) / (xs.len() as f64 - ddof as f64)
