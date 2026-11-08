@@ -9,6 +9,7 @@ use crate::bootstrap::{self, Strata};
 use crate::interval::newcombe;
 use crate::numeric::{Rng, Running, mean, norm_ppf, sum, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
+use crate::replicates::decided_positive;
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
 
 /// The change of one metric from the baseline arm to the candidate arm.
@@ -218,7 +219,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
             .iter()
             .filter_map(|item| {
                 let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
-                s.map(|s| (s, va >= 0.5, vb >= 0.5))
+                s.map(|s| (s, decided_positive(va), decided_positive(vb)))
             })
             .collect();
         Transition::of(&items)

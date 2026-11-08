@@ -13,6 +13,7 @@ use evalsig_core::parity::{self, ParityVerdict};
 use evalsig_core::preference::{self, RankingError};
 use evalsig_core::records::{Label, LabelKind, Preference, Record, Source, Value as RecordValue};
 use evalsig_core::reference;
+use evalsig_core::replicates;
 use evalsig_core::report;
 use evalsig_core::rules::Rule;
 use serde_json::{Value, json};
@@ -293,10 +294,9 @@ fn system_row(
     )
     .map_err(Error::report)?;
     let judged = prepared.judged();
-    // The run's decision on an item: positive when most of its replicates are.
     let system: BTreeMap<&str, bool> = judged
         .iter()
-        .map(|(item, (v, _))| (item.as_str(), *v >= 0.5))
+        .map(|(item, (v, _))| (item.as_str(), replicates::decided_positive(*v)))
         .collect();
     let (mean, each) = reference::kappa_vs_raters(&system, human_votes).unzip();
     Ok(json!({

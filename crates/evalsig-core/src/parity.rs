@@ -14,6 +14,7 @@ use statrs::distribution::{ContinuousCDF, StudentsT};
 use crate::numeric::{mean, sum, variance};
 use crate::paired::holm;
 use crate::records::{Label, LabelKind, Source};
+use crate::replicates::decided_positive;
 use crate::report::Prepared;
 
 /// The default ε, the paper's value for crowd raters and the strictest of its three.
@@ -99,7 +100,7 @@ pub struct Parity {
 
 /// A run against the human raters among `labels` (their latest first label replicate;
 /// adjudications are not raters). A run with a decision rule is compared on decisions,
-/// nominally, positive when most of its replicates are, with the labels read by the
+/// nominally, positive when at least half of its replicates are, with the labels read by the
 /// positive definition; one without, on its values, graded.
 pub fn of_run(
     prepared: &Prepared<'_>,
@@ -144,7 +145,7 @@ pub fn of_run(
                 f64::INFINITY
             } else {
                 match scale {
-                    Scale::Nominal => f64::from(u8::from(v >= 0.5)),
+                    Scale::Nominal => f64::from(u8::from(decided_positive(v))),
                     Scale::Graded => v,
                 }
             };

@@ -17,7 +17,7 @@ use crate::records::{
     Item, Judgment, Label, MissingReason, OutputType, Run, Value, ValueSemantics,
 };
 use crate::reference;
-use crate::replicates::{Disagreement, item_value};
+use crate::replicates::{Disagreement, decided_positive, item_value};
 use crate::rules::Rule;
 
 mod detail;
@@ -865,9 +865,8 @@ impl Calc<'_> {
             return None;
         }
         let v = if binary && self.settings.estimand != Estimand::SingleShot {
-            // Replicates are 0/1 judgments here (grading replicates averaged); round
-            // a split grading to the nearer side for the @k rules.
-            let c = values.iter().filter(|v| **v >= 0.5).count() as u64;
+            // Replicates are 0/1 judgments here, grading replicates averaged.
+            let c = values.iter().filter(|v| decided_positive(**v)).count() as u64;
             item_value(c, values.len() as u64, self.settings.estimand)?
         } else {
             mean(values.iter().copied())?

@@ -329,6 +329,9 @@ For item i with c_i of K_i replicates positive (or correct):
   of item values and `rate_at_least` is the mean over items of the share of an item's
   replicates at or above t.
 - **Missing replicates.** Filled or dropped by §0.1 before the item value is formed.
+- **One decision per item.** Where an item needs a yes or no rather than a value (the
+  transition table of §7, κ against the raters, the alternative annotator test), it is
+  judged positive when at least half of its replicates are, so a tie is positive.
 - Reference case: `estimand_at_k`.
 
 #### 6.1.1 Performance and cost as k varies (k-curve of `report`)
@@ -627,11 +630,11 @@ remaining raters (Calderon, Reichart and Dror 2025; parameters in D-017).
 - Reference case: `alt_test`, from scipy's `ttest_1samp` and `false_discovery_control`.
 - **Where it runs.** `agree --parity --run <run>` tests that run against the human raters;
   the verdict is the envelope's, and the setting `agree.parity_epsilon` changes ε. A run
-  with a decision rule is compared on decisions (positive when most of its replicates
-  are), with the labels' positive definition; a run without one, on its values. A missing
-  judgment that the missing policy counts as the worst agrees with no human (in a gate,
-  every missing judgment). With two
-  tested raters the output warns `two_human_raters`. In a gate, a `human_parity` condition
+  with a decision rule is compared on decisions (positive when at least half of its
+  replicates are, §6.1), with the labels' positive definition; a run without one, on its
+  values. A missing judgment that the missing policy counts as the worst agrees with no
+  human (in a gate, every missing judgment). With two tested raters the output warns
+  `two_human_raters`. In a gate, a `human_parity` condition
   with the rule `pass` runs the test on the holdout's items against the sealed human
   labels, with its `value` as ε (fixed at approval from `agree.parity_epsilon` when left
   out) and the raters adjusted together by Holm at the submission's level α/B. Holm keeps

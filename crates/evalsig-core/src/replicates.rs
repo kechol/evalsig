@@ -30,6 +30,14 @@ fn hypergeometric(a: u64, b: u64, k: u64, j: u64) -> f64 {
     (ln_binomial(a, j) + ln_binomial(b, k - j) - ln_binomial(a + b, k)).exp()
 }
 
+/// Whether an item whose replicates are positive with share `share` counts as judged
+/// positive where one decision per item is needed (transitions, agreement with raters,
+/// the alternative annotator test, a split grading under an @k rule): at least half
+/// of them are, so a tie is positive.
+pub fn decided_positive(share: f64) -> bool {
+    share >= 0.5
+}
+
 /// The probability that a rule over k replicates drawn without replacement from
 /// K, c of them positive, says positive (metrics spec §6.1). `None` when k > K.
 pub fn at_k(c: u64, big_k: u64, k: u64, rule: Rule) -> Option<f64> {
