@@ -119,7 +119,7 @@ fn purge_removes_the_text_and_keeps_the_ledger_valid() {
         .success();
     std::fs::remove_file(&file).unwrap();
     let before = json(evalsig(dir.path()).args(["report", "r", "--by", "channel"]));
-    // A working copy left by an evalsig from before D-028.
+    // A copy of the data outside the project layout.
     std::fs::create_dir(root.join("cache")).unwrap();
     std::fs::write(root.join("cache/evalsig.db"), SECRET).unwrap();
     assert!(!holding(&root, SECRET).is_empty());

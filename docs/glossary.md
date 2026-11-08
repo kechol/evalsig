@@ -34,14 +34,14 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | preference | `preference` | A record comparing the outputs of two arms on the same item and saying which is better |
 | win rate | `win_rate` | An arm's mean preference score (1 preferred, ½ tie, 0 not), averaged over each item's raters and then over items; the interval resamples items |
 | feature | `feature` | A rule, aspect or assertion that fired inside a judgment, with whether it fired and its strength |
-| content | `content` | Text such as the input, the output and a grader's reasoning |
+| content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
 | run | `run` | One import unit: the judgments of one system version on one dataset |
 | arm | `arm` | One side of a comparison, such as "before" and "after" |
 | missing | `missing` | An item whose judgment or label could not be obtained. Carries a reason code and is never silently dropped from the denominator |
 | mapping | `mapping` / `mapping.toml` | A declaration that maps external records to the canonical format (row splitting, ID assembly, value mapping, missing conditions, joining labels from another file). Its hash is kept as provenance |
 | decisions needed | `decisions_needed` | Mapping choices that change results and are never guessed. `map decide` records the human answer |
 | capabilities | `capabilities` | The analyses the current data supports, the ones it does not, and how to obtain the missing information |
-| migration | `migrate` | Raising the version of evalsig's own canonical format. Distinct from mapping external records (`map`) |
+| migration | `migrate` | Rewriting snapshots in an earlier canonical record format as new snapshots in the current one, with a ledger line; the originals are kept. Distinct from mapping external records (`map`) |
 
 ## Signal detection and classification
 
@@ -65,7 +65,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | isosensitivity curve | — | The (F, H) curve of constant d′. Moving along it only shifts the criterion |
 | likelihood ratio | `likelihood_ratio` (LR), `features` | Feature firing probability among positives divided by that among negatives. 1 means uninformative. `features` lists each feature's LR and class |
 | decision threshold | `threshold` | The score or level from which a judgment counts as positive |
-| cost matrix | `cost_matrix` | Loss per item for each (reference label, judgment level) cell |
+| cost matrix | `[cost] matrix` | Loss per item for each (reference label, judgment level) cell |
 | expected cost | `expected_cost` | Average loss per item from the cost matrix and the judgment distribution |
 
 ## Agreement and repeatability
@@ -73,9 +73,10 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | Term | Identifier | Meaning |
 |---|---|---|
 | replicate disagreement | `replicate_disagreement` | Share of items whose replicates disagree. A repeatability measure |
+| reproducibility | `reproducibility` | How often a run's replicates of one item disagree, for generation and grading replicates separately: the pairwise disagreement rate with its upper bound, and the share of items with any disagreement |
 | kappa versus reference | `kappa_vs_reference` | Cohen's κ between a system's judgments and the reference labels |
 | noise floor | `noise_floor` | How much a metric moves when the same configuration is simply re-run. Included in the intervals and shown as a diagnostic, not used separately in verdicts |
-| reference mode | `reference.mode` | How several human labels become a reference: `single` (one rater or adjudication), `majority`, `soft` (share of raters saying positive) or `latent` (Dawid-Skene; needs three or more raters per item) |
+| reference mode | `reference.mode` | How several human labels become a reference: `single` (one rater or adjudication), `majority`, `soft` (share of raters saying positive); `latent` (Dawid-Skene) is recognised and refused in this version |
 | rater design | `rater_design` | `nested` (different raters per item) or `crossed` (the same few raters label many items). Changes the estimand. Raters are not resampled |
 | reference agreement | `reference_agreement` | Stratum of items on which all human raters agreed (`unanimous`) or not (`split`) |
 | ceiling | `ceiling` | With a soft reference, the accuracy no system can exceed: mean(max(s, 1 − s)) |
@@ -153,8 +154,6 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | object | `objects/` | A stored body (snapshot, provenance, content, result) named by the hash of its bytes |
 | spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/1`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
-| content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |
-| migration | `migrate` | Rewriting snapshots in an earlier canonical record format as new snapshots in the current one, with a ledger line; the originals are kept |
 | purge | `purge` | Removing a content body and the free-text fields of the items that name it, through a replacement snapshot and a ledger line; the superseded snapshot remains only as a hash |
 | exclusion | `exclude`, `reason` | Leaving items out of every analysis with a reason code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other`), through replacement snapshots and a ledger line. Holdout items are excluded by the referee only |
 | validity checks | `checks` | Checks that stop measurement errors: missing denominators, mixed versions, double-counted replicates |

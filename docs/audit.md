@@ -265,8 +265,8 @@ and warns with `secret_in_content`; `--fail-on-secret` makes it stop.
    leaves text behind and not data that cannot be loaded.
 3. It deletes the body, its redacted copy if no other record names it, the
    superseded snapshots and the saved reports that name them. A `cache/`
-   directory, the SQLite copy that versions before D-028 kept, is deleted too
-   (`stale_working_copy_removed`).
+   directory, which is outside the project layout and may hold a copy of the
+   data, is deleted too (`stale_working_copy_removed`).
 
 Data loading follows `purge` lines, and importing records that were purged is
 refused. Superseded snapshots remain only as hashes in the ledger. Two

@@ -144,15 +144,15 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     for p in &reports {
         std::fs::remove_file(p).map_err(|e| io_error(p, &e))?;
     }
-    // Projects made before D-028 may still hold a SQLite copy of the data, which
-    // nothing updates any more; it would keep the purged text.
+    // `cache/` is outside the project layout and no command reads or updates it; a
+    // copy of the data there would keep the purged text.
     let stale = project.dir.join("cache");
     if stale.is_dir() {
         std::fs::remove_dir_all(&stale).map_err(|e| io_error(&stale, &e))?;
         envelope.warnings.push(Warning {
             code: "stale_working_copy_removed".into(),
             message: format!(
-                "removed {}, a working copy left by an earlier evalsig that could hold the purged text",
+                "removed {}, a directory outside the project layout that could hold the purged text",
                 stale.display()
             ),
         });
