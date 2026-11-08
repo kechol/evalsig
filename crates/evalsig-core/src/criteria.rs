@@ -1,9 +1,10 @@
 //! `check.toml`, the subset of `gate.toml` for a non-preregistered check of one run
 //! against interval-based absolute criteria (D-021).
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::{Estimand, Reference};
+use crate::gate::{self, Evidence, Sided};
 use crate::rules::Rule;
 
 /// Sections of `gate.toml` that a check refuses.
@@ -44,34 +45,15 @@ pub struct GraderSpec {
     pub version: Option<String>,
 }
 
-/// The absolute rules a check offers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AbsoluteRule {
-    /// The interval's lower bound is at least the value.
-    LowerBoundAtLeast,
-    /// The interval's upper bound is at most the value.
-    UpperBoundAtMost,
-}
-
-/// Whether the interval is one-sided or two-sided.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Sided {
-    /// One-sided interval.
-    One,
-    /// Two-sided interval.
-    Two,
-}
-
 /// One condition of a check: a rule applied to a metric.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Condition {
     /// Name of the metric the condition reads.
     pub metric: String,
-    /// The rule applied to the metric's interval.
-    pub rule: AbsoluteRule,
+    /// The rule applied to the metric's interval: `lower_bound_at_least` or
+    /// `upper_bound_at_most`, the gate's absolute rules (`parse` refuses the others).
+    pub rule: gate::Rule,
     /// The threshold the bound is compared with.
     pub value: f64,
     /// Whether the interval is one-sided or two-sided.
@@ -151,20 +133,25 @@ impl Condition {
     /// The two-sided level whose interval gives this condition's bound, at its own
     /// level or else the configured `level`.
     pub fn interval_level(&self, level: f64) -> f64 {
-        let level = self.level.unwrap_or(level);
-        match self.sided {
-            Sided::One => 2.0 * level - 1.0,
-            Sided::Two => level,
-        }
+        gate::interval_level(self.level.unwrap_or(level), 1, self.sided)
     }
 
-    /// The bound the rule reads and whether it holds; `None` without an interval.
-    pub fn judge(&self, interval: Option<(f64, f64)>) -> Option<(f64, bool)> {
-        let (lo, hi) = interval?;
-        Some(match self.rule {
-            AbsoluteRule::LowerBoundAtLeast => (lo, lo >= self.value),
-            AbsoluteRule::UpperBoundAtMost => (hi, hi <= self.value),
-        })
+    /// The bound the rule reads and whether it holds, as a gate would judge it; `None`
+    /// without a value and its interval.
+    pub fn judge(&self, point: Option<f64>, interval: Option<(f64, f64)>) -> Option<(f64, bool)> {
+        let (point, (lo, hi)) = (point?, interval?);
+        let bound = if self.rule == gate::Rule::UpperBoundAtMost {
+            hi
+        } else {
+            lo
+        };
+        let passed = gate::judge(
+            self.rule,
+            self.value,
+            None,
+            Some(Evidence::Value { point, lo, hi }),
+        )?;
+        Some((bound, passed))
     }
 }
 
@@ -219,8 +206,8 @@ sided = "one"
     #[test]
     fn rules_read_the_matching_end_of_the_interval() {
         let c = parse(OK).unwrap().conditions.remove(0);
-        assert_eq!(c.judge(Some((0.72, 0.8))), Some((0.72, true)));
-        assert_eq!(c.judge(Some((0.69, 0.8))), Some((0.69, false)));
-        assert_eq!(c.judge(None), None);
+        assert_eq!(c.judge(Some(0.76), Some((0.72, 0.8))), Some((0.72, true)));
+        assert_eq!(c.judge(Some(0.74), Some((0.69, 0.8))), Some((0.69, false)));
+        assert_eq!(c.judge(Some(0.76), None), None);
     }
 }

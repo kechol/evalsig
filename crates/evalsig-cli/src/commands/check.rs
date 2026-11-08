@@ -5,8 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use evalsig_core::criteria::{self, Condition};
-use evalsig_core::gate;
-use evalsig_core::interval::{clopper_pearson, clopper_pearson_upper};
+use evalsig_core::gate::{self, Evidence};
 use evalsig_core::missing::Side;
 use evalsig_core::records::{Judgment, Label};
 use evalsig_core::report::{self, Report};
@@ -117,7 +116,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
             &judgments,
             c.level.unwrap_or(settings.level),
         )?;
-        let judged = if enough { c.judge(interval) } else { None };
+        let judged = if enough {
+            c.judge(estimate, interval)
+        } else {
+            None
+        };
         outcomes.push(judged.map(|(_, passed)| passed));
         rows.push(json!({
             "metric": c.metric,
@@ -187,11 +190,12 @@ fn condition_value(
                 .as_ref()
                 .is_some_and(|m| m.reason.side() == Side::System)
         });
-        let interval = (n > 0.0).then(|| match c.sided {
-            criteria::Sided::One => (0.0, clopper_pearson_upper(k, n, level)),
-            criteria::Sided::Two => clopper_pearson(k, n, level),
-        });
-        return Ok(((n > 0.0).then(|| k / n), interval));
+        return Ok(
+            match gate::missing_rate(k, n, c.interval_level(level), c.sided) {
+                Some(Evidence::Value { point, lo, hi }) => (Some(point), Some((lo, hi))),
+                _ => (None, None),
+            },
+        );
     }
     let m = r
         .metrics

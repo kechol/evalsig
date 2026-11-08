@@ -14,6 +14,7 @@ use evalsig_core::gate::{self, Evidence, Rule as GateRule, Sided};
 use evalsig_core::labels::LabelSet;
 use evalsig_core::missing::MissingPolicy;
 use evalsig_core::parity::{self, Adjustment, ParityVerdict};
+use evalsig_core::power;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run, Source};
 use evalsig_core::report::{self, Fill, Sections, Settings};
 use evalsig_core::validity;
@@ -617,7 +618,7 @@ fn judge(j: &Judging, recorded: &mut Vec<String>) -> Result<Answer, Error> {
                     "human_parity has no epsilon; approve the conditions again",
                 )
             })?;
-            let alpha = (1.0 - level) / f64::from(h.budget);
+            let alpha = power::bonferroni(1.0 - level, h.budget);
             match parity::of_run(&p, &h.labels, epsilon, alpha, Adjustment::Holm).verdict {
                 ParityVerdict::HumanParity => Some(Evidence::Verdict(true)),
                 ParityVerdict::BelowHuman => Some(Evidence::Verdict(false)),
