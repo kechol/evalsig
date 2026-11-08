@@ -775,6 +775,13 @@ impl MetricId {
         }
     }
 
+    /// Whether filling a missing judgment with the best or worst value bounds the metric.
+    /// Precision's denominator is the items judged positive, so a filled judgment moves
+    /// the denominator and gives no bounds.
+    pub fn has_missing_bounds(self) -> bool {
+        self != MetricId::Precision
+    }
+
     /// The factor that orients a difference so that positive is better.
     pub fn sign(self) -> f64 {
         if self.higher_is_better() { 1.0 } else { -1.0 }

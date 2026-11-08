@@ -15,6 +15,9 @@ use crate::report::{Fill, ItemValue, MetricId, Prepared};
 /// The change of one metric from the baseline arm to the candidate arm.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetricDelta {
+    /// The metric, for code that needs its properties.
+    #[serde(skip)]
+    pub id: MetricId,
     /// Name of the metric.
     pub metric: &'static str,
     /// `higher_is_better` or `lower_is_better`.
@@ -155,6 +158,7 @@ fn finish(
     let delta = base.zip(cand).map(|(x, y)| id.sign() * (y - x));
     let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
     MetricDelta {
+        id,
         metric: id.name(),
         direction: id.direction(),
         baseline: base,
@@ -265,7 +269,7 @@ fn metric_delta(
             .zip(ratio(y, &both))
             .map(|(x, y)| sign * (y - x))
     };
-    let missing_bounds = if system_missing && id != MetricId::Precision {
+    let missing_bounds = if system_missing && id.has_missing_bounds() {
         bounds(oriented(ba, wb), oriented(wa, bb))
     } else {
         None
@@ -443,7 +447,7 @@ fn unpaired_delta(
     let (pa, pb) = (values(a, Fill::Policy), values(b, Fill::Policy));
     let (base, cand) = (total_ratio(&pa), total_ratio(&pb));
     let delta = base.zip(cand).map(|(x, y)| sign * (y - x));
-    let missing_bounds = (has_system_missing && id != MetricId::Precision)
+    let missing_bounds = (has_system_missing && id.has_missing_bounds())
         .then(|| {
             let d = |x: Option<f64>, y: Option<f64>| x.zip(y).map(|(x, y)| sign * (y - x));
             let (wa, ba) = (

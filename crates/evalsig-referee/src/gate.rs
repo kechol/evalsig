@@ -715,13 +715,7 @@ fn ladder(j: &Judging, h: &Holdout) -> Result<Option<NewBest>, Error> {
     // A difference rule returns the difference to the baseline as the rule reads it,
     // oriented so that positive is better, rounded toward 0.
     let shown = if primary.rule.on_delta() {
-        let gap = value - l.first_best;
-        let oriented = if m.direction == "higher_is_better" {
-            gap
-        } else {
-            -gap
-        };
-        gate::round_toward(oriented, 0.0, l.step)
+        gate::round_toward(m.id.sign() * (value - l.first_best), 0.0, l.step)
     } else {
         gate::round_toward(value, l.first_best, l.step)
     };
