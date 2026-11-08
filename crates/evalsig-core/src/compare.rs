@@ -7,10 +7,11 @@ use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
 use crate::interval::newcombe;
-use crate::numeric::{Rng, Running, mean, norm_ppf, sum, variance};
+use crate::numeric::{Rng, Running, mean, student_t, sum, two_sided_z, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
 use crate::replicates::decided_positive;
 use crate::report::{Fill, ItemValue, MetricId, Prepared};
+use statrs::distribution::ContinuousCDF;
 
 /// The change of one metric from the baseline arm to the candidate arm.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -313,7 +314,7 @@ fn metric_delta(
             only_b,
             n: counted.len() as u64,
         };
-        let ci = paired::tango(d, norm_ppf(0.5 + o.level / 2.0))
+        let ci = paired::tango(d, two_sided_z(o.level))
             .map(|(lo, hi)| if sign > 0.0 { (lo, hi) } else { (-hi, -lo) });
         (ci, "tango", None, Some(paired::tango_p(d)), "tango_score")
     } else if carrying(pa).min(carrying(pb)) < bootstrap::MIN_UNITS {
@@ -359,7 +360,6 @@ fn metric_delta(
 
 /// Welch's t interval for the difference of two means, with its two-sided p-value.
 fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
-    use statrs::distribution::{ContinuousCDF, StudentsT};
     let (na, nb) = (a.len() as f64, b.len() as f64);
     if na < 2.0 || nb < 2.0 {
         return None;
@@ -379,7 +379,7 @@ fn welch(a: &[f64], b: &[f64], level: f64) -> Option<((f64, f64), f64)> {
         return None;
     }
     let df = (sa + sb).powi(2) / (sa * sa / (na - 1.0) + sb * sb / (nb - 1.0));
-    let t = StudentsT::new(0.0, 1.0, df).ok()?;
+    let t = student_t(df)?;
     let q = t.inverse_cdf(0.5 + level / 2.0);
     let d = mb - ma;
     let p = 2.0 * t.sf((d / se).abs());
@@ -476,13 +476,7 @@ fn unpaired_delta(
         let k = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.numerator));
         let n = |v: &BTreeMap<String, ItemValue>| sum(v.values().map(|x| x.denominator));
         // newcombe gives p_first − p_second; candidate minus baseline here.
-        let ci = newcombe(
-            k(&pb),
-            n(&pb),
-            k(&pa),
-            n(&pa),
-            norm_ppf(0.5 + o.level / 2.0),
-        );
+        let ci = newcombe(k(&pb), n(&pb), k(&pa), n(&pa), two_sided_z(o.level));
         (Some(orient(ci)), "newcombe", None, None, "none")
     } else if id == MetricId::MeanScore && unit(&pa) && unit(&pb) {
         let points = |v: &BTreeMap<String, ItemValue>| -> Vec<f64> {
@@ -578,10 +572,7 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
             if id == MetricId::Precision || !plain_mean {
                 return None;
             }
-            let mut rng = Rng::new(o.seed);
-            for i in (1..ds.len()).rev() {
-                ds.swap(i, rng.below(i as u64 + 1) as usize);
-            }
+            Rng::new(o.seed).shuffle(&mut ds);
             let delta = mean(ds.iter().copied());
             let cs = crate::sequential::difference(&ds, o.level).last().copied();
             let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);

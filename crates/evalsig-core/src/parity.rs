@@ -9,9 +9,9 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use statrs::distribution::{ContinuousCDF, StudentsT};
+use statrs::distribution::ContinuousCDF;
 
-use crate::numeric::{mean, sum, variance};
+use crate::numeric::{mean, student_t, sum, variance};
 use crate::paired::holm;
 use crate::records::{Label, LabelKind, Source};
 use crate::replicates::decided_positive;
@@ -268,9 +268,7 @@ fn one_sided_p(d: &[f64], m: f64, epsilon: f64) -> f64 {
         return if m < epsilon { 0.0 } else { 1.0 };
     }
     let t = (m - epsilon) / (sd / n.sqrt());
-    StudentsT::new(0.0, 1.0, n - 1.0)
-        .expect("at least MIN_ITEMS items")
-        .cdf(t)
+    student_t(n - 1.0).expect("at least MIN_ITEMS items").cdf(t)
 }
 
 /// Benjamini-Yekutieli adjusted p-values, in the input order.

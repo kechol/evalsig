@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 
-use crate::numeric::{norm_cdf, sum};
+use crate::numeric::{norm_sf, sum};
 
 /// Discordant counts of a paired binary outcome (correct, or positive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
@@ -93,7 +93,7 @@ pub fn tango_p(d: Discordant) -> f64 {
         return 1.0;
     }
     let z = (d.only_b as f64 - d.only_a as f64).abs() / discordant.sqrt();
-    (2.0 * norm_cdf(-z)).min(1.0)
+    (2.0 * norm_sf(z)).min(1.0)
 }
 
 /// Movement of items between the arms (metrics spec §7). Weighted counts, so a soft

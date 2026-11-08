@@ -3,7 +3,7 @@
 
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::{Rng as _, SeedableRng};
-use statrs::distribution::{Beta, Continuous, ContinuousCDF, Normal};
+use statrs::distribution::{Beta, Continuous, ContinuousCDF, Normal, StudentsT};
 
 /// The only random number generator evalsig uses: ChaCha20 from a recorded seed, so
 /// results repeat on every platform.
@@ -35,6 +35,13 @@ impl Rng {
     /// Uniform in [0, 1) with 53 random bits.
     pub fn next_f64(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+    }
+
+    /// Shuffle in place (Fisher-Yates, from the last position down).
+    pub fn shuffle<T>(&mut self, xs: &mut [T]) {
+        for i in (1..xs.len()).rev() {
+            xs.swap(i, self.below(i as u64 + 1) as usize);
+        }
     }
 
     /// Uniform in 0..n without modulo bias (Lemire's multiply-and-reject).
@@ -128,6 +135,21 @@ pub fn weighted_mean(pairs: impl IntoIterator<Item = (f64, f64)> + Clone) -> Opt
 /// Standard normal quantile Φ⁻¹(p).
 pub fn norm_ppf(p: f64) -> f64 {
     standard_normal().inverse_cdf(p)
+}
+
+/// The z of a two-sided interval at `level`: Φ⁻¹(½ + level/2).
+pub fn two_sided_z(level: f64) -> f64 {
+    norm_ppf(0.5 + level / 2.0)
+}
+
+/// Standard normal survival function 1 − Φ(x), without cancellation in the upper tail.
+pub fn norm_sf(x: f64) -> f64 {
+    standard_normal().sf(x)
+}
+
+/// Student's t distribution with `df` degrees of freedom; `None` unless df > 0.
+pub fn student_t(df: f64) -> Option<StudentsT> {
+    StudentsT::new(0.0, 1.0, df).ok()
 }
 
 /// Standard normal distribution function Φ(x).

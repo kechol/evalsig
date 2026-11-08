@@ -4,10 +4,8 @@
 //! Scores are oriented so that larger means more positive (ordinal levels count up
 //! from the weakest). Ties count one half.
 
-use statrs::distribution::{ContinuousCDF, Normal};
-
 use crate::bootstrap::{self, MIN_UNITS};
-use crate::numeric::{Rng, Running, norm_ppf, sum, variance};
+use crate::numeric::{Rng, Running, norm_ppf, norm_sf, sum, two_sided_z, variance};
 
 /// ψ(x, y): 1 if the positive scores higher, ½ on a tie, 0 below.
 pub fn psi(x: f64, y: f64) -> f64 {
@@ -228,7 +226,7 @@ fn logit_interval(auc: f64, variance: f64, level: f64) -> Option<(f64, f64)> {
     (auc > 0.0 && auc < 1.0 && variance > 0.0).then(|| {
         let se = variance.sqrt() / (auc * (1.0 - auc));
         let logit = (auc / (1.0 - auc)).ln();
-        let z = norm_ppf(0.5 + level / 2.0);
+        let z = two_sided_z(level);
         let back = |x: f64| 1.0 / (1.0 + (-x).exp());
         (back(logit - z * se), back(logit + z * se))
     })
@@ -331,15 +329,14 @@ pub fn delong_paired(labels: &[bool], a: &[f64], b: &[f64], level: f64) -> Optio
     }
     let se = variance.sqrt();
     let z = difference / se;
-    let normal = Normal::standard();
-    let half = norm_ppf(0.5 + level / 2.0) * se;
+    let half = two_sided_z(level) * se;
     Some(PairedAuc {
         auc_a,
         auc_b,
         difference,
         variance,
         z,
-        p_two_sided: 2.0 * normal.sf(z.abs()),
+        p_two_sided: 2.0 * norm_sf(z.abs()),
         interval: (difference - half, difference + half),
     })
 }

@@ -3,9 +3,8 @@
 //! once, intervals at the Benjamini-Hochberg (FCR) adjusted level.
 
 use serde::Serialize;
-use statrs::distribution::{ContinuousCDF, Normal};
 
-use crate::numeric::norm_ppf;
+use crate::numeric::{norm_sf, two_sided_z};
 
 /// Firing counts of one feature: `a` of `n_pos` positives and `b` of `n_neg`
 /// negatives. Counts may be fractional (replicate shares, soft references).
@@ -66,7 +65,7 @@ pub fn likelihood_ratio(c: Counts, level: f64) -> Option<Ratio> {
     let (a, m1, b, m0, corrected) = c.cells();
     let lr = (a / m1) / (b / m0);
     let se = (1.0 / a - 1.0 / m1 + 1.0 / b - 1.0 / m0).sqrt();
-    let z = norm_ppf(0.5 + level / 2.0);
+    let z = two_sided_z(level);
     Some(Ratio {
         lr,
         se,
@@ -162,11 +161,7 @@ pub fn adjusted_level(ps: &[f64], alpha: f64) -> f64 {
 /// classes has LR 1 and no spread, so its p-value is 1.
 fn p_value(r: &Ratio) -> f64 {
     let z = r.lr.ln().abs() / r.se;
-    if z.is_nan() {
-        1.0
-    } else {
-        2.0 * Normal::standard().sf(z)
-    }
+    if z.is_nan() { 1.0 } else { 2.0 * norm_sf(z) }
 }
 
 /// Assess several features at once at confidence `level`.

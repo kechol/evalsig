@@ -3,7 +3,7 @@
 //! Counts are `f64` so that effective sizes (clusters, Kish n_eff) can stand in for
 //! item counts, as the specification requires when items are not independent.
 
-use crate::numeric::{beta_ppf, norm_ppf};
+use crate::numeric::{beta_ppf, norm_ppf, two_sided_z};
 
 /// z for a two-sided 95% interval, Φ⁻¹(0.975).
 pub const Z95: f64 = 1.959_963_984_540_054;
@@ -23,7 +23,7 @@ pub fn wilson(k: f64, n: f64, z: f64) -> (f64, f64) {
 
 /// Two-sided Wilson interval at confidence `level`.
 pub fn wilson_two_sided(k: f64, n: f64, level: f64) -> (f64, f64) {
-    wilson(k, n, norm_ppf(0.5 + level / 2.0))
+    wilson(k, n, two_sided_z(level))
 }
 
 /// One-sided Wilson upper bound at confidence `level`.

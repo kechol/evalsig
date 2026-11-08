@@ -1,7 +1,7 @@
 //! Power and sample size (metrics spec §12) and the tables of `docs/sample-size.md`,
 //! which `scripts/sample_size.py` also writes; a test checks that both agree.
 
-use crate::numeric::{Running, norm_cdf, norm_ppf, sum};
+use crate::numeric::{Running, norm_cdf, norm_ppf, sum, two_sided_z};
 
 /// ln(k!) for k = 0 … n.
 fn log_factorials(n: usize) -> Vec<f64> {
@@ -37,7 +37,7 @@ fn wilson_halfwidth(k: f64, n: f64, z: f64) -> f64 {
 /// The smallest n whose two-sided Wilson interval at rate p has half-width ≤ w; above
 /// 200 items the search steps by n/200. `u64::MAX` when no count that fits reaches w.
 pub fn n_for_halfwidth(p: f64, w: f64, level: f64) -> u64 {
-    let z = norm_ppf(0.5 + level / 2.0);
+    let z = two_sided_z(level);
     let mut n: u64 = 2;
     while wilson_halfwidth((p * n as f64).round_ties_even(), n as f64, z) > w {
         match n.checked_add(if n < 200 { 1 } else { (n / 200).max(1) }) {

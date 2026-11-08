@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::numeric::{mean, norm_ppf, sum, variance};
+use crate::numeric::{mean, sum, two_sided_z, variance};
 
 /// The PPI++ estimate of a mean with its normal interval.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -66,7 +66,7 @@ pub fn mean_estimate(
     let se = (lambda * lambda * variance(unlabelled, 0) / big_n as f64
         + variance(&rectifier, 0) / n as f64)
         .sqrt();
-    let z = norm_ppf(0.5 + level / 2.0);
+    let z = two_sided_z(level);
     Some(Ppi {
         estimate,
         se,

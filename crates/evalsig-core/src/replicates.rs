@@ -7,7 +7,7 @@ use crate::config::Estimand;
 use crate::interval::clopper_pearson_upper;
 use statrs::function::factorial::ln_binomial;
 
-use crate::numeric::{mean, sum};
+use crate::numeric::{mean, sum, variance};
 
 /// How k replicates are combined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,13 +138,7 @@ impl Disagreement {
 /// Run-to-run standard deviation of a metric over R ≥ 2 runs of the same system
 /// version: a diagnostic only, never part of an interval (metrics spec §6.3).
 pub fn run_to_run_sd(values: &[f64]) -> Option<f64> {
-    let r = values.len();
-    if r < 2 {
-        return None;
-    }
-    let m = mean(values.iter().copied())?;
-    let ss = sum(values.iter().map(|v| (v - m).powi(2)));
-    Some((ss / (r - 1) as f64).sqrt())
+    (values.len() >= 2).then(|| variance(values, 1).sqrt())
 }
 
 #[cfg(test)]

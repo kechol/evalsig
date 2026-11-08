@@ -165,9 +165,7 @@ pub fn split(
             let mut rng = Rng::new(*seed);
             let mut out = BTreeMap::new();
             for mut g in groups.into_values() {
-                for i in (1..g.len()).rev() {
-                    g.swap(i, rng.below(i as u64 + 1) as usize);
-                }
+                rng.shuffle(&mut g);
                 out.extend(latest_share(g, share));
             }
             out
