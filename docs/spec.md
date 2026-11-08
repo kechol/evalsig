@@ -236,9 +236,10 @@ Unknown records and unknown fields are rejected. Examples:
 - **Labels are never overwritten.** A revision of the same (item, rater, task,
   label replicate, adjudication or not) appends a higher `version`. A rater's
   adjudication is a label of its own beside that rater's vote, not a revision of it
-  (D-037). Analyses use the latest version, or
-  the labels as of a time given with `--labels-as-of`. A gate reads only the
-  sealed set (§8.2).
+  (D-037); to correct an adjudication, write another `kind = "adjudication"` label at a
+  higher `version`, since a `kind = "revision"` label revises the vote. Analyses use the
+  latest version, or the labels as of a time given with `--labels-as-of`. A gate reads
+  only the sealed set (§8.2).
 - **The positive definition is configured once** (for example
   `positive = { ordinal_at_least = 2 }`) and can be overridden per task. It is
   required only by metrics that read reference labels, and every report states the
