@@ -83,6 +83,17 @@ pub fn interval_level(level: f64, budget: u32, sided: Sided) -> f64 {
     }
 }
 
+/// The end of the interval a rule reads: the lower end, or the upper end for
+/// `upper_bound_at_most`. `None` for `pass` and for evidence the rule does not read.
+pub fn bound(rule: Rule, evidence: Evidence) -> Option<f64> {
+    match (rule, evidence) {
+        (Rule::LowerBoundAtLeast, Evidence::Value { lo, .. }) => Some(lo),
+        (Rule::UpperBoundAtMost, Evidence::Value { hi, .. }) => Some(hi),
+        (Rule::BetterBy | Rule::NotWorseThan, Evidence::Delta { lo, .. }) => Some(lo),
+        _ => None,
+    }
+}
+
 /// Judge one condition. The difference rules are strict, so a candidate no different from
 /// the baseline (an interval of zero width at 0) does not pass `better_by = 0`.
 /// `min_effect` applies to `better_by`: the point difference must reach it. `None` when
@@ -93,15 +104,20 @@ pub fn judge(
     min_effect: Option<f64>,
     evidence: Option<Evidence>,
 ) -> Option<bool> {
-    let m = min_effect.unwrap_or(0.0);
-    match (rule, evidence?) {
-        (Rule::LowerBoundAtLeast, Evidence::Value { lo, .. }) => Some(lo >= value),
-        (Rule::UpperBoundAtMost, Evidence::Value { hi, .. }) => Some(hi <= value),
-        (Rule::BetterBy, Evidence::Delta { point, lo, .. }) => Some(lo > value && point >= m),
-        (Rule::NotWorseThan, Evidence::Delta { lo, .. }) => Some(lo > -value),
-        (Rule::Pass, Evidence::Verdict(v)) => Some(v),
-        _ => None,
+    let e = evidence?;
+    if let (Rule::Pass, Evidence::Verdict(v)) = (rule, e) {
+        return Some(v);
     }
+    let b = bound(rule, e)?;
+    Some(match (rule, e) {
+        (Rule::LowerBoundAtLeast, _) => b >= value,
+        (Rule::UpperBoundAtMost, _) => b <= value,
+        (Rule::BetterBy, Evidence::Delta { point, .. }) => {
+            b > value && point >= min_effect.unwrap_or(0.0)
+        }
+        (Rule::NotWorseThan, _) => b > -value,
+        _ => return None,
+    })
 }
 
 /// All conditions must hold (an intersection-union test, Berger 1982): one failure

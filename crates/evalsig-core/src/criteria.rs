@@ -140,17 +140,9 @@ impl Condition {
     /// without a value and its interval.
     pub fn judge(&self, point: Option<f64>, interval: Option<(f64, f64)>) -> Option<(f64, bool)> {
         let (point, (lo, hi)) = (point?, interval?);
-        let bound = if self.rule == gate::Rule::UpperBoundAtMost {
-            hi
-        } else {
-            lo
-        };
-        let passed = gate::judge(
-            self.rule,
-            self.value,
-            None,
-            Some(Evidence::Value { point, lo, hi }),
-        )?;
+        let e = Evidence::Value { point, lo, hi };
+        let bound = gate::bound(self.rule, e)?;
+        let passed = gate::judge(self.rule, self.value, None, Some(e))?;
         Some((bound, passed))
     }
 }
