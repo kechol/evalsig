@@ -61,25 +61,6 @@ pub fn clopper_pearson(k: f64, n: f64, level: f64) -> (f64, f64) {
     )
 }
 
-/// Two-sided Jeffreys interval at confidence `level`.
-pub fn jeffreys(k: f64, n: f64, level: f64) -> (f64, f64) {
-    if n <= 0.0 {
-        return (0.0, 1.0);
-    }
-    let a = (1.0 - level) / 2.0;
-    let lo = if k <= 0.0 {
-        0.0
-    } else {
-        beta_ppf(a, k + 0.5, n - k + 0.5)
-    };
-    let hi = if k >= n {
-        1.0
-    } else {
-        beta_ppf(1.0 - a, k + 0.5, n - k + 0.5)
-    };
-    (lo, hi)
-}
-
 /// Newcombe's hybrid score interval (method 10) for p_a − p_b of two independent
 /// proportions, from Wilson intervals at the given z.
 pub fn newcombe(ka: f64, na: f64, kb: f64, nb: f64, z: f64) -> (f64, f64) {
@@ -120,7 +101,6 @@ mod tests {
     #[test]
     fn empty_denominators_are_vacuous() {
         assert_eq!(clopper_pearson(0.0, 0.0, 0.95), (0.0, 1.0));
-        assert_eq!(jeffreys(0.0, 0.0, 0.95), (0.0, 1.0));
         assert_eq!(wilson_two_sided(0.0, 0.0, 0.95), (0.0, 1.0));
     }
 

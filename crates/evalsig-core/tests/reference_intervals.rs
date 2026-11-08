@@ -1,8 +1,7 @@
 //! Rate intervals against the reference values (absolute 1e-9).
 
 use evalsig_core::interval::{
-    clopper_pearson, clopper_pearson_upper, jeffreys, wilson_two_sided, wilson_upper,
-    zero_event_items,
+    clopper_pearson, clopper_pearson_upper, wilson_two_sided, wilson_upper, zero_event_items,
 };
 mod common;
 
@@ -19,7 +18,6 @@ fn proportion_intervals_match() {
         let pairs = [
             ("wilson95", wilson_two_sided(k, n, 0.95)),
             ("clopper_pearson95", clopper_pearson(k, n, 0.95)),
-            ("jeffreys95", jeffreys(k, n, 0.95)),
         ];
         for (name, (lo, hi)) in pairs {
             close(lo, &e[name][0], &format!("{name} low {k}/{n}"));

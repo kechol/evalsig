@@ -53,15 +53,12 @@ def proportion_cases():
         wl, wh = wilson(k, n, Z95)
         assert abs(wl - w.low) < 1e-12 and abs(wh - w.high) < 1e-12, (k, n)
         cp_upper_one = 1.0 if k == n else stats.beta.ppf(0.95, k + 1, n - k)
-        jl = 0.0 if k == 0 else stats.beta.ppf(0.025, k + 0.5, n - k + 0.5)
-        jh = 1.0 if k == n else stats.beta.ppf(0.975, k + 0.5, n - k + 0.5)
         out.append({
             "input": {"k": k, "n": n},
             "source": f"scipy {scipy.__version__} (binomtest.proportion_ci, beta.ppf)",
             "expected": {
                 "wilson95": [r(w.low), r(w.high)],
                 "clopper_pearson95": [r(cp.low), r(cp.high)],
-                "jeffreys95": [r(jl), r(jh)],
                 "wilson_one_sided95_upper": r(wilson(k, n, Z95_ONE)[1]),
                 "clopper_pearson_one_sided95_upper": r(cp_upper_one),
             },

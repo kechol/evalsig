@@ -130,12 +130,6 @@ pub fn variance(xs: &[f64], ddof: usize) -> f64 {
     sum(xs.iter().map(|x| (x - m) * (x - m))) / (xs.len() as f64 - ddof as f64)
 }
 
-/// Weighted mean Σwv / Σw of (value, weight) pairs; `None` when the weights sum to 0.
-pub fn weighted_mean(pairs: impl IntoIterator<Item = (f64, f64)> + Clone) -> Option<f64> {
-    let w = sum(pairs.clone().into_iter().map(|(_, w)| w));
-    (w > 0.0).then(|| sum(pairs.into_iter().map(|(v, w)| v * w)) / w)
-}
-
 /// Standard normal quantile Φ⁻¹(p).
 pub fn norm_ppf(p: f64) -> f64 {
     standard_normal().inverse_cdf(p)
@@ -273,8 +267,6 @@ mod tests {
         assert!(variance(&[], 1).is_nan() && variance(&[1.0], 1).is_nan());
         assert_eq!(mean([1.0, 2.0, 6.0]), Some(3.0));
         assert_eq!(mean([]), None);
-        assert_eq!(weighted_mean([(1.0, 3.0), (0.0, 1.0)]), Some(0.75));
-        assert_eq!(weighted_mean([(1.0, 0.0)]), None);
     }
 
     /// The ChaCha20 stream and derived values for seed 20261029. The same numbers

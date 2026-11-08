@@ -123,7 +123,6 @@ shares).
 |---|---|
 | Wilson (two-sided, display) | centre (p + z²/2n) / (1 + z²/n), half-width z·√(p(1−p)/n + z²/4n²) / (1 + z²/n), clipped to [0, 1] |
 | Clopper-Pearson (exact) | upper = Beta⁻¹(1−α; k+1, n−k), and 1 when k = n; lower = Beta⁻¹(α; k, n−k+1), and 0 when k = 0 |
-| Jeffreys | Beta⁻¹(α/2; k+½, n−k+½) and Beta⁻¹(1−α/2; k+½, n−k+½) |
 | Newcombe hybrid score | for p_a − p_b of two independent rates, from the two Wilson intervals (§7.3) |
 
 Every interval function returns the vacuous [0, 1] when n = 0.
@@ -141,8 +140,7 @@ Every interval function returns the vacuous [0, 1] when n = 0.
   clusters, and smaller for unequal weights, clusters or soft references; the event count
   is p̂ · n_eff. The `missing_rate` condition (p̂ is the mean over items of each item's
   share of missing judgments, n the number of items) and the replicate-disagreement upper
-  bound (§6.2) use the exact method too. The library also provides Jeffreys, which no
-  command uses.
+  bound (§6.2) use the exact method too.
 - **Why exact.** With no events the Wilson one-sided upper bound is smaller than the
   exact one, 1.645²/(n + 1.645²) against 1 − α^(1/n) at α = 0.05, and a percentile
   bootstrap returns 0, which would pass a rate condition on no evidence. At n = 300 and a
