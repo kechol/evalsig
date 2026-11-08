@@ -1,12 +1,13 @@
 //! Append-only label revisions and as-of selection (SPEC §5.1).
 //!
 //! A label is identified by (item, rater, task, label replicate, whether it is an
-//! adjudication; D-037). Revisions append a higher `version`; nothing is overwritten. Analyses read the latest version, or the
-//! latest one labelled at or before an `--labels-as-of` instant.
+//! adjudication; D-037). Revisions append a higher `version`; nothing is overwritten.
+//! Analyses read the latest version, or the latest one labelled at or before an
+//! `--labels-as-of` instant.
 
 use std::collections::BTreeMap;
 
-use crate::records::Label;
+use crate::records::{Label, LabelKind};
 use crate::time::{Instant, TimestampError};
 
 /// The identity of a label across its revisions.
@@ -33,7 +34,7 @@ impl LabelKey {
             rater_id: label.rater_id.clone(),
             task: label.task().to_owned(),
             label_replicate: label.label_replicate(),
-            adjudication: label.kind() == crate::records::LabelKind::Adjudication,
+            adjudication: label.kind() == LabelKind::Adjudication,
         }
     }
 }
@@ -220,12 +221,12 @@ mod tests {
             )))
             .unwrap();
             let mut latest: Vec<_> = set.latest().iter().map(|l| (l.kind(), l.value)).collect();
-            latest.sort_by_key(|(k, _)| *k == crate::records::LabelKind::Adjudication);
+            latest.sort_by_key(|(k, _)| *k == LabelKind::Adjudication);
             assert_eq!(
                 latest,
                 [
-                    (crate::records::LabelKind::Independent, Some(Value::Int(3))),
-                    (crate::records::LabelKind::Adjudication, Some(Value::Int(1)))
+                    (LabelKind::Independent, Some(Value::Int(3))),
+                    (LabelKind::Adjudication, Some(Value::Int(1)))
                 ]
             );
         }

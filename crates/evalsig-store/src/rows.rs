@@ -5,7 +5,7 @@
 
 use std::cmp::Ordering;
 
-use evalsig_core::records::Record;
+use evalsig_core::records::{LabelKind, Record};
 
 use crate::canonical::{CanonicalError, to_canonical_bytes};
 use crate::hash::{ContentHash, file_hash};
@@ -32,9 +32,7 @@ fn key(r: &Record) -> (u8, [Part<'_>; 8]) {
                 Str(x.task()),
                 Num(x.label_replicate()),
                 // An adjudication is a label of its own beside the rater's vote (D-037).
-                Num(u32::from(
-                    x.kind() == evalsig_core::records::LabelKind::Adjudication,
-                )),
+                Num(u32::from(x.kind() == LabelKind::Adjudication)),
                 Num(x.version),
                 N,
                 N,
