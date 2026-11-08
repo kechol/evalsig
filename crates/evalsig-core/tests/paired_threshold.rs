@@ -110,3 +110,37 @@ fn rate_at_least_takes_tangos_interval_and_score_test() {
     assert!((lo - -0.155509).abs() < 1e-5, "{lo}");
     assert!((hi - 0.590725).abs() < 1e-5, "{hi}");
 }
+
+#[test]
+fn a_baseline_for_one_metric_compares_only_that_metric() {
+    let a = run("a", &[0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1]);
+    let b = run("b", &[0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1]);
+    let (ra, ja, items) = parts(&a);
+    let (rb, jb, _) = parts(&b);
+    let items: BTreeMap<&str, &Item> = items.iter().map(|i| (i.item_id.as_str(), i)).collect();
+    let (ja, jb): (Vec<&Judgment>, Vec<&Judgment>) = (ja.iter().collect(), jb.iter().collect());
+    let s = settings();
+    let pa = report::prepare(&ra, &ja, &items, &[], &s).unwrap();
+    let pb = report::prepare(&rb, &jb, &items, &[], &s).unwrap();
+    let options = Options {
+        level: 0.95,
+        bootstrap: 200,
+        seed: 1,
+        min_effect: BTreeMap::new(),
+        excluded: BTreeSet::new(),
+        scope: None,
+    };
+    let full = compare::compare(&Baseline::new(&pa), &pb, &options);
+    let only = Baseline::only(&pa, "rate_at_least");
+    let one = compare::compare(&only, &pb, &options);
+    assert!(full.metrics.len() > 1);
+    assert_eq!(one.metrics.len(), 1);
+    // The same metric, with the same draws, whatever else the baseline holds.
+    let same = full.metrics.iter().find(|m| m.metric == "rate_at_least");
+    assert_eq!(one.metrics.first(), same);
+    assert!(
+        compare::sequential(&only, &pb, &options)
+            .iter()
+            .all(|d| d.metric == "rate_at_least")
+    );
+}

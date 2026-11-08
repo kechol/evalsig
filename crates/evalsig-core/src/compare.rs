@@ -59,7 +59,7 @@ pub struct Comparison {
     pub n_used: usize,
     /// Number of items present in only one arm.
     pub n_unpaired: u64,
-    /// One entry per metric both arms support.
+    /// One entry per metric both arms support and the baseline holds values for.
     pub metrics: Vec<MetricDelta>,
     /// Items moving between correct and wrong; present for a binary decision.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -572,7 +572,7 @@ pub fn sequential(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Vec
         .into_iter()
         .filter_map(|id| {
             let sign = id.sign();
-            let (pa, pb) = (&base.values[&id][0], &b.item_values(id, Fill::Policy));
+            let (pa, pb) = (&base.values.get(&id)?[0], &b.item_values(id, Fill::Policy));
             let value = |v: &ItemValue| v.numerator / v.denominator;
             let mut ds: Vec<f64> = pa
                 .iter()
