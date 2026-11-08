@@ -28,3 +28,7 @@ cargo-cyclonedx = true
 # The release workflow is pinned by commit, shellcheck-clean and scoped in its
 # permissions; dist must not regenerate it
 allow-dirty = ["ci"]
+
+# GitHub no longer offers dist's default arm64 macOS runner (macos-14).
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
