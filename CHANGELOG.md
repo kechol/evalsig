@@ -32,6 +32,9 @@ longer reproduces.
   text in Japanese; verdicts, warnings and glossary meanings stay English.
 - Dashboard design tokens retuned to neutral greys, underlined tabs and lighter tables.
 - `trend` without `occurred_at` hints at adding it.
+- `agree --preference` fits the Bradley-Terry ranking on outcome counts, about 40 times
+  faster with many items; comparisons and gates compute only the metrics and fills
+  they read.
 - `compare`: the p-value of a paired rate is the score test that Tango's interval
   inverts (`p_method = "tango_score"`), so it agrees with the verdict; it was the exact
   McNemar test, which disagreed with the interval when few items were discordant.
