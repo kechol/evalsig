@@ -365,64 +365,32 @@ pub fn mixed_grader(
     })
 }
 
-/// How two arms' items pair up.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Pairing<'a> {
-    /// Items compared.
-    pub paired: Vec<&'a str>,
-    /// Items in only one arm.
-    pub n_unpaired: u64,
-    /// Items present in both arms whose input differs; excluded unless allowed.
-    pub input_changed: Vec<&'a str>,
-}
-
-/// Pair two arms by item ID. Each map gives an arm's item IDs and their `input_ref`.
-pub fn pair<'a>(
+/// Items present in both arms whose `input_ref` differs, and the `input_changed`
+/// finding when there are any; they leave the comparison unless the check is
+/// overridden. Each map gives an arm's item IDs and their `input_ref`.
+pub fn input_changed<'a>(
     a: &BTreeMap<&'a str, Option<&'a str>>,
     b: &BTreeMap<&'a str, Option<&'a str>>,
     overrides: &Overrides,
-) -> (Pairing<'a>, Vec<Finding>) {
-    let mut p = Pairing::default();
-    for (item, input) in a {
-        match b.get(item) {
-            None => p.n_unpaired += 1,
-            Some(other) if input.is_some() && other.is_some() && input != other => {
-                p.input_changed.push(item);
-                if overrides.allow_input_change {
-                    p.paired.push(item);
-                }
-            }
-            Some(_) => p.paired.push(item),
-        }
-    }
-    p.n_unpaired += b.keys().filter(|k| !a.contains_key(*k)).count() as u64;
-    let mut findings = Vec::new();
-    if p.n_unpaired > 0 {
-        findings.push(
-            Finding::new(
-                "unpaired_items",
-                format!(
-                    "{} items are in only one arm; compared on the {} common items",
-                    p.n_unpaired,
-                    p.paired.len()
-                ),
-                overrides,
-            )
-            .with_count(p.n_unpaired),
-        );
-    }
-    if !p.input_changed.is_empty() {
-        let n = p.input_changed.len() as u64;
-        findings.push(
-            Finding::new(
-                "input_changed",
-                format!("{n} items have different inputs in the two arms"),
-                overrides,
-            )
-            .with_count(n),
-        );
-    }
-    (p, findings)
+) -> (Vec<&'a str>, Option<Finding>) {
+    let changed: Vec<&str> = a
+        .iter()
+        .filter(|(item, input)| {
+            b.get(*item)
+                .is_some_and(|other| input.is_some() && other.is_some() && *input != other)
+        })
+        .map(|(item, _)| *item)
+        .collect();
+    let finding = (!changed.is_empty()).then(|| {
+        let n = changed.len() as u64;
+        Finding::new(
+            "input_changed",
+            format!("{n} items have different inputs in the two arms"),
+            overrides,
+        )
+        .with_count(n)
+    });
+    (changed, finding)
 }
 
 /// System-side missing counts out of judged items in two arms; warns when the 95%

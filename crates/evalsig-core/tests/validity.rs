@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use evalsig_core::checks::{Action, Finding, Overrides};
 use evalsig_core::records::{GraderRef, Record};
 use evalsig_core::validity::{
-    dataset, missing_rate_differs, mixed_grader, pair, run_variance_exceeds_delta, secret_shape,
+    dataset, input_changed, missing_rate_differs, mixed_grader, run_variance_exceeds_delta,
+    secret_shape,
 };
 
 fn recs(lines: &[&str]) -> Vec<Record> {
@@ -14,10 +15,6 @@ fn recs(lines: &[&str]) -> Vec<Record> {
         .iter()
         .map(|l| Record::from_json(l).unwrap())
         .collect()
-}
-
-fn codes(findings: &[Finding]) -> Vec<&'static str> {
-    findings.iter().map(|f| f.code).collect()
 }
 
 fn fired(records: &[Record], code: &str) -> Option<Finding> {
@@ -239,30 +236,30 @@ fn mixed_grader_stops() {
 }
 
 #[test]
-fn unpaired_items_and_changed_inputs() {
+fn changed_inputs() {
     let a: BTreeMap<&str, Option<&str>> =
         [("x", Some("h1")), ("y", Some("h2")), ("z", None)].into();
-    let b: BTreeMap<&str, Option<&str>> =
-        [("x", Some("h1")), ("y", Some("h9")), ("w", None)].into();
-    let (p, findings) = pair(&a, &b, &Overrides::default());
-    assert_eq!(p.paired, ["x"]);
-    assert_eq!(p.n_unpaired, 2);
-    assert_eq!(p.input_changed, ["y"]);
-    assert_eq!(codes(&findings), ["unpaired_items", "input_changed"]);
-    assert_eq!(findings[1].action, Action::Exclude);
-    let (p, findings) = pair(
-        &a,
-        &b,
-        &Overrides {
-            allow_input_change: true,
-            ..Overrides::default()
-        },
+    let b: BTreeMap<&str, Option<&str>> = [
+        ("x", Some("h1")),
+        ("y", Some("h9")),
+        ("z", Some("h3")),
+        ("w", None),
+    ]
+    .into();
+    let (changed, finding) = input_changed(&a, &b, &Overrides::default());
+    // An item without an input hash on one side cannot be shown to differ.
+    assert_eq!(changed, ["y"]);
+    assert_eq!(finding.unwrap().action, Action::Exclude);
+    let allowed = Overrides {
+        allow_input_change: true,
+        ..Overrides::default()
+    };
+    assert_eq!(
+        input_changed(&a, &b, &allowed).1.unwrap().action,
+        Action::Warn
     );
-    assert_eq!(p.paired, ["x", "y"]);
-    assert_eq!(findings[1].action, Action::Warn);
-    let (p, findings) = pair(&a, &a, &Overrides::default());
-    assert_eq!(p.paired.len(), 3);
-    assert!(findings.is_empty());
+    let (changed, finding) = input_changed(&a, &a, &Overrides::default());
+    assert!(changed.is_empty() && finding.is_none());
 }
 
 #[test]

@@ -121,24 +121,13 @@ fn changed_inputs(
         a.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
     let b_ref: BTreeMap<&str, Option<&str>> =
         b.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
-    let (pairing, findings) = validity::pair(&a_ref, &b_ref, overrides);
+    let (changed, finding) = validity::input_changed(&a_ref, &b_ref, overrides);
     let excluded = if overrides.allow_input_change {
         BTreeSet::new()
     } else {
-        pairing
-            .input_changed
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect()
+        changed.iter().map(|s| (*s).to_owned()).collect()
     };
-    // unpaired_items is reported by compare itself; keep only the input finding.
-    (
-        excluded,
-        findings
-            .into_iter()
-            .filter(|f| f.code == "input_changed")
-            .collect(),
-    )
+    (excluded, finding.into_iter().collect())
 }
 
 /// Pairwise preferences between the baseline and a candidate, for the task: the
