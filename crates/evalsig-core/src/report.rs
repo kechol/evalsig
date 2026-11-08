@@ -1101,11 +1101,17 @@ impl Calc<'_> {
             .iter()
             .all(|u| u.weight == 1.0 && u.cluster == u.item_id && u.replicates.len() <= 1);
         let rate = self.binary || which == Values::AtLeast;
-        let mut clusters: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-        for (i, u) in units.iter().enumerate() {
-            clusters.entry(u.cluster.as_str()).or_default().push(i);
-        }
-        let groups: Vec<Vec<usize>> = clusters.into_values().collect();
+        // Wilson reads no clusters, so they are grouped only for the other intervals.
+        let groups: Vec<Vec<usize>> =
+            if rate && integral && independent && !self.settings.exact_rates {
+                Vec::new()
+            } else {
+                let mut clusters: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+                for (i, u) in units.iter().enumerate() {
+                    clusters.entry(u.cluster.as_str()).or_default().push(i);
+                }
+                clusters.into_values().collect()
+            };
         // Only units that carry the metric's denominator can move the ratio.
         let carrying = groups
             .iter()
@@ -1121,13 +1127,10 @@ impl Calc<'_> {
             // The effective number of items is Kish's over the clusters' denominators:
             // the item count when every item is its own cluster with unit weight, the
             // cluster count when clusters are equal.
-            let mut by_cluster: BTreeMap<&str, Running> = BTreeMap::new();
-            for (u, p) in units.iter().zip(&point_parts) {
-                if let Some((_, d)) = p {
-                    by_cluster.entry(u.cluster.as_str()).or_default().add(*d);
-                }
-            }
-            let totals: Vec<f64> = by_cluster.values().map(Running::total).collect();
+            let totals: Vec<f64> = groups
+                .iter()
+                .map(|g| sum(g.iter().filter_map(|&i| point_parts[i].map(|p| p.1))))
+                .collect();
             let (s1, s2) = (
                 sum(totals.iter().copied()),
                 sum(totals.iter().map(|d| d * d)),
