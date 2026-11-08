@@ -353,6 +353,16 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
     }
     let ties = comparisons.iter().any(|c| c.score == 0.5);
     let dim = arms - 1 + usize::from(ties);
+    // The likelihood depends only on how often each ordered pair had each outcome, so
+    // every pass runs over those counts rather than over the comparisons.
+    let mut counts: BTreeMap<(usize, usize, u64), (Comparison, f64)> = BTreeMap::new();
+    for c in comparisons {
+        counts
+            .entry((c.i, c.j, c.score.to_bits()))
+            .or_insert((*c, 0.0))
+            .1 += 1.0;
+    }
+    let groups: Vec<(Comparison, f64)> = counts.into_values().collect();
     // A comparison touches at most three parameters: θ_i, θ_j (θ_0 is fixed at 0) and
     // log ν. `slots` lists them; each logit is a coefficient per slot.
     let local = |c: &Comparison| -> ([Option<usize>; 3], [[f64; 3]; 3], usize) {
@@ -401,9 +411,9 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
             (s, p, n)
         };
     let loglik = |x: &[f64]| -> f64 {
-        sum(comparisons.iter().map(|c| {
+        sum(groups.iter().map(|(c, w)| {
             let (slots, v, o) = local(c);
-            softmax(&slots, &v, x).0[o]
+            w * softmax(&slots, &v, x).0[o]
         }))
     };
     let mut x = vec![0.0; dim];
@@ -411,7 +421,7 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
     for _ in 0..MAX_ITERATIONS {
         let mut g = vec![Running::default(); dim];
         let mut h = vec![vec![Running::default(); dim]; dim];
-        for c in comparisons {
+        for (c, w) in &groups {
             let (slots, v, observed) = local(c);
             let (_, p, n) = softmax(&slots, &v, &x);
             let mut mu = [0.0; 3];
@@ -420,11 +430,11 @@ pub fn bradley_terry(arms: usize, comparisons: &[Comparison]) -> Result<Fit, Ran
             }
             for d in 0..3 {
                 let Some(gd) = slots[d] else { continue };
-                g[gd].add(v[observed][d] - mu[d]);
+                g[gd].add(w * (v[observed][d] - mu[d]));
                 for e in 0..3 {
                     let Some(ge) = slots[e] else { continue };
                     let second: f64 = (0..n).map(|k| p[k] * v[k][d] * v[k][e]).sum();
-                    h[gd][ge].add(second - mu[d] * mu[e]);
+                    h[gd][ge].add(w * (second - mu[d] * mu[e]));
                 }
             }
         }
