@@ -148,15 +148,14 @@ const NO_INFERENCE: Inference = (None, "none", None, None, "none");
 const TOO_FEW_UNITS: Inference = (None, "too_few_units", None, None, "none");
 const ZERO_VARIANCE: Inference = (None, "zero_variance", None, None, "none");
 
-/// A metric's difference with its §7.1 verdict.
+/// A metric's difference, oriented so that positive is better, with its §7.1 verdict.
 fn finish(
     id: MetricId,
-    (base, cand): (Option<f64>, Option<f64>),
+    (base, cand, delta): (Option<f64>, Option<f64>, Option<f64>),
     missing_bounds: Option<(f64, f64)>,
     o: &Options,
     (ci, interval, resamples, p_value, p_method): Inference,
 ) -> MetricDelta {
-    let delta = base.zip(cand).map(|(x, y)| id.sign() * (y - x));
     let min_effect = o.min_effect.get(id.name()).copied().unwrap_or(0.0);
     MetricDelta {
         id,
@@ -355,7 +354,7 @@ fn metric_delta(
             "bootstrap",
         )
     };
-    finish(id, (base, cand), missing_bounds, o, inference)
+    finish(id, (base, cand, delta), missing_bounds, o, inference)
 }
 
 /// Welch's t interval for the difference of two means, with its two-sided p-value.
@@ -519,7 +518,7 @@ fn unpaired_delta(
             )
         }
     };
-    finish(id, (base, cand), missing_bounds, o, inference)
+    finish(id, (base, cand, delta), missing_bounds, o, inference)
 }
 
 /// A paired difference monitored with a confidence sequence (metrics spec §7.2).
