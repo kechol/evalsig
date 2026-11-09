@@ -1,6 +1,6 @@
 ## Analysing evaluation records (evalsig)
 
-Evaluation records in this repository are analysed with evalsig 0.1.0. The reference is `evalsig help --json` and `evalsig recipes`.
+Evaluation records in this repository are analysed with evalsig 0.1.0. The reference is `evalsig` with no arguments (the command index), `evalsig help --json compare` (one command's arguments) and `evalsig recipes`. On an error, decide from `error.code` and run what `error.next` lists.
 
 - Output is a JSON envelope. Read `verdict.code` first and report only in words that fit it ("improved" only for `improved`; `negligible` and `indistinguishable` are not improvements).
 - Quote numbers from evalsig's output; do not recompute them. Give the interval, `n_missing`, the positive definition and the estimand.

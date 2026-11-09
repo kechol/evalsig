@@ -76,7 +76,11 @@ pub fn require_decided(c: &Compiled) -> Result<(), Error> {
         ),
         Exit::Blocked,
     )
-    .with_hint("record each choice with `evalsig map decide`"))
+    .with_hint("record each choice a person makes")
+    .with_next(
+        "evalsig map decide <id> <choice> --by <who> --mapping <file>",
+        "record a person's choice",
+    ))
 }
 
 /// The files a block's `path` names, relative to the project root. `*` may appear

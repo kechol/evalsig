@@ -2,7 +2,9 @@ use assert_cmd::Command;
 use serde_json::Value;
 
 fn evalsig() -> Command {
-    Command::cargo_bin("evalsig").unwrap()
+    let mut c = Command::cargo_bin("evalsig").unwrap();
+    c.env_remove("AI_AGENT");
+    c
 }
 
 fn normalize(text: &str) -> Value {
@@ -93,14 +95,14 @@ fn usage_errors_are_json_when_json_is_requested() {
         .stderr
         .clone();
     let v: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v["error"]["code"], "usage");
+    assert_eq!(v["error"]["code"], "unknown_command");
     assert!(
         v["error"]["message"]
             .as_str()
             .unwrap()
             .contains("no-such-command")
     );
-    assert!(v["error"]["hint"].is_string());
+    assert_eq!(v["error"]["next"][0]["command"], "evalsig help --json");
 }
 
 #[test]

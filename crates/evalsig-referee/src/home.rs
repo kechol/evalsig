@@ -91,10 +91,10 @@ pub fn replace_private(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 /// `evalsig referee init <dir>`: a new home with a fresh identity.
 pub fn init(dir: &Path) -> Result<Output, Error> {
     if dir.join(IDENTITY).exists() {
-        return Err(Error::usage(format!(
-            "{} already holds a referee identity",
-            dir.display()
-        )));
+        return Err(Error::usage_code(
+            "already_exists",
+            format!("{} already holds a referee identity", dir.display()),
+        ));
     }
     // The home is made private, so it must be the referee's own: new or empty.
     if std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some()) {

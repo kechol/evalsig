@@ -164,7 +164,10 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     };
     let random = name == "random";
     if !random && (args.stratum.is_some() || args.seed.is_some()) {
-        return Err(Error::usage("--stratum and --seed apply to random splits"));
+        return Err(Error::usage_code(
+            "conflicting_arguments",
+            "--stratum and --seed apply to random splits",
+        ));
     }
     let seed = random.then_some(seed);
     let a: Assignment =

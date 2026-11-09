@@ -410,5 +410,83 @@ fn nested_lists_are_cut_and_errors_withhold_quoted_values() {
     let out = as_agent(p.path()).arg("bogus").output().unwrap();
     assert_eq!(out.status.code(), Some(64));
     let e: Value = serde_json::from_slice(&out.stderr).unwrap();
-    assert_eq!(e["error"]["code"], "usage");
+    assert_eq!(e["error"]["code"], "unknown_command");
+    assert_eq!(e["error"]["next"][0]["command"], "evalsig help --json");
+}
+
+#[test]
+fn errors_name_the_failure_and_what_to_run_next() {
+    let p = tempfile::tempdir().unwrap();
+    let error = |args: &[&str]| -> Value {
+        let out = as_agent(p.path()).args(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(64), "{args:?}");
+        serde_json::from_slice(&out.stderr).unwrap()
+    };
+    let commands = |e: &Value| -> Vec<String> {
+        e["error"]["next"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["command"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let e = error(&["report"]);
+    assert_eq!(e["error"]["code"], "missing_argument");
+    assert!(
+        e["error"]["message"].as_str().unwrap().contains("<RUN>"),
+        "{e}"
+    );
+    assert_eq!(commands(&e), ["evalsig help --json report"]);
+    let e = error(&["map", "prob", "x"]);
+    assert_eq!(e["error"]["code"], "unknown_command");
+    assert_eq!(
+        commands(&e),
+        ["evalsig map probe", "evalsig help --json map"]
+    );
+    let e = error(&["--format", "json", "runs", "--fromat", "md"]);
+    assert_eq!(e["error"]["code"], "unknown_argument");
+    let e = error(&["map"]);
+    assert_eq!(e["error"]["code"], "missing_command");
+    assert_eq!(
+        e["error"]["message"],
+        "map needs a subcommand: probe, draft, test, decide"
+    );
+    // A run name can come from the data: the message is withheld, the way on is not.
+    let synthetic = synthetic();
+    let out = as_agent(synthetic.path())
+        .args(["report", "no-such-run"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
+    let e: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(e["error"]["code"], "unknown_run");
+    assert_eq!(commands(&e), ["evalsig runs"]);
+    assert_eq!(e["warnings"][0]["code"], "content_withheld");
+}
+
+#[test]
+fn a_bare_evalsig_lists_the_commands_for_programs() {
+    let p = tempfile::tempdir().unwrap();
+    let out = as_agent(p.path()).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["schema"], "evalsig.index/1");
+    let names: Vec<&str> = v["results"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"report") && names.contains(&"compare"),
+        "{names:?}"
+    );
+    assert_eq!(v["next"][0]["command"], "evalsig help --json <command>");
+    // In a script without agent mode, the usage text and exit 64 as before.
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .env_remove("AI_AGENT")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
 }

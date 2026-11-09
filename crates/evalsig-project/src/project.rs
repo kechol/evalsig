@@ -35,7 +35,8 @@ impl Project {
                 format!("no evalsig project at {}", p.dir.display()),
                 Exit::Usage,
             )
-            .with_hint("run `evalsig init` first, or pass --project <dir>"));
+            .with_hint("create the project first, or pass --project <dir>")
+            .with_next("evalsig init", "create .evalsig/ here"));
         }
         Ok(p)
     }

@@ -21,6 +21,7 @@ pub enum Schema {
     Help,
     Holdout,
     Import,
+    Index,
     Init,
     Items,
     LedgerAnchor,
@@ -52,7 +53,7 @@ pub enum Schema {
 }
 
 impl Schema {
-    pub const ALL: [Schema; 39] = [
+    pub const ALL: [Schema; 40] = [
         Schema::Agree,
         Schema::Capabilities,
         Schema::Check,
@@ -64,6 +65,7 @@ impl Schema {
         Schema::Help,
         Schema::Holdout,
         Schema::Import,
+        Schema::Index,
         Schema::Init,
         Schema::Items,
         Schema::LedgerAnchor,
@@ -108,6 +110,7 @@ impl Schema {
             Schema::Help => "evalsig.help/1",
             Schema::Holdout => "evalsig.holdout/1",
             Schema::Import => "evalsig.import/1",
+            Schema::Index => "evalsig.index/1",
             Schema::Init => "evalsig.init/1",
             Schema::Items => "evalsig.items/1",
             Schema::LedgerAnchor => "evalsig.ledger.anchor/1",
@@ -165,6 +168,7 @@ impl Schema {
             | Schema::Gate
             | Schema::Help
             | Schema::Holdout
+            | Schema::Index
             | Schema::Init
             | Schema::LedgerAnchor
             | Schema::LedgerShow
@@ -334,7 +338,7 @@ pub struct Warning {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Next {
     pub command: String,
     pub why: String,

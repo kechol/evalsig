@@ -126,7 +126,8 @@ fn explain_covers_terms_verdicts_checks_and_exit_codes() {
     }
     let (code, v) = explain("no_such_thing");
     assert_eq!(code, Some(64));
-    assert!(v["error"]["hint"].as_str().unwrap().contains("help --json"));
+    assert_eq!(v["error"]["code"], "unknown_name");
+    assert_eq!(v["error"]["next"][0]["command"], "evalsig help --json");
 }
 
 fn validator(defs_error: bool) -> jsonschema::Validator {

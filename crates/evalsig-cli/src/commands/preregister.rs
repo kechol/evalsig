@@ -87,10 +87,15 @@ pub fn run(root: &Path, args: &Args, agent: bool) -> Result<Output, Error> {
                 json!({ "approved": approved, "conditions": conditions }),
             )))
         }
-        (Some(_), None) if agent && !args.yes => Err(Error::usage(
+        (Some(_), None) if agent && !args.yes => Err(Error::usage_code(
+            "confirmation_required",
             "in agent mode a draft changes the procedure and needs confirming",
         )
-        .with_hint("pass --yes; a person still approves the draft as the referee")),
+        .with_hint("pass --yes; a person still approves the draft as the referee")
+        .with_next(
+            "evalsig preregister --draft <gate.toml> --yes",
+            "record the draft for the referee to approve",
+        )),
         (Some(file), None) => draft(root, file),
         (None, None) => Err(Error::usage("give --draft <gate.toml>, approve or show")),
     }

@@ -340,10 +340,13 @@ pub fn compute(
     }
     let all: Vec<Comparison> = comparisons.iter().map(|(_, _, c, _)| c.clone()).collect();
     let multi = compare::summarize(&all, args.metric.as_deref()).map_err(|available| {
-        Error::usage(format!(
-            "metric {:?} is not available for these runs",
-            args.metric.as_deref().unwrap_or("")
-        ))
+        Error::usage_code(
+            "unknown_metric",
+            format!(
+                "metric {:?} is not available for these runs",
+                args.metric.as_deref().unwrap_or("")
+            ),
+        )
         .with_hint(format!("available: {}", available.join(", ")))
     })?;
     let primary = multi.primary;

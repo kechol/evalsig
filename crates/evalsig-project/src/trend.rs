@@ -88,12 +88,14 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Erro
     let baseline = match &args.baseline_period {
         Some(p) if periods.contains_key(p) => p.clone(),
         Some(p) => {
-            return Err(
-                Error::usage(format!("no judged items fall in period {p:?}")).with_hint(format!(
-                    "periods: {}",
-                    periods.keys().cloned().collect::<Vec<_>>().join(", ")
-                )),
-            );
+            return Err(Error::usage_code(
+                "unknown_period",
+                format!("no judged items fall in period {p:?}"),
+            )
+            .with_hint(format!(
+                "periods: {}",
+                periods.keys().cloned().collect::<Vec<_>>().join(", ")
+            )));
         }
         None => periods.keys().next().cloned().ok_or_else(|| {
             Error::new(

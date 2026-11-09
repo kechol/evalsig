@@ -117,8 +117,10 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
         .flat_map(|(_, rs)| rs.iter().filter_map(item_of))
         .collect();
     if let Some(unknown) = items.iter().find(|i| !known.contains(i.as_str())) {
-        return Err(Error::usage(format!("no item {unknown:?}"))
-            .with_hint("list items with `evalsig items`"));
+        return Err(
+            Error::usage_code("unknown_item", format!("no item {unknown:?}"))
+                .with_next("evalsig items", "list the imported items"),
+        );
     }
     store.put(&bytes).map_err(Error::store)?;
     let mut replaced = Vec::new();

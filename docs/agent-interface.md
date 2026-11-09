@@ -103,10 +103,34 @@ when the command produced one.
 
 #### Errors
 
-An error is `{"error": {"code", "message", "hint"}}` on standard error, with
-the exit code above. `code` is a stable snake_case string; `hint` is omitted
-when there is none. Usage errors are reported the same way, in agent mode and
-with `--format json`.
+An error is `{"error": {"code", "message", "hint", "next"}}` on standard error,
+with the exit code above (D-040). Usage errors are reported the same way, in
+agent mode and with `--format json`.
+
+- `code` is a stable snake_case string. Common usage errors have codes of their
+  own, all with exit 64:
+
+  | Code | When |
+  |---|---|
+  | `unknown_command` | No command of that name; `next` names the nearest |
+  | `missing_command` | A command group such as `map` without its subcommand |
+  | `unknown_argument` | No option of that name for the command |
+  | `missing_argument` | A required argument is missing; the message names it |
+  | `invalid_value` | A value the option does not accept |
+  | `conflicting_arguments` | Options that cannot go together |
+  | `unknown_run`, `unknown_item`, `unknown_split`, `unknown_metric`, `unknown_period`, `unknown_name` | The named run, item, split, metric, period or `explain` name does not exist |
+  | `already_exists` | The file or referee home to create is already there |
+  | `confirmation_required` | The operation needs `--yes` |
+
+  Other usage errors have the code `usage`.
+- `message` says what failed. For a parse error it keeps every paragraph of the
+  parser's message except the usage line.
+- `hint`, when present, says how to fix it. It is omitted (`null` in agent mode)
+  when there is none.
+- `next` lists commands to run next, each with `command` and `why`, as in the
+  envelope. It is always present, possibly empty. Its commands are built from
+  evalsig's own vocabulary, with placeholders such as `<run>`, never from the
+  input, so agent mode prints them in full.
 
 ### 2.3 Verdict codes
 
@@ -169,13 +193,14 @@ double quote or a backtick. In its place:
   `content_notice`.
 
 This applies to any message with such a character, whether or not it quotes
-data, so an ordinary hint that mentions a command in backticks is withheld
-too. The `code` is never withheld; decide from it.
+data. evalsig's own hints therefore name commands without backticks and put a
+command to run in `next`. The `code` and `next` are never withheld; decide
+from them.
 
 ### 2.5 No questions, no silent procedure changes
 
 - evalsig never waits for an answer. An operation that needs confirmation fails
-  with a usage error (exit 64) whose hint names the flag.
+  with `confirmation_required` (exit 64); its `next` is the command with `--yes`.
 - `preregister --draft` changes the procedure. In agent mode it needs `--yes`.
   A person still approves the draft as the referee. `purge` deletes content
   for good and needs `--yes` whether or not agent mode is on.
@@ -206,6 +231,7 @@ running in an environment that does not hold it ([referee.md](referee.md)).
 
 | Command | Returns |
 |---|---|
+| `evalsig` | In agent mode or with `--format json`, the command index (`evalsig.index/1`): each command's name, summary and subcommands, with `next` pointing at `help --json <command>`, `recipes` and `capabilities`. It exits 0. In a terminal, the usage text |
 | `evalsig help --json [command ...]` | The command tree (names, arguments, defaults, help text), the global arguments, and for the whole tree the exit codes and the verdict codes with their meanings. It is answered before parsing, never shaped and never needs a project |
 | `evalsig explain <name>` | What a glossary term, verdict code, validity check or exit code means. `name` is a glossary identifier or term, a verdict code, a check code, or an exit code (`3` or `exit-3`). Each match has a `kind` (`term`, `verdict`, `validity_check` or `exit_code`). An unknown name is a usage error with a hint. The glossary is [glossary.md](glossary.md), embedded in the binary |
 | `evalsig schema <name>` | A published JSON Schema: `records`, `ledger-entry`, `mapping`, `gate` or `envelope`, with its `$id`. `--raw` prints the schema document alone. `schema records --emit python` or `--emit typescript` prints a standard-library-only writer of `records/1` |

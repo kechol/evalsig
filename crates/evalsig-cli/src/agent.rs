@@ -95,6 +95,7 @@ pub fn error_json(err: &Error, include_content: bool) -> String {
         "code": err.code,
         "message": message,
         "hint": hint,
+        "next": err.next,
     }});
     if message != err.message || hint != err.hint {
         if include_content {

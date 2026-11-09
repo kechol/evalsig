@@ -13,6 +13,24 @@ longer reproduces.
 
 ## [Unreleased]
 
+### Added
+
+- Errors list the commands to run next in `error.next` (D-040), built from evalsig's
+  own vocabulary so agent mode prints them in full.
+- A bare `evalsig` in agent mode or with `--format json` prints the command index
+  (`evalsig.index/1`) and exits 0.
+
+### Changed
+
+- Common usage errors have codes of their own instead of `usage` (D-040):
+  `unknown_command`, `missing_command`, `unknown_argument`, `missing_argument`,
+  `invalid_value`, `conflicting_arguments`, `unknown_run`, `unknown_item`,
+  `unknown_split`, `unknown_metric`, `unknown_period`, `unknown_name`,
+  `already_exists` and `confirmation_required`. The exit code stays 64.
+- A parse error's message names what is missing or misspelt: it keeps every
+  paragraph of the parser's message except the usage line.
+- Hints name commands without backticks, so agent mode no longer withholds them.
+
 ## [0.1.0] - 2026-11-09
 
 ### Added

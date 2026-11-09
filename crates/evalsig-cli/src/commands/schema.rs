@@ -37,8 +37,13 @@ pub fn raw(name: &str) -> Result<String, Error> {
 /// A writer module for `records`, for `--emit`.
 pub fn emit(name: &str, lang: &str) -> Result<String, Error> {
     if name != "records" {
-        return Err(Error::usage(
-            "--emit writes records/1 writers; use `schema records --emit <lang>`",
+        return Err(Error::usage_code(
+            "conflicting_arguments",
+            "--emit writes records/1 writers only",
+        )
+        .with_next(
+            "evalsig schema records --emit <lang>",
+            "a records/1 writer in python or typescript",
         ));
     }
     schemas::WRITERS

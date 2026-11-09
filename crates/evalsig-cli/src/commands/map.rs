@@ -122,8 +122,10 @@ fn probe_command(file: &Path, no_values: bool, max_bytes: u64) -> Result<Output,
 fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result<Output, Error> {
     evalsig_project::project::outside_store(out)?;
     if out.exists() && !force {
-        return Err(Error::usage(format!("{} exists", out.display()))
-            .with_hint("pass --force to replace it"));
+        return Err(
+            Error::usage_code("already_exists", format!("{} exists", out.display()))
+                .with_hint("pass --force to replace it"),
+        );
     }
     if Shape::from_extension(file) == Some(Shape::Zip) {
         return Err(

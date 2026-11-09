@@ -43,11 +43,15 @@ pub fn scope(project: &Project, part: Part, hash: Option<&str>) -> Result<Scope,
         .rev()
         .find(|e| hash.is_none_or(|h| part_hash(e).as_deref() == Some(h)))
         .ok_or_else(|| {
-            Error::usage(match hash {
-                Some(h) => format!("no recorded split has a {key} part {h}"),
-                None => "no split is recorded".to_owned(),
-            })
-            .with_hint("run `evalsig split` first")
+            Error::usage_code(
+                "unknown_split",
+                match hash {
+                    Some(h) => format!("no recorded split has a {key} part {h}"),
+                    None => "no split is recorded".to_owned(),
+                },
+            )
+            .with_next("evalsig splits", "list the recorded splits")
+            .with_next("evalsig split", "record a split")
         })?;
     let name = entry.outputs.first().cloned().unwrap_or_default();
     let path = project.splits_dir().join(format!("{}.json", hex(&name)));

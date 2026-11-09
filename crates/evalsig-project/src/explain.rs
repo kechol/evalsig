@@ -71,8 +71,16 @@ pub fn run(name: &str) -> Result<Output, Error> {
         matches.push(json!({ "kind": "exit_code", "code": e.code(), "meaning": e.meaning() }));
     }
     if matches.is_empty() {
-        return Err(Error::usage(format!("nothing is called {name:?}"))
-            .with_hint("names are glossary identifiers, verdict codes, validity checks and exit codes; see evalsig help --json"));
+        return Err(
+            Error::usage_code("unknown_name", format!("nothing is called {name:?}"))
+                .with_hint(
+                    "names are glossary identifiers, verdict codes, validity checks and exit codes",
+                )
+                .with_next(
+                    "evalsig help --json",
+                    "the verdict and exit codes, beside every command",
+                ),
+        );
     }
     Ok(Output::success(Envelope::new(
         Schema::Explain,

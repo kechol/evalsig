@@ -189,8 +189,13 @@ enum RefereeCommand {
 
 fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
     if cli.format == Format::Jsonl && !matches!(&cli.command, Command::Compare(a) if a.items) {
-        return Err(Error::usage(
-            "--format jsonl prints per-item rows and needs `compare --items`",
+        return Err(Error::usage_code(
+            "conflicting_arguments",
+            "--format jsonl prints per-item rows and needs compare --items",
+        )
+        .with_next(
+            "evalsig compare --items --format jsonl",
+            "one JSON object per item",
         ));
     }
     match &cli.command {
@@ -206,8 +211,11 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
             let mut at = &mut cmd;
             for name in path {
                 at = at.find_subcommand_mut(name).ok_or_else(|| {
-                    Error::usage(format!("no command {:?}", path.join(" ")))
-                        .with_hint("run `evalsig --help` for usage")
+                    Error::usage_code(
+                        "unknown_command",
+                        format!("no command {:?}", path.join(" ")),
+                    )
+                    .with_next("evalsig help --json", "every command")
                 })?;
             }
             return Ok(Printed::Raw(at.render_long_help().to_string()));
@@ -362,14 +370,7 @@ fn main() -> ExitCode {
                 let _ = e.print();
                 return ExitCode::SUCCESS;
             }
-            let message = e.render().to_string();
-            let first = message
-                .lines()
-                .next()
-                .unwrap_or("usage error")
-                .trim_start_matches("error: ")
-                .to_owned();
-            let err = Error::usage(first).with_hint("run `evalsig --help` for usage");
+            use clap::CommandFactory as _;
             let has = |flag: &str| args.iter().any(|a| a.to_string_lossy() == flag);
             let agent_mode = agent::wanted(
                 has("--agent"),
@@ -377,6 +378,23 @@ fn main() -> ExitCode {
                 requested_format_given(&args),
                 std::io::stdout().is_terminal(),
             );
+            let mut root = Cli::command();
+            root.build();
+            let path = command_path(&root, &args);
+            if matches!(
+                e.kind(),
+                ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::MissingSubcommand
+            ) && path.is_empty()
+                && (agent_mode || format == Format::Json)
+            {
+                let mode = agent_mode.then_some(agent::Mode {
+                    cursor: 0,
+                    include_content: has("--include-content"),
+                });
+                return print(Output::success(help::index(&root)), mode, format);
+            }
+            let message = e.render().to_string();
+            let err = parse_error(&e, &root, &path);
             return match ErrorStyle::of(
                 agent_mode,
                 has("--include-content"),
@@ -394,7 +412,10 @@ fn main() -> ExitCode {
     let format_given = requested_format_given(&args);
     if cli.agent && format_given {
         return emit_error(
-            &Error::usage("--agent prints JSON; leave out --format"),
+            &Error::usage_code(
+                "conflicting_arguments",
+                "--agent prints JSON; leave out --format",
+            ),
             ErrorStyle::Json,
         );
     }
@@ -420,20 +441,146 @@ fn main() -> ExitCode {
             let _ = std::io::stdout().write_all(text.as_bytes());
             ExitCode::SUCCESS
         }
-        Ok(Printed::Result(mut out)) => {
-            let text = match mode {
-                // Compact JSON: the size limit is measured on what is printed.
-                Some(m) => {
-                    agent::shape(&mut out.envelope, m);
-                    let mut t = serde_json::to_string(&out.envelope).expect("envelope serializes");
-                    t.push('\n');
-                    t
-                }
-                None => output::render(&out, cli.format),
-            };
-            let _ = std::io::stdout().write_all(text.as_bytes());
-            ExitCode::from(out.exit.code())
-        }
+        Ok(Printed::Result(out)) => print(*out, mode, cli.format),
         Err(err) => emit_error(&err, style),
     }
+}
+
+/// Print a result: shaped compact JSON in agent mode, else the requested format.
+fn print(mut out: Output, mode: Option<agent::Mode>, format: Format) -> ExitCode {
+    let text = match mode {
+        // Compact JSON: the size limit is measured on what is printed.
+        Some(m) => {
+            agent::shape(&mut out.envelope, m);
+            let mut t = serde_json::to_string(&out.envelope).expect("envelope serializes");
+            t.push('\n');
+            t
+        }
+        None => output::render(&out, format),
+    };
+    let _ = std::io::stdout().write_all(text.as_bytes());
+    ExitCode::from(out.exit.code())
+}
+
+/// The subcommands named on the command line before the parser stopped, such as
+/// `["map"]` for `evalsig map prob`. Options and their values are skipped.
+fn command_path(root: &clap::Command, args: &[std::ffi::OsString]) -> Vec<String> {
+    let mut cmd = root;
+    let mut path = Vec::new();
+    let mut it = args
+        .iter()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned());
+    while let Some(a) = it.next() {
+        if let Some(long) = a.strip_prefix("--") {
+            let takes_value = cmd
+                .get_arguments()
+                .any(|x| x.get_long() == Some(long) && x.get_action().takes_values());
+            if takes_value {
+                it.next();
+            }
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        match cmd.find_subcommand(&a) {
+            Some(c) => {
+                path.push(a);
+                cmd = c;
+            }
+            None => break,
+        }
+    }
+    path
+}
+
+/// A parse error as evalsig reports it (D-040): a code for the kind of mistake, every
+/// paragraph of the parser's message but the usage line, and the commands to run next,
+/// built from the parser's own names.
+fn parse_error(e: &clap::Error, root: &clap::Command, path: &[String]) -> Error {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+    let rendered = e.render().to_string();
+    let message = rendered
+        .split("\n\n")
+        .map(|p| {
+            p.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|p| {
+            !p.is_empty() && !p.starts_with("Usage:") && !p.starts_with("For more information")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let mut message = message.trim_start_matches("error: ").to_owned();
+    let code = match e.kind() {
+        ErrorKind::InvalidSubcommand => "unknown_command",
+        ErrorKind::UnknownArgument => "unknown_argument",
+        ErrorKind::MissingRequiredArgument => "missing_argument",
+        ErrorKind::MissingSubcommand | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            "missing_command"
+        }
+        ErrorKind::InvalidValue
+        | ErrorKind::ValueValidation
+        | ErrorKind::InvalidUtf8
+        | ErrorKind::NoEquals
+        | ErrorKind::TooManyValues
+        | ErrorKind::TooFewValues
+        | ErrorKind::WrongNumberOfValues => "invalid_value",
+        ErrorKind::ArgumentConflict => "conflicting_arguments",
+        _ => "usage",
+    };
+    let strings = |k: ContextKind| match e.get(k) {
+        Some(ContextValue::String(s)) => vec![s.clone()],
+        Some(ContextValue::Strings(v)) => v.clone(),
+        _ => Vec::new(),
+    };
+    let named = |rest: &[&str]| {
+        std::iter::once("evalsig")
+            .chain(path.iter().map(String::as_str))
+            .chain(rest.iter().copied())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    if code == "missing_command" {
+        // The parser prints the whole help here; name the subcommands instead.
+        let cmd = path
+            .iter()
+            .try_fold(root, |c, name| c.find_subcommand(name))
+            .unwrap_or(root);
+        message = format!(
+            "{} needs a subcommand: {}",
+            path.join(" "),
+            cmd.get_subcommands()
+                .map(|c| c.get_name())
+                .filter(|n| *n != "help")
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let mut err = Error::usage_code(code, message);
+    for s in strings(ContextKind::SuggestedSubcommand) {
+        err = err.with_next(named(&[&s]), "the command of the nearest name");
+    }
+    let mut why = if path.is_empty() {
+        "every command".to_owned()
+    } else {
+        "the arguments of this command".to_owned()
+    };
+    let valid = strings(ContextKind::ValidValue);
+    if !valid.is_empty() {
+        why.push_str(&format!("; valid values: {}", valid.join(", ")));
+    }
+    let suggested = strings(ContextKind::SuggestedArg);
+    if !suggested.is_empty() {
+        why.push_str(&format!("; the nearest option: {}", suggested.join(", ")));
+    }
+    let help = std::iter::once("evalsig help --json")
+        .chain(path.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    err.with_next(help, why)
 }

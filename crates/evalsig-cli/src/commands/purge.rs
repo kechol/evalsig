@@ -66,8 +66,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
             .with_hint("pass blake3:<64 hex> or sha256:<64 hex>")
     })?;
     if !args.yes {
-        return Err(Error::usage("purge deletes content and cannot be undone")
-            .with_hint("pass --yes to confirm"));
+        return Err(Error::usage_code(
+            "confirmation_required",
+            "purge deletes content and cannot be undone",
+        )
+        .with_hint("pass --yes to confirm")
+        .with_next("evalsig purge <body> --yes", "delete the content for good"));
     }
     let body_ref = body.to_string();
     let project = Project::open(root)?;

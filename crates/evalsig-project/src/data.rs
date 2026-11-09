@@ -112,8 +112,8 @@ impl Data {
                 _ => None,
             })
             .ok_or_else(|| {
-                Error::usage(format!("no run named {id:?}"))
-                    .with_hint("list runs with `evalsig runs`")
+                Error::usage_code("unknown_run", format!("no run named {id:?}"))
+                    .with_next("evalsig runs", "list the imported runs")
             })
     }
 

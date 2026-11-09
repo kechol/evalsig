@@ -6,7 +6,7 @@ use clap::{Arg, Command};
 use serde_json::{Value, json};
 
 use evalsig_project::Error;
-use evalsig_project::envelope::{Envelope, Schema, VerdictCode};
+use evalsig_project::envelope::{Envelope, Next, Schema, VerdictCode};
 use evalsig_project::exit::Exit;
 
 fn arg(a: &Arg) -> Value {
@@ -60,6 +60,43 @@ fn command(cmd: &Command) -> Value {
     })
 }
 
+/// What a bare `evalsig` prints for programs (D-040): each command's name and summary,
+/// with where to read more.
+pub fn index(root: &Command) -> Envelope {
+    let mut root = root.clone();
+    root.build();
+    let entry = |c: &Command| {
+        json!({
+            "name": c.get_name(),
+            "about": c.get_about().map(|a| a.to_string()),
+            "subcommands": c.get_subcommands().filter(|s| s.get_name() != "help").map(|s| s.get_name()).collect::<Vec<_>>(),
+        })
+    };
+    let mut e = Envelope::new(
+        Schema::Index,
+        json!({
+            "tool": root.get_name(),
+            "version": root.get_version(),
+            "about": root.get_about().map(|a| a.to_string()),
+            "commands": root.get_subcommands().filter(|c| c.get_name() != "help").map(entry).collect::<Vec<_>>(),
+        }),
+    );
+    for (command, why) in [
+        (
+            "evalsig help --json <command>",
+            "the arguments of one command",
+        ),
+        ("evalsig recipes", "the steps of common tasks"),
+        ("evalsig capabilities", "what the imported data allow"),
+    ] {
+        e.next.push(Next {
+            command: command.into(),
+            why: why.into(),
+        });
+    }
+    e
+}
+
 /// The whole tree, or only the command at `path` (`help --json compare`).
 pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, Error> {
     let mut root = root.clone();
@@ -68,8 +105,11 @@ pub fn envelope(root: &Command, path: &[String]) -> Result<Envelope, Error> {
         let mut cmd = &root;
         for name in path {
             cmd = cmd.find_subcommand(name).ok_or_else(|| {
-                Error::usage(format!("no command {:?}", path.join(" ")))
-                    .with_hint("list the commands with evalsig help --json")
+                Error::usage_code(
+                    "unknown_command",
+                    format!("no command {:?}", path.join(" ")),
+                )
+                .with_next("evalsig help --json", "every command")
             })?;
         }
         return Ok(Envelope::new(
