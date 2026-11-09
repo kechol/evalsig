@@ -53,6 +53,11 @@ unsafe_code = "forbid"
 dbg_macro = "warn"
 todo = "warn"
 
+# Tests resample and refit thousands of times; unoptimized they run about four times
+# as long.
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
