@@ -1305,3 +1305,41 @@ after the entry is `Accepted`.
 - Consequences: a library user who called the removed functions computes the same
   quantities through `report`, `compare` and `power`.
 
+
+## D-040 Errors say what failed and what to run next
+
+- Status: Accepted
+- Date: 2026-11-09
+- Context: An agent recovers from a failed command only through the error it reads. Every
+  usage error carried the code `usage`, whether a run was unknown, an argument missing
+  or a command misspelt; a parse error kept only the first line of the parser's message,
+  which drops the missing argument's name and the suggested spelling; and the hint that
+  named a command wrapped it in backticks, which agent mode withholds as a possible
+  quote (D-018), so an agent saw no hint at all. A bare `evalsig` answered agent mode
+  with that error.
+- Decision:
+  - An error is `{"error": {"code", "message", "hint", "next"}}`. `next` is a list of
+    `command` and `why`, as in the envelope, and is always present. Its commands are
+    built from evalsig's own vocabulary (command and option names, placeholders such as
+    `<run>`), never from the input, so agent mode prints them in full.
+  - A common failure has a code of its own, still with exit 64: `unknown_command`,
+    `missing_command`, `unknown_argument`, `missing_argument`, `invalid_value`,
+    `conflicting_arguments`, `unknown_run`, `unknown_item`, `unknown_split`,
+    `unknown_metric`, `unknown_period`, `unknown_name`, `already_exists` and
+    `confirmation_required`. Other usage errors keep `usage`.
+  - A parse error's message keeps every paragraph of the parser's message except the
+    usage line.
+  - Hints and messages that evalsig writes name commands without backticks, and a
+    command to run goes in `next`; agent mode still withholds a message or hint that
+    quotes.
+  - In agent mode or with `--format json`, a bare `evalsig` prints the command index
+    (`evalsig.index/1`): each command's name and summary, with `next` pointing at
+    `help --json <command>`, `recipes` and `capabilities`. It exits 0.
+  - `exclude` and `split` take `--dry-run`, which reports what would be recorded without
+    writing the ledger.
+- Alternatives: keeping `usage` and adding the specific reason in a second field (not
+  taken: two codes for one error, and 0.1.0 has just been released); printing quoted
+  values in agent mode (not taken: they can come from the evaluated data, D-018).
+- Consequences: a consumer that matched `code == "usage"` for these failures matches
+  the new codes or the exit code 64, which is unchanged. The error object's JSON Schema
+  gains `next`.
