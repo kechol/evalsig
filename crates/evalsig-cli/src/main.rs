@@ -48,8 +48,9 @@ struct Cli {
     #[arg(long, global = true)]
     include_content: bool,
 
+    /// Left out: the command index for programs, the usage for people (D-040).
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -187,8 +188,8 @@ enum RefereeCommand {
     Init { dir: PathBuf },
 }
 
-fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
-    if cli.format == Format::Jsonl && !matches!(&cli.command, Command::Compare(a) if a.items) {
+fn run(cli: &Cli, command: &Command, agent: Option<agent::Mode>) -> Result<Printed, Error> {
+    if cli.format == Format::Jsonl && !matches!(command, Command::Compare(a) if a.items) {
         return Err(Error::usage_code(
             "conflicting_arguments",
             "--format jsonl prints per-item rows and needs compare --items",
@@ -198,7 +199,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
             "one JSON object per item",
         ));
     }
-    match &cli.command {
+    match command {
         Command::Help { path, json: true } => {
             use clap::CommandFactory as _;
             let out = Output::success(help::envelope(&Cli::command(), path)?);
@@ -237,7 +238,7 @@ fn run(cli: &Cli, agent: Option<agent::Mode>) -> Result<Printed, Error> {
         }
         _ => {}
     }
-    let out = match cli.command {
+    let out = match *command {
         Command::Init { force } => commands::init::run(&cli.project, force),
         Command::Agree(ref args) => evalsig_project::agree::run(&cli.project, &args.into()),
         Command::Check(ref args) => commands::check::run(&cli.project, args),
@@ -378,35 +379,17 @@ fn main() -> ExitCode {
                 requested_format_given(&args),
                 std::io::stdout().is_terminal(),
             );
+            let style =
+                ErrorStyle::of(agent_mode, has("--include-content"), format == Format::Json);
+            if matches!(style, ErrorStyle::Text) {
+                // clap's own message, with the usage line it adds.
+                let _ = std::io::stderr().write_all(e.render().to_string().as_bytes());
+                return ExitCode::from(Exit::Usage.code());
+            }
             let mut root = Cli::command();
             root.build();
-            let path = command_path(&root, &args);
-            if matches!(
-                e.kind(),
-                ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::MissingSubcommand
-            ) && path.is_empty()
-                && (agent_mode || format == Format::Json)
-            {
-                let mode = agent_mode.then_some(agent::Mode {
-                    cursor: 0,
-                    include_content: has("--include-content"),
-                });
-                return print(Output::success(help::index(&root)), mode, format);
-            }
-            let message = e.render().to_string();
-            let err = parse_error(&e, &root, &path);
-            return match ErrorStyle::of(
-                agent_mode,
-                has("--include-content"),
-                format == Format::Json,
-            ) {
-                // clap's own message, with the usage line it adds.
-                ErrorStyle::Text => {
-                    let _ = std::io::stderr().write_all(message.as_bytes());
-                    ExitCode::from(Exit::Usage.code())
-                }
-                style => emit_error(&err, style),
-            };
+            let (path, at) = command_path(&root, &args);
+            return emit_error(&parse_error(&e, at, &path), style);
         }
     };
     let format_given = requested_format_given(&args);
@@ -429,14 +412,17 @@ fn main() -> ExitCode {
         cursor: cli.cursor,
         include_content: cli.include_content,
     });
+    let Some(command) = &cli.command else {
+        return bare(mode, cli.format);
+    };
     // `help --json` describes the parser for programs, so its errors are JSON too.
-    let help_json = matches!(cli.command, Command::Help { json: true, .. });
+    let help_json = matches!(command, Command::Help { json: true, .. });
     let style = ErrorStyle::of(
         agent_mode,
         cli.include_content,
         help_json || cli.format == Format::Json,
     );
-    match run(&cli, mode) {
+    match run(&cli, command, mode) {
         Ok(Printed::Raw(text)) => {
             let _ = std::io::stdout().write_all(text.as_bytes());
             ExitCode::SUCCESS
@@ -462,9 +448,26 @@ fn print(mut out: Output, mode: Option<agent::Mode>, format: Format) -> ExitCode
     ExitCode::from(out.exit.code())
 }
 
+/// `evalsig` with no command: the command index for programs, the usage and exit 64 for
+/// people (D-040).
+fn bare(mode: Option<agent::Mode>, format: Format) -> ExitCode {
+    use clap::CommandFactory as _;
+    let mut root = Cli::command();
+    root.build();
+    if mode.is_some() || format == Format::Json {
+        return print(Output::success(help::index(&root)), mode, format);
+    }
+    let _ = std::io::stderr().write_all(root.render_help().to_string().as_bytes());
+    ExitCode::from(Exit::Usage.code())
+}
+
 /// The subcommands named on the command line before the parser stopped, such as
-/// `["map"]` for `evalsig map prob`. Options and their values are skipped.
-fn command_path(root: &clap::Command, args: &[std::ffi::OsString]) -> Vec<String> {
+/// `["map"]` for `evalsig map prob`, and the command they lead to. Options and their
+/// values are skipped.
+fn command_path<'a>(
+    root: &'a clap::Command,
+    args: &[std::ffi::OsString],
+) -> (Vec<String>, &'a clap::Command) {
     let mut cmd = root;
     let mut path = Vec::new();
     let mut it = args
@@ -492,13 +495,13 @@ fn command_path(root: &clap::Command, args: &[std::ffi::OsString]) -> Vec<String
             None => break,
         }
     }
-    path
+    (path, cmd)
 }
 
 /// A parse error as evalsig reports it (D-040): a code for the kind of mistake, every
 /// paragraph of the parser's message but the usage line, and the commands to run next,
 /// built from the parser's own names.
-fn parse_error(e: &clap::Error, root: &clap::Command, path: &[String]) -> Error {
+fn parse_error(e: &clap::Error, cmd: &clap::Command, path: &[String]) -> Error {
     use clap::error::{ContextKind, ContextValue, ErrorKind};
     let rendered = e.render().to_string();
     let message = rendered
@@ -547,16 +550,11 @@ fn parse_error(e: &clap::Error, root: &clap::Command, path: &[String]) -> Error 
     };
     if code == "missing_command" {
         // The parser prints the whole help here; name the subcommands instead.
-        let cmd = path
-            .iter()
-            .try_fold(root, |c, name| c.find_subcommand(name))
-            .unwrap_or(root);
         message = format!(
             "{} needs a subcommand: {}",
             path.join(" "),
-            cmd.get_subcommands()
-                .map(|c| c.get_name())
-                .filter(|n| *n != "help")
+            help::visible(cmd)
+                .map(clap::Command::get_name)
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -565,22 +563,19 @@ fn parse_error(e: &clap::Error, root: &clap::Command, path: &[String]) -> Error 
     for s in strings(ContextKind::SuggestedSubcommand) {
         err = err.with_next(named(&[&s]), "the command of the nearest name");
     }
-    let mut why = if path.is_empty() {
+    let mut why = vec![if path.is_empty() {
         "every command".to_owned()
     } else {
         "the arguments of this command".to_owned()
-    };
+    }];
     let valid = strings(ContextKind::ValidValue);
     if !valid.is_empty() {
-        why.push_str(&format!("; valid values: {}", valid.join(", ")));
+        why.push(format!("valid values: {}", valid.join(", ")));
     }
     let suggested = strings(ContextKind::SuggestedArg);
     if !suggested.is_empty() {
-        why.push_str(&format!("; the nearest option: {}", suggested.join(", ")));
+        why.push(format!("the nearest option: {}", suggested.join(", ")));
     }
-    let help = std::iter::once("evalsig help --json")
-        .chain(path.iter().map(String::as_str))
-        .collect::<Vec<_>>()
-        .join(" ");
-    err.with_next(help, why)
+    let help = format!("evalsig help --json {}", path.join(" "));
+    err.with_next(help.trim_end(), why.join("; "))
 }

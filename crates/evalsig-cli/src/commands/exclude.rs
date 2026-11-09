@@ -131,53 +131,42 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
                 .with_next("evalsig items", "list the imported items"),
         );
     }
-    if args.dry_run {
-        let mut snapshots = Vec::new();
-        let mut removed = 0;
-        for (x, records) in &sets {
-            let n = records
-                .iter()
-                .filter(|r| item_of(r).is_some_and(|i| items.contains(i)))
-                .count();
-            if n > 0 {
-                removed += n;
-                snapshots.push(x.snapshot.to_string());
-            }
-        }
-        return Ok(Output::success(Envelope::new(
-            Schema::Exclude,
-            json!({
-                "dry_run": true,
-                "reason": args.reason,
-                "detail": args.detail,
-                "count": items.len(),
-                "items": items,
-                "records_removed": removed,
-                "snapshots": snapshots,
-            }),
-        )));
+    let leaves = |r: &Record| item_of(r).is_some_and(|i| items.contains(i));
+    if !args.dry_run {
+        store.put(&bytes).map_err(Error::store)?;
     }
-    store.put(&bytes).map_err(Error::store)?;
+    let mut touched = Vec::new();
     let mut replaced = Vec::new();
     let mut removed = 0;
     for (x, mut records) in sets {
-        let before = records.len();
-        records.retain(|r| item_of(r).is_none_or(|i| !items.contains(i)));
-        if records.len() == before {
+        let n = records.iter().filter(|r| leaves(r)).count();
+        if n == 0 {
             continue;
         }
-        removed += before - records.len();
+        removed += n;
+        if args.dry_run {
+            touched.push(x.snapshot.to_string());
+            continue;
+        }
+        records.retain(|r| !leaves(r));
         let prov = data::provenance_of(&store, &x)?;
         let r = snapshot::replace(&store, x.snapshot, &mut records, prov, |_| {})
             .map_err(Error::store)?;
         replaced.push(r);
     }
-    let summary = json!({
+    let mut summary = json!({
         "reason": args.reason,
         "detail": args.detail,
         "count": items.len(),
-        "replaced": replaced,
     });
+    if args.dry_run {
+        summary["dry_run"] = json!(true);
+        summary["items"] = json!(items);
+        summary["records_removed"] = json!(removed);
+        summary["snapshots"] = json!(touched);
+        return Ok(Output::success(Envelope::new(Schema::Exclude, summary)));
+    }
+    summary["replaced"] = json!(replaced);
     let mut results = summary.clone();
     results["items"] = json!(items);
     results["records_removed"] = json!(removed);

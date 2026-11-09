@@ -37,12 +37,13 @@ fn args(cmd: &Command, global: bool) -> Vec<Value> {
         .collect()
 }
 
-/// The subcommands, without clap's own `help`.
+/// The subcommands, without `help`.
+pub fn visible(cmd: &Command) -> impl Iterator<Item = &Command> {
+    cmd.get_subcommands().filter(|c| c.get_name() != "help")
+}
+
 fn subcommands(cmd: &Command) -> Vec<Value> {
-    cmd.get_subcommands()
-        .filter(|c| c.get_name() != "help")
-        .map(command)
-        .collect()
+    visible(cmd).map(command).collect()
 }
 
 fn command(cmd: &Command) -> Value {
@@ -63,13 +64,11 @@ fn command(cmd: &Command) -> Value {
 /// What a bare `evalsig` prints for programs (D-040): each command's name and summary,
 /// with where to read more.
 pub fn index(root: &Command) -> Envelope {
-    let mut root = root.clone();
-    root.build();
     let entry = |c: &Command| {
         json!({
             "name": c.get_name(),
             "about": c.get_about().map(|a| a.to_string()),
-            "subcommands": c.get_subcommands().filter(|s| s.get_name() != "help").map(|s| s.get_name()).collect::<Vec<_>>(),
+            "subcommands": visible(c).map(Command::get_name).collect::<Vec<_>>(),
         })
     };
     let mut e = Envelope::new(
@@ -78,7 +77,7 @@ pub fn index(root: &Command) -> Envelope {
             "tool": root.get_name(),
             "version": root.get_version(),
             "about": root.get_about().map(|a| a.to_string()),
-            "commands": root.get_subcommands().filter(|c| c.get_name() != "help").map(entry).collect::<Vec<_>>(),
+            "commands": visible(root).map(entry).collect::<Vec<_>>(),
         }),
     );
     for (command, why) in [
