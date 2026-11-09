@@ -12,6 +12,9 @@ keywords.workspace = true
 categories.workspace = true
 authors.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 age.workspace = true
 evalsig-core.workspace = true
