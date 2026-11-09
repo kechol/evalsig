@@ -19,6 +19,8 @@ longer reproduces.
   own vocabulary so agent mode prints them in full.
 - A bare `evalsig` in agent mode or with `--format json` prints the command index
   (`evalsig.index/1`) and exits 0.
+- `exclude --dry-run` and `split --dry-run` report what they would record without
+  writing anything.
 
 ### Changed
 

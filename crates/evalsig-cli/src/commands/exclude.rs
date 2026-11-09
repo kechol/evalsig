@@ -43,6 +43,9 @@ pub struct Args {
     /// EVALSIG_REFEREE when set).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
+    /// Report the records that would be left out without writing anything.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 fn item_of(r: &Record) -> Option<&str> {
@@ -60,6 +63,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         return Err(Error::usage("--reason other needs --detail"));
     }
     if Referee::named(args.referee.as_deref()) {
+        if args.dry_run {
+            return Err(Error::usage_code(
+                "conflicting_arguments",
+                "--dry-run applies to the agent's items, not the referee's holdout",
+            ));
+        }
         evalsig_referee::exclude::exclude(
             args.referee.as_deref(),
             &args.items,
@@ -121,6 +130,32 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
             Error::usage_code("unknown_item", format!("no item {unknown:?}"))
                 .with_next("evalsig items", "list the imported items"),
         );
+    }
+    if args.dry_run {
+        let mut snapshots = Vec::new();
+        let mut removed = 0;
+        for (x, records) in &sets {
+            let n = records
+                .iter()
+                .filter(|r| item_of(r).is_some_and(|i| items.contains(i)))
+                .count();
+            if n > 0 {
+                removed += n;
+                snapshots.push(x.snapshot.to_string());
+            }
+        }
+        return Ok(Output::success(Envelope::new(
+            Schema::Exclude,
+            json!({
+                "dry_run": true,
+                "reason": args.reason,
+                "detail": args.detail,
+                "count": items.len(),
+                "items": items,
+                "records_removed": removed,
+                "snapshots": snapshots,
+            }),
+        )));
     }
     store.put(&bytes).map_err(Error::store)?;
     let mut replaced = Vec::new();

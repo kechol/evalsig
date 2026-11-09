@@ -219,3 +219,23 @@ fn compare_on_the_validation_part_counts_uses_by_its_hash() {
         v["results"]["mismatches"]
     );
 }
+
+#[test]
+fn a_dry_run_reports_the_parts_without_writing() {
+    let p = project();
+    let ledger = std::fs::read_to_string(p.path().join(".evalsig/ledger.jsonl")).unwrap();
+    let v = json_of(evalsig(p.path()).args(["split", "--dry-run"]));
+    assert_eq!(v["results"]["dry_run"], true);
+    let dev = v["results"]["dev"]["items"].as_u64().unwrap();
+    let validation = v["results"]["validation"]["items"].as_u64().unwrap();
+    assert!(dev > 0 && validation > 0, "{v}");
+    assert_eq!(
+        std::fs::read_to_string(p.path().join(".evalsig/ledger.jsonl")).unwrap(),
+        ledger
+    );
+    assert!(!p.path().join(".evalsig/splits").exists());
+    assert_eq!(
+        json_of(evalsig(p.path()).arg("splits"))["results"]["count"],
+        0
+    );
+}

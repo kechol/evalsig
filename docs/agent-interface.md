@@ -204,7 +204,8 @@ from them.
 - `preregister --draft` changes the procedure. In agent mode it needs `--yes`.
   A person still approves the draft as the referee. `purge` deletes content
   for good and needs `--yes` whether or not agent mode is on.
-- `import --dry-run` reports what an import would record without writing it.
+- `import --dry-run`, `exclude --dry-run`, `split --dry-run` and
+  `migrate --dry-run` report what they would record without writing anything.
 - Choices that change results are not guessed. `map draft` lists them as
   `decisions_needed` and the verdict is `needs_decisions`. The agent shows the
   choices and their effects to a person and records the person's answer with

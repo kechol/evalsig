@@ -102,6 +102,7 @@ Leave items out of every analysis, with a reason code (holdout items: the refere
 | `--reason <REASON>` (required) |  | `duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other` |  |
 | `--detail <DETAIL>` | Free text kept in the ledger; required with `--reason other` |  |  |
 | `--referee <DIR>` | As the referee: exclude holdout items in this referee home (default: EVALSIG_REFEREE when set) |  |  |
+| `--dry-run` | Report the records that would be left out without writing anything |  |  |
 
 ### `evalsig dashboard`
 
@@ -449,6 +450,7 @@ Split the items into dev and validation by cluster, and record the split
 | `--share <SHARE>` | With --holdout: the share of the items, by whole clusters, held out |  | `0.2` |
 | `--out <FILE>` | With --holdout: where to write remaining.json for the agent |  |  |
 | `--referee <DIR>` | The referee's home (default: EVALSIG_REFEREE) |  |  |
+| `--dry-run` | Report the parts the split would record without writing anything |  |  |
 
 ### `evalsig splits`
 

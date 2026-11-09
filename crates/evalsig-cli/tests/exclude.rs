@@ -233,3 +233,26 @@ fn holdout_items_are_excluded_by_the_referee_only() {
     );
     assert_eq!(sealed["results"]["items"], held.len() - 1);
 }
+
+#[test]
+fn a_dry_run_reports_the_exclusion_without_writing() {
+    let p = project();
+    let ledger = std::fs::read_to_string(p.path().join(".evalsig/ledger.jsonl")).unwrap();
+    let v = json_of(
+        evalsig(p.path()).args(["exclude", "t-0000", "--reason", "duplicate", "--dry-run"]),
+        0,
+    );
+    assert_eq!(v["results"]["dry_run"], true);
+    assert_eq!(v["results"]["count"], 1);
+    assert!(v["results"]["records_removed"].as_u64().unwrap() > 0, "{v}");
+    assert_eq!(
+        v["results"]["snapshots"].as_array().unwrap().len(),
+        1,
+        "{v}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(p.path().join(".evalsig/ledger.jsonl")).unwrap(),
+        ledger
+    );
+    assert!(item_ids(p.path()).contains("t-0000"));
+}

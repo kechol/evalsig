@@ -62,6 +62,9 @@ pub struct Args {
     /// The referee's home (default: EVALSIG_REFEREE).
     #[arg(long, value_name = "DIR")]
     pub referee: Option<PathBuf>,
+    /// Report the parts the split would record without writing anything.
+    #[arg(long, conflicts_with = "holdout")]
+    pub dry_run: bool,
 }
 
 fn read_json(path: &Path) -> Result<Value, Error> {
@@ -182,6 +185,12 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         "validation": part(&a.validation)?,
         "holdout": holdout,
     });
+    if args.dry_run {
+        let mut results = summary;
+        results["dry_run"] = json!(true);
+        results["holdout_excluded"] = json!(within.is_some());
+        return Ok(Output::success(Envelope::new(Schema::Split, results)));
+    }
     // The file is named by both parts, so two splits sharing one part stay apart.
     let name_hash = ContentHash::blake3(
         &to_canonical_bytes(&json!({"dev": a.dev, "validation": a.validation}))
