@@ -46,6 +46,9 @@ ratio_range = [3, 10]                 # Range for the cost-ratio sensitivity ana
 # matrix = [[0, 1, 3, 5], [12, 6, 1, 0]]
 # mix = 0.6                           # This stratum's share of production items
 
+# [attribution]
+# order = ["missing_measurement", "needs_external_info", "no_rule", "fixable"]   # Errors go to their first cause here (D-048)
+
 [checks]
 fail_on_mixed_grader_versions = true
 fail_on_unexplained_missing = true

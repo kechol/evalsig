@@ -215,6 +215,40 @@ fn report(e: &Envelope) -> String {
     if let Some(c) = r["calibration"].as_object() {
         let _ = writeln!(s, "\nBrier score {}", num(&c["brier"]));
     }
+    if let Some(d) = r["decomposition"].as_object() {
+        let _ = writeln!(
+            s,
+            "\n{} rate {} ({}); errors by first cause:\n\n| Cause | Errors | Share | Interval |\n|---|---:|---:|---|",
+            id(&d["errors"]),
+            num(&d["rate"]),
+            pair(&d["ci"], num),
+        );
+        for c in d["causes"].as_array().into_iter().flatten() {
+            let _ = writeln!(
+                s,
+                "| {} | {} | {} | {} |",
+                inline(c["cause"].as_str().unwrap_or("?")),
+                count(&c["errors"]),
+                num(&c["share"]),
+                pair(&c["ci"], num),
+            );
+        }
+        for c in d["ceilings"].as_array().into_iter().flatten() {
+            let removed: Vec<&str> = c["removed"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let _ = writeln!(
+                s,
+                "\nWithout {}: rate {} ({}), an optimistic bound.",
+                inline(&removed.join(", ")),
+                num(&c["rate"]),
+                pair(&c["ci"], num),
+            );
+        }
+    }
     if let Some(ec) = r["expected_cost"].as_object() {
         let _ = writeln!(
             s,

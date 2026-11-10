@@ -1268,6 +1268,11 @@ impl Prepared<'_> {
         self.output_type
     }
 
+    /// The settings the run was prepared with.
+    pub fn settings(&self) -> &Settings {
+        self.settings
+    }
+
     /// The `[cost]` settings, if any.
     pub fn cost(&self) -> Option<&crate::config::Cost> {
         self.settings.cost.as_ref()

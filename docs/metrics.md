@@ -903,3 +903,21 @@ guarantee, which needs steps near (ln B / n)^(1/3), would hardly apply (D-015).
   hypothesised effect is real. For example, a difference of 5 points with 10%
   discordance, power 0.8 and a one-sided α = 0.05 needs 246 items (Connor), and
   α = 0.05/20 needs 530.
+
+## 13. Attribution of errors
+
+`report --decompose misses|false_alarms` splits a run's errors by the causes `attribution`
+records name for the run's items (D-048).
+
+- **Errors.** Each item contributes its weighted misses (positive weight times the share of
+  judgments that were negative) or false alarms, after the missing policy, as H and F do
+  (§2).
+- **Exclusive assignment.** An item's errors go to the first of its causes in
+  `[attribution] order`; causes not listed come after, by name. The causes of every
+  attribution record for the item, run and task are pooled. An item with none is
+  `unattributed`, which is reported as a cause, never dropped.
+- **Shares.** Each cause's errors over all errors, with a cluster-bootstrap interval (§8).
+- **Ceilings.** For each `--ceiling` set, (errors − errors of the set) / positives (or
+  negatives): the rate if fixing those causes removed their errors and added none, an
+  optimistic bound, so the output warns (`ceiling_is_optimistic`). Every interval comes
+  from one set of resamples.

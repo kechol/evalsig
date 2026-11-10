@@ -2,7 +2,7 @@
 //! replaced by `purge` and `migrate` lines), layered in import order so a later
 //! import of the same primary key wins.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use evalsig_core::labels::LabelSet;
 use evalsig_core::records::{Item, Judgment, Label, Record, Run};
@@ -125,6 +125,23 @@ impl Data {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The causes attributed to each item's error in a run and task, pooled over raters
+    /// (D-048).
+    pub fn attributions(&self, run_id: &str, task: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for r in &self.records {
+            if let Record::Attribution(a) = r
+                && a.run_id == run_id
+                && a.task() == task
+            {
+                out.entry(a.item_id.clone())
+                    .or_default()
+                    .extend(a.causes.iter().cloned());
+            }
+        }
+        out
     }
 
     pub fn items(&self) -> BTreeMap<&str, &Item> {

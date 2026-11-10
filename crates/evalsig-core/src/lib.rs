@@ -9,6 +9,7 @@
 pub const SPEC_VERSION: &str = "metrics/2";
 
 pub mod agreement;
+pub mod attribution;
 pub mod bootstrap;
 pub mod capabilities;
 pub mod checks;

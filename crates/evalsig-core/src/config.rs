@@ -34,6 +34,11 @@ pub struct Config {
     /// Cost matrix for expected cost; absent when no costs are configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
+    /// How errors are assigned to the causes attributions name (D-048). Left out of the
+    /// stored configuration when empty, so the configuration hash of a project without
+    /// it is unchanged.
+    #[serde(skip_serializing_if = "Attribution::is_empty")]
+    pub attribution: Attribution,
     /// Switches for the validity checks.
     pub checks: Checks,
     /// The `[[import]]` blocks, in file order.
@@ -275,6 +280,21 @@ impl Default for Agree {
         Agree {
             parity_epsilon: crate::parity::EPSILON,
         }
+    }
+}
+
+/// The order errors are assigned to causes in: an error goes to the first of its causes
+/// listed here, then to the others by name (D-048).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Attribution {
+    /// Causes in priority order.
+    pub order: Vec<String>,
+}
+
+impl Attribution {
+    fn is_empty(&self) -> bool {
+        self.order.is_empty()
     }
 }
 

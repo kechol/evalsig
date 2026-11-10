@@ -390,6 +390,8 @@ The default-tier metrics of one run
 | `--k-curve` | Also report majority@k, any@k and all@k for k = 1 … the fewest replicates of any item, with the expected cost per item |  |  |
 | `--features` | Add each feature's likelihood ratio and class |  |  |
 | `--proxy <RATER>` | With --reference human: correct the human-scale value with this model rater's labels on the items humans did not label (PPI++) |  |  |
+| `--decompose <DECOMPOSE>` | Split the misses or false alarms by the causes attributions name, each error to its first cause in `[attribution] order` (D-048) | `misses`, `false_alarms` |  |
+| `--ceiling <CAUSES>` | With --decompose: the rate left if the errors of these causes (comma-separated) were removed; an optimistic bound. Repeat for several sets |  |  |
 | `--allow-unexplained-missing` | Continue although some missing values have no explained reason |  |  |
 | `--fail-on-secret` | Stop when content looks like a secret instead of warning |  |  |
 

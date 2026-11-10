@@ -33,6 +33,9 @@ longer reproduces.
 - An `attribution` record names the causes a rater gave to a run's error on an item
   (D-048); `import`, `validate --records`, `export` and the Python and TypeScript writers
   handle it.
+- `report --decompose misses|false_alarms` splits a run's errors by attributed cause, each
+  error to its first cause in `[attribution] order`, with shares and `--ceiling` rates and
+  their intervals (D-048).
 - `label.join.key` joins a JSONL or CSV label file by a key built from each label row and
   each source row, such as `{@.task}:{@.unit_id}`; every matching row gives a label (D-047).
 - `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,
