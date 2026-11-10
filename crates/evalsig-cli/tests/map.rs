@@ -561,10 +561,10 @@ fn compressed_logs_map_and_import_as_their_content() {
     let plain = map_test(&mapping, &log, 0);
     for file in compressed(&log, dir.path(), "run-log.jsonl") {
         let got = map_test(&mapping, &file, 0);
-        assert_eq!(
-            got["results"]["records"], plain["results"]["records"],
-            "{file:?}"
-        );
+        for key in ["coverage", "values", "integrity"] {
+            assert_eq!(got["results"][key], plain["results"][key], "{file:?} {key}");
+        }
+        assert_eq!(got["results"]["coverage"]["mapped"], 3, "{got}");
         let out = Command::cargo_bin("evalsig")
             .unwrap()
             .args(["--format", "json", "map", "probe"])
