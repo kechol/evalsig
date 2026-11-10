@@ -1466,7 +1466,7 @@ after the entry is `Accepted`.
 
 ## D-050 Shareable bundles of a project's records
 
-- Status: Accepted
+- Status: Superseded by D-052
 - Date: 2026-11-11
 - Context: Collaborators reproduce each other's reports from raw run logs. A canonical export
   imported as one file reproduces the snapshot and `verify` passes (T-150).
@@ -1488,3 +1488,17 @@ after the entry is `Accepted`.
   its reference and judgment are the largest of its items' reference shares and judged shares
   (for 0/1 values, positive or flagged if any item is). A unit with an item without a judgment
   is missing, not negative. H, F and accuracy over units get unit-bootstrap intervals.
+
+## D-052 Rater IDs and harness references in hashed bundles
+
+- Status: Accepted
+- Date: 2026-11-11
+- Supersedes: D-050
+- Context: A bundle hashed under D-050 still carried rater IDs, which often name people, the
+  harness's run references and judgment costs.
+- Decision: as D-050, and `--hash-ids` also replaces rater IDs with the keyed hash (equal raters
+  keep equal hashes, so agreement is unchanged) and drops `harness.run_ref` and judgment `cost`.
+  System, grader and feature IDs describe the systems compared and stay readable.
+- Alternatives: dropping rater IDs loses rater agreement; hashing system IDs makes the
+  comparison unreadable to the collaborator it is for.
+- Consequences: a hashed bundle's per-rater rows show hashes.

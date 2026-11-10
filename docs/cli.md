@@ -143,7 +143,7 @@ Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere
 | `--to <TO>` (required) | The file format | `parquet`, `csv`, `jsonl`, `bundle` |  |
 | `--out <DIR>` (required) | The directory to write the files into (created if missing) |  |  |
 | `--items <RUN>` | Also this run's per-item report rows, as the table items_<run> |  |  |
-| `--hash-ids` | With --to bundle: replace item IDs, clusters and strata values with a keyed hash (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text |  |  |
+| `--hash-ids` | With --to bundle: replace item IDs, clusters, strata values and rater IDs with a keyed hash (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text, harness run references and costs |  |  |
 | `--task <TASK>` | The judgment task |  | `default` |
 | `--estimand <ESTIMAND>` | The estimand: single_shot, majority@k, any@k or all@k (default from the configuration) |  |  |
 | `--threshold <THRESHOLD>` | Decision threshold for score outputs; for score runs, also the share at or above it |  |  |

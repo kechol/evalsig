@@ -50,8 +50,8 @@ longer reproduces.
 - `export --to bundle` writes a project's records with a manifest of hashes, and
   `import --from-bundle` checks it against the manifest; a bundle of one snapshot without
   stored bodies reproduces it, so the project's reports verify there. `--hash-ids`
-  replaces item IDs, clusters, strata values and content references with a keyed hash
-  and drops free text (D-050).
+  replaces item IDs, clusters, strata values, content references and rater IDs with a
+  keyed hash and drops free text, harness run references and costs (D-050, D-052).
 - `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change
   as `discrimination_improved`, `discrimination_worsened`, `threshold_moved` or
   `undetermined` (`insufficient_data` below `--min-events`, default 5) (D-042).

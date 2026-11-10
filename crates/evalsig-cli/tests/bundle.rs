@@ -81,7 +81,7 @@ fn hashed_ids_leave_no_id_text_or_key_and_still_report() {
         .success();
     let text = std::fs::read_to_string(bundle.join("records.jsonl")).unwrap()
         + &std::fs::read_to_string(bundle.join("manifest.json")).unwrap();
-    for leak in ["t-0000", "thread-000", "\"chat\"", key] {
+    for leak in ["t-0000", "thread-000", "\"chat\"", "rater:", key] {
         assert!(!text.contains(leak), "{leak}");
     }
     let out = evalsig_json(b.path())

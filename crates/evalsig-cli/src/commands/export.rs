@@ -47,8 +47,9 @@ pub struct Args {
     /// Also this run's per-item report rows, as the table items_<run>.
     #[arg(long, value_name = "RUN")]
     pub items: Option<String>,
-    /// With --to bundle: replace item IDs, clusters and strata values with a keyed hash
-    /// (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text.
+    /// With --to bundle: replace item IDs, clusters, strata values and rater IDs with a
+    /// keyed hash (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text,
+    /// harness run references and costs.
     #[arg(long)]
     pub hash_ids: bool,
     #[command(flatten)]
@@ -197,6 +198,7 @@ fn pseudonymize(r: &mut Record, key: &[u8; 32]) {
         }
         Record::Label(l) => {
             l.item_id = h(&l.item_id);
+            l.rater_id = h(&l.rater_id);
             l.reason = None;
             l.source_ref = None;
             detail(&mut l.missing);
@@ -205,17 +207,27 @@ fn pseudonymize(r: &mut Record, key: &[u8; 32]) {
             j.item_id = h(&j.item_id);
             j.output_ref = j.output_ref.as_deref().map(h);
             j.rationale_ref = j.rationale_ref.as_deref().map(h);
+            j.cost = None;
             j.source_ref = None;
             detail(&mut j.missing);
         }
         Record::Preference(p) => {
             p.item_id = h(&p.item_id);
+            p.rater_id = h(&p.rater_id);
             p.rationale_ref = p.rationale_ref.as_deref().map(h);
             p.source_ref = None;
             detail(&mut p.missing);
         }
-        Record::Attribution(a) => a.item_id = h(&a.item_id),
-        Record::Run(r) => r.attrs = None,
+        Record::Attribution(a) => {
+            a.item_id = h(&a.item_id);
+            a.rater_id = h(&a.rater_id);
+        }
+        Record::Run(r) => {
+            r.attrs = None;
+            if let Some(harness) = &mut r.harness {
+                harness.run_ref = None;
+            }
+        }
         Record::Content(_) => unreachable!("content records are not bundled"),
     }
 }
@@ -490,7 +502,34 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::file_part;
+    use super::{Record, file_part, pseudonymize};
+
+    #[test]
+    fn hashing_leaves_no_rater_or_harness_reference() {
+        let lines = [
+            r#"{"record":"run","run_id":"r1","system":{"id":"triage","version":"v1"},"harness":{"name":"h","run_ref":"https://example.com/runs/7"}}"#,
+            r#"{"record":"label","item_id":"t-1","rater_id":"rater:alice","source":"human","value":true,"version":1}"#,
+            r#"{"record":"judgment","item_id":"t-1","run_id":"r1","gen_replicate":0,"output_type":"binary","value":true,"cost":{"usd":0.01}}"#,
+            r#"{"record":"attribution","item_id":"t-1","run_id":"r1","rater_id":"rater:alice","causes":["no_rule"]}"#,
+        ];
+        let mut out = String::new();
+        let mut raters = Vec::new();
+        for line in lines {
+            let mut r: Record = serde_json::from_str(line).unwrap();
+            pseudonymize(&mut r, &[7; 32]);
+            if let Record::Label(l) = &r {
+                raters.push(l.rater_id.clone());
+            }
+            if let Record::Attribution(a) = &r {
+                raters.push(a.rater_id.clone());
+            }
+            out += &serde_json::to_string(&r).unwrap();
+        }
+        for leak in ["alice", "example.com", "usd"] {
+            assert!(!out.contains(leak), "{leak}: {out}");
+        }
+        assert_eq!(raters[0], raters[1]);
+    }
 
     #[test]
     fn run_ids_become_safe_file_names() {
