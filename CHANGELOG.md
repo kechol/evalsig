@@ -47,6 +47,11 @@ longer reproduces.
 - `evalsig schema report` and `evalsig schema compare` publish the JSON Schemas of those
   commands' results. They allow fields added within a version (D-008); the test suite
   checks every result it produces against them with every object closed.
+- `export --to bundle` writes a project's records with a manifest of hashes, and
+  `import --from-bundle` checks it against the manifest; a bundle of one snapshot without
+  stored bodies reproduces it, so the project's reports verify there. `--hash-ids`
+  replaces item IDs, clusters, strata values and content references with a keyed hash
+  and drops free text (D-050).
 - `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change
   as `discrimination_improved`, `discrimination_worsened`, `threshold_moved` or
   `undetermined` (`insufficient_data` below `--min-events`, default 5) (D-042).

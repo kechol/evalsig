@@ -140,9 +140,10 @@ Write the data as Parquet, CSV or canonical JSONL for analysis elsewhere
 
 | Option | Description | Values | Default |
 |---|---|---|---|
-| `--to <TO>` (required) | The file format | `parquet`, `csv`, `jsonl` |  |
+| `--to <TO>` (required) | The file format | `parquet`, `csv`, `jsonl`, `bundle` |  |
 | `--out <DIR>` (required) | The directory to write the files into (created if missing) |  |  |
 | `--items <RUN>` | Also this run's per-item report rows, as the table items_<run> |  |  |
+| `--hash-ids` | With --to bundle: replace item IDs, clusters and strata values with a keyed hash (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text |  |  |
 | `--task <TASK>` | The judgment task |  | `default` |
 | `--estimand <ESTIMAND>` | The estimand: single_shot, majority@k, any@k or all@k (default from the configuration) |  |  |
 | `--threshold <THRESHOLD>` | Decision threshold for score outputs; for score runs, also the share at or above it |  |  |
@@ -193,6 +194,7 @@ Read records into a snapshot and record the import in the ledger
 | Option | Description | Values | Default |
 |---|---|---|---|
 | `<FILES>` | Files to import into one snapshot |  |  |
+| `--from-bundle <DIR>` | Import a bundle `export --to bundle` wrote, after checking its records against its manifest (D-050) |  |  |
 | `--adapter <ADAPTER>` | Adapter; by default chosen from the file extension (.jsonl/.json, .csv) | `records`, `csv`, `inspect`, `promptfoo` |  |
 | `--mapping <FILE>` | Map the files with a mapping file (`mapping/1`) |  |  |
 | `--arg <NAME=VALUE>` | A value a mapping reads with `{ arg = "NAME" }`; repeat for several |  |  |

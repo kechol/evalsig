@@ -43,8 +43,16 @@ pub enum AsArg {
 #[derive(Debug, clap::Args)]
 pub struct Args {
     /// Files to import into one snapshot.
-    #[arg(required_unless_present = "from")]
+    #[arg(required_unless_present_any = ["from", "from_bundle"])]
     pub files: Vec<PathBuf>,
+    /// Import a bundle `export --to bundle` wrote, after checking its records against its
+    /// manifest (D-050).
+    #[arg(
+        long,
+        value_name = "DIR",
+        conflicts_with_all = ["files", "adapter", "mapping", "from", "converter", "system_version", "grader"]
+    )]
+    pub from_bundle: Option<PathBuf>,
     /// Adapter; by default chosen from the file extension (.jsonl/.json, .csv).
     #[arg(long, value_enum)]
     pub adapter: Option<AdapterArg>,
@@ -98,6 +106,36 @@ pub(crate) fn parse_size(s: &str) -> Result<u64, String> {
     n.checked_shl(shift)
         .filter(|v| v >> shift == n)
         .ok_or_else(|| format!("{s} is too large"))
+}
+
+/// A bundle's manifest, once its records match it (D-050).
+fn verify_bundle(dir: &Path, limits: &Limits) -> Result<super::export::Manifest, Error> {
+    let manifest_path = dir.join("manifest.json");
+    let text = std::fs::read_to_string(&manifest_path).map_err(|e| io_error(&manifest_path, &e))?;
+    let manifest: super::export::Manifest =
+        serde_json::from_str(&text).map_err(|e| Error::invalid_input(&manifest_path, e))?;
+    if manifest.bundle != super::export::BUNDLE {
+        return Err(Error::invalid_input(
+            &manifest_path,
+            "not an evalsig.bundle/1 manifest",
+        ));
+    }
+    let expected: evalsig_store::hash::ContentHash = manifest
+        .records
+        .parse()
+        .map_err(|e| Error::invalid_input(&manifest_path, e))?;
+    let records = dir.join("records.jsonl");
+    if !expected.matches(&read_within(&records, limits)?) {
+        return Err(Error::new(
+            "bundle_mismatch",
+            format!(
+                "{}: the records do not match the manifest's hash",
+                records.display()
+            ),
+            Exit::Rejected,
+        ));
+    }
+    Ok(manifest)
 }
 
 /// A file read within the size limit; a refusal names the limit that applies.
@@ -170,8 +208,15 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         ..Limits::default()
     };
     let mut bodies = mapped::Bodies::new(&args.args, &config, limits)?;
-    let files = match &via {
-        Some(v) if args.files.is_empty() => v.files.clone(),
+    // The manifest, once the records match it.
+    let bundle = args
+        .from_bundle
+        .as_deref()
+        .map(|dir| verify_bundle(dir, &limits))
+        .transpose()?;
+    let files = match (&via, &args.from_bundle) {
+        (_, Some(dir)) => vec![dir.join("records.jsonl")],
+        (Some(v), None) if args.files.is_empty() => v.files.clone(),
         _ => args.files.clone(),
     };
     let validator = RecordValidator::new();
@@ -299,6 +344,41 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     }
     // Bodies are written only now, after every check has passed.
     bodies.commit(&store)?;
+    let mut bundle_warnings = Vec::new();
+    if let Some(m) = &bundle {
+        // This project's configuration is stored so that reports made from the bundle's
+        // project verify here when the two configurations agree.
+        let mut warn = |code: &str, message: &str| {
+            bundle_warnings.push(Warning {
+                code: code.into(),
+                message: message.into(),
+            })
+        };
+        if project.store_config(&config)?.to_string() != m.config {
+            warn(
+                "bundle_config_differs",
+                "this project's configuration differs from the bundle's, so reports made there will not verify here",
+            );
+        }
+        if written.snapshot.to_string() != m.records {
+            warn(
+                "bundle_changed_on_import",
+                "the imported snapshot differs from the bundle's records (redaction in this project changed them)",
+            );
+        }
+        if m.hashed_ids {
+            warn(
+                "bundle_hashed_ids",
+                "item IDs, clusters and strata values are keyed hashes; reports made from the original project will not verify here",
+            );
+        }
+        if m.spec_version != evalsig_core::SPEC_VERSION {
+            warn(
+                "bundle_spec_version",
+                "the bundle was written under other metric definitions",
+            );
+        }
+    }
     let mut summary = serde_json::Map::new();
     summary.insert("adapter".into(), json!(adapter));
     if let Some(n) = redacted {
@@ -335,6 +415,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if let Some(n) = redacted {
         envelope.results["redacted"] = json!(n);
     }
+    envelope.warnings.extend(bundle_warnings);
     envelope.provenance.snapshots = vec![written.snapshot.to_string()];
     envelope.provenance.ledger = Some("agent".into());
     envelope.provenance.ledger_seq = Some(entry.seq);

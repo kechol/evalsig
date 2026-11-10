@@ -17,6 +17,7 @@ name = "evalsig"
 path = "src/main.rs"
 
 [dependencies]
+blake3.workspace = true
 clap.workspace = true
 evalsig-adapters.workspace = true
 evalsig-core.workspace = true

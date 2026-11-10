@@ -799,7 +799,7 @@ The `[checks]` table switches the configurable checks (`fail_on_mixed_grader_ver
 | `ledger` | Show, verify or anchor a ledger |
 | `verify` | Recompute a saved result |
 | `migrate` | Raise the record format of snapshots |
-| `export` | Write Parquet, CSV or canonical JSONL |
+| `export` | Write Parquet, CSV or canonical JSONL, or a bundle (`--to bundle`: the snapshot's records and a manifest of hashes, with `--hash-ids` keyed pseudonymous IDs; `import --from-bundle` checks it; from a project with one snapshot in force and no stored bodies it reproduces that snapshot, so the project's reports verify elsewhere, D-050) |
 | `purge` | Remove a body and the free-text fields that name it |
 | `dashboard` | Serve the local dashboard (§11) |
 | `help --json`, `explain`, `schema`, `recipes`, `version` | Self-description: the command definitions, the meaning of terms, metrics, verdicts, checks and exit codes, JSON Schemas, task recipes (§12.3) |

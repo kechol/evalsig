@@ -32,6 +32,8 @@ pub enum To {
     Parquet,
     Csv,
     Jsonl,
+    /// The snapshot's records in one canonical file with a manifest of hashes (D-050).
+    Bundle,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -45,6 +47,10 @@ pub struct Args {
     /// Also this run's per-item report rows, as the table items_<run>.
     #[arg(long, value_name = "RUN")]
     pub items: Option<String>,
+    /// With --to bundle: replace item IDs, clusters and strata values with a keyed hash
+    /// (the key from EVALSIG_BUNDLE_KEY, never written) and drop free text.
+    #[arg(long)]
+    pub hash_ids: bool,
     #[command(flatten)]
     pub analysis: AnalysisArgs,
 }
@@ -66,6 +72,151 @@ fn kind(r: &Record) -> Option<&'static str> {
         Record::Preference(_) => Some("preferences"),
         Record::Attribution(_) => Some("attributions"),
         Record::Content(_) => None,
+    }
+}
+
+/// A bundle's manifest (D-050), written by `export --to bundle` and checked by
+/// `import --from-bundle`.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Manifest {
+    /// `evalsig.bundle/1`.
+    pub bundle: String,
+    /// The hash of `records.jsonl`, the snapshot's bytes.
+    pub records: String,
+    /// The hash of the configuration the records were analysed under.
+    pub config: String,
+    /// Whether item IDs, clusters and strata values are keyed hashes.
+    pub hashed_ids: bool,
+    pub tool: String,
+    pub spec_version: String,
+}
+
+/// The format a bundle's manifest names.
+pub(crate) const BUNDLE: &str = "evalsig.bundle/1";
+
+/// The records in force, canonical and in primary-key order (the snapshot's bytes), and a
+/// manifest naming their hash and the configuration's (D-050).
+fn bundle(
+    project: &Project,
+    config: &evalsig_core::config::Config,
+    d: &data::Data,
+    args: &Args,
+) -> Result<Output, Error> {
+    let key = args
+        .hash_ids
+        .then(|| {
+            std::env::var("EVALSIG_BUNDLE_KEY")
+                .ok()
+                // A short key could be found by trying it on guessable IDs.
+                .filter(|k| k.chars().count() >= 16)
+                .map(|k| blake3::derive_key("evalsig bundle ids", k.as_bytes()))
+                .ok_or_else(|| {
+                    Error::usage(
+                        "--hash-ids needs a key of at least 16 characters in EVALSIG_BUNDLE_KEY",
+                    )
+                })
+        })
+        .transpose()?;
+    let mut records: Vec<Record> = d
+        .records
+        .iter()
+        .filter(|r| !matches!(r, Record::Content(_)))
+        .cloned()
+        .collect();
+    if let Some(key) = &key {
+        records.iter_mut().for_each(|r| pseudonymize(r, key));
+    }
+    let (lines, hash) = evalsig_store::rows::canonical_lines(&mut records).map_err(Error::store)?;
+    evalsig_project::project::outside_store(&args.out)?;
+    std::fs::create_dir_all(&args.out).map_err(|e| io_error(&args.out, &e))?;
+    let records_path = args.out.join("records.jsonl");
+    let write_lines = || -> std::io::Result<()> {
+        let mut w = std::io::BufWriter::new(File::create(&records_path)?);
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                w.write_all(b"\n")?;
+            }
+            w.write_all(line)?;
+        }
+        w.flush()
+    };
+    write_lines().map_err(|e| io_error(&records_path, &e))?;
+    let manifest = Manifest {
+        bundle: BUNDLE.to_owned(),
+        records: hash.to_string(),
+        config: project.store_config(config)?.to_string(),
+        hashed_ids: key.is_some(),
+        tool: evalsig_project::tool_version(),
+        spec_version: evalsig_core::SPEC_VERSION.to_owned(),
+    };
+    let manifest_path = args.out.join("manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).expect("serializes"),
+    )
+    .map_err(|e| io_error(&manifest_path, &e))?;
+    let mut envelope = Envelope::new(
+        Schema::Export,
+        json!({"format": "bundle", "records": records.len(), "manifest": manifest, "dir": args.out.display().to_string()}),
+    );
+    envelope.provenance.snapshots = d.snapshot_ids();
+    Ok(Output::success(envelope))
+}
+
+/// Item IDs, clusters, strata values and content references become a keyed hash, the
+/// same for the same value across records; free text (attributes, reasons, missing
+/// details) and source pointers are dropped. Attribution causes, the raters' vocabulary,
+/// are kept.
+fn pseudonymize(r: &mut Record, key: &[u8; 32]) {
+    let h = |s: &str| {
+        format!(
+            "h:{}",
+            &blake3::keyed_hash(key, s.as_bytes()).to_hex()[..32]
+        )
+    };
+    let detail = |m: &mut Option<evalsig_core::records::Missing>| {
+        if let Some(m) = m {
+            m.detail = None;
+        }
+    };
+    match r {
+        Record::Item(i) => {
+            i.item_id = h(&i.item_id);
+            // A content hash can be confirmed by guessing the text, so it is keyed too;
+            // equal bodies keep equal references.
+            i.input_ref = i.input_ref.as_deref().map(h);
+            i.reference_ref = i.reference_ref.as_deref().map(h);
+            i.cluster = i.cluster.as_deref().map(h);
+            if let Some(strata) = &mut i.strata {
+                for v in strata.values_mut() {
+                    // As JSON text, so the number 1 and the string "1" stay apart.
+                    *v = Value::String(h(&v.to_string()));
+                }
+            }
+            i.attrs = None;
+        }
+        Record::Label(l) => {
+            l.item_id = h(&l.item_id);
+            l.reason = None;
+            l.source_ref = None;
+            detail(&mut l.missing);
+        }
+        Record::Judgment(j) => {
+            j.item_id = h(&j.item_id);
+            j.output_ref = j.output_ref.as_deref().map(h);
+            j.rationale_ref = j.rationale_ref.as_deref().map(h);
+            j.source_ref = None;
+            detail(&mut j.missing);
+        }
+        Record::Preference(p) => {
+            p.item_id = h(&p.item_id);
+            p.rationale_ref = p.rationale_ref.as_deref().map(h);
+            p.source_ref = None;
+            detail(&mut p.missing);
+        }
+        Record::Attribution(a) => a.item_id = h(&a.item_id),
+        Record::Run(r) => r.attrs = None,
+        Record::Content(_) => unreachable!("content records are not bundled"),
     }
 }
 
@@ -252,6 +403,21 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let project = Project::open(root)?;
     let config = project.config()?;
     let d = data::load(&project)?;
+    if args.to == To::Bundle {
+        if args.items.is_some() {
+            return Err(Error::usage_code(
+                "conflicting_arguments",
+                "--items applies to the table formats, not --to bundle",
+            ));
+        }
+        return bundle(&project, &config, &d, args);
+    }
+    if args.hash_ids {
+        return Err(Error::usage_code(
+            "conflicting_arguments",
+            "--hash-ids applies to --to bundle",
+        ));
+    }
     let mut tables: BTreeMap<&str, Table> = BTreeMap::new();
     for r in &d.records {
         let Some(k) = kind(r) else { continue };
@@ -303,7 +469,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     let ext = match args.to {
         To::Parquet => "parquet",
         To::Csv => "csv",
-        To::Jsonl => "jsonl",
+        To::Jsonl | To::Bundle => "jsonl",
     };
     let mut written = Vec::new();
     for t in tables.iter().filter(|t| !t.rows.is_empty()) {
@@ -311,7 +477,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
         match args.to {
             To::Parquet => write_parquet(t, &path)?,
             To::Csv => write_csv(t, &path)?,
-            To::Jsonl => write_jsonl(t, &path)?,
+            To::Jsonl | To::Bundle => write_jsonl(t, &path)?,
         }
         written.push(
             json!({"table": t.name, "rows": t.rows.len(), "file": path.display().to_string()}),
