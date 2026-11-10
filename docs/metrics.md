@@ -324,7 +324,8 @@ feature counts as not firing it. Only items with a reference count.
   when it lies on the other side.
 - **Lineage.** `compare --features` computes the LR of each lineage in each arm, a lineage
   firing in a judgment when any feature declared with it (or, undeclared, the feature
-  itself) fires, and lists the two arms side by side; it is not a paired difference.
+  itself) fires, on the items the metrics are compared on (in both arms, in scope, inputs
+  unchanged), and lists the two arms side by side; it is not a paired difference.
 - Reference cases: `feature_likelihood_ratio`, `feature_likelihood_ratio_bh`.
 
 ## 6. Replicates and reproducibility
