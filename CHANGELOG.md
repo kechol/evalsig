@@ -30,6 +30,8 @@ longer reproduces.
 - Input files compressed with gzip or Zstandard are read as their content, within the
   size limit, by `import`, `validate --records`, `gate submit` and the `map` commands
   (D-046).
+- `label.join.key` joins a JSONL or CSV label file by a key built from each label row and
+  each source row, such as `{@.task}:{@.unit_id}`; every matching row gives a label (D-047).
 - `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,
   such as replicates a log marks as copies (D-046).
 - `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change

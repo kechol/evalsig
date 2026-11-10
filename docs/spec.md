@@ -270,7 +270,9 @@ adapters are shortcuts for people who have those logs.
   and counted in `map test` and an import warning, or `[?(@.x == v)]` in a path),
   assembling IDs (`template`), mapping values (`value_map`, `offset`; with `default`,
   `fired = { path = "@.verdict", value_map = { violated = true }, default = false }`),
-  missing conditions (`missing_if`), joining labels from another file (`join`), and
+  missing conditions (`missing_if`), joining labels from another file (`join`: a path
+  through a JSON file, or for JSONL and CSV `join.key`, which matches every label row
+  whose key equals the row's, one label per matching row, D-047), and
   refusing source versions it does not know (`expect`). Paths are a JSONPath
   subset. `examples/mapping.toml` states the mapping that
   `examples/custom-harness/convert_runlog.py` performs in code.

@@ -720,3 +720,132 @@ value = "@.ok"
     assert_eq!(v["results"]["values"]["judgments"]["false"], 1, "{v}");
     assert_eq!(v["results"]["integrity"]["replicate_gaps"], 0, "{v}");
 }
+
+#[test]
+fn a_csv_label_file_joins_by_a_composite_key_with_every_rater() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = std::fs::read_to_string(example("mapping.toml")).unwrap();
+    let start = mapping.find("[label]").unwrap();
+    let end = mapping[start..]
+        .find("\n\n")
+        .map_or(mapping.len(), |i| start + i);
+    let label = r#"[label]
+join = { file = { arg = "labels" }, format = "csv", key = { label = "{@.task}:{@.ticket}", row = "{$.task}:{$.ticket_id}" } }
+rater_id = "@.rater"
+source = { const = "human" }
+value = "@.urgent"
+"#;
+    let m = dir.path().join("mapping.toml");
+    std::fs::write(
+        &m,
+        format!("{}{}{}", &mapping[..start], label, &mapping[end..]),
+    )
+    .unwrap();
+    let labels = dir.path().join("labels.csv");
+    std::fs::write(
+        &labels,
+        "task,ticket,rater,urgent\npriority,t-0001,ana,true\npriority,t-0001,ben,false\npriority,t-0002,ana,false\nrefund,t-0001,ana,true\n",
+    )
+    .unwrap();
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .args(["--format", "json", "map", "test"])
+        .arg(&m)
+        .arg(example("custom-harness/run-log.sample.jsonl"))
+        .args(["--arg", "run-id=r1", "--arg"])
+        .arg(format!("labels={}", labels.display()))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"]["integrity"]["items_without_label"], 0, "{v}");
+    // Import keeps both raters of priority:t-0001.
+    let project = tempfile::tempdir().unwrap();
+    let ev = |args: &[&str]| evalsig(project.path()).args(args).output().unwrap();
+    assert!(ev(&["init"]).status.success());
+    let out = ev(&[
+        "import",
+        "--mapping",
+        m.to_str().unwrap(),
+        "--arg",
+        "run-id=r1",
+        "--arg",
+        &format!("labels={}", labels.display()),
+        example("custom-harness/run-log.sample.jsonl")
+            .to_str()
+            .unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let export = project.path().join("out");
+    let out = ev(&["export", "--to", "jsonl", "--out", export.to_str().unwrap()]);
+    assert!(out.status.success(), "{out:?}");
+    let text: String = std::fs::read_dir(&export)
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    let raters: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains(r#""record":"label""#) && l.contains("priority:t-0001"))
+        .collect();
+    assert_eq!(raters.len(), 2, "{text}");
+}
+
+#[test]
+fn label_keys_that_read_the_other_side_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    for (key, at) in [
+        (
+            r#"{ label = "{$.task}", row = "{$.task}" }"#,
+            "label.join.key.label",
+        ),
+        (
+            r#"{ label = "{@.a.{$.task}}", row = "{$.task}" }"#,
+            "label.join.key.label",
+        ),
+        (
+            r#"{ label = "{@.task}", row = "{@.task}" }"#,
+            "label.join.key.row",
+        ),
+        (
+            r#"{ label = "{@.task}", row = "{r}" }"#,
+            "label.join.key.row",
+        ),
+    ] {
+        let mapping = std::fs::read_to_string(example("mapping.toml"))
+            .unwrap()
+            .replace(
+                r#"format = "json", path = "$.{$.task}.{$.ticket_id}" }"#,
+                &format!(r#"format = "csv", key = {key} }}"#),
+            );
+        let m = dir.path().join("mapping.toml");
+        std::fs::write(&m, mapping).unwrap();
+        let out = Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["--format", "json", "map", "test"])
+            .arg(&m)
+            .arg(example("custom-harness/run-log.sample.jsonl"))
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains(at), "{key}: {err}");
+    }
+}
+
+#[test]
+fn a_key_join_on_a_json_object_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = std::fs::read_to_string(example("mapping.toml"))
+        .unwrap()
+        .replace(
+            r#"path = "$.{$.task}.{$.ticket_id}" }"#,
+            r#"key = { label = "{@.task}", row = "{$.task}" } }"#,
+        );
+    let m = dir.path().join("mapping.toml");
+    std::fs::write(&m, mapping).unwrap();
+    // The sample labels are a JSON object, not an array.
+    let v = map_test(&m, &example("custom-harness/run-log.sample.jsonl"), 0);
+    assert!(
+        v["results"]["coverage"]["dropped_by"]["label.join.file"].as_u64() > Some(0),
+        "{v}"
+    );
+}

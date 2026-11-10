@@ -366,8 +366,7 @@
      "type": "object",
      "additionalProperties": false,
      "required": [
-      "file",
-      "path"
+      "file"
      ],
      "description": "Joins labels from another file to the items",
      "properties": {
@@ -382,9 +381,41 @@
        ]
       },
       "path": {
-       "type": "string"
+       "type": "string",
+       "description": "A path through the joined file; its insertions read the row"
+      },
+      "key": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "label",
+        "row"
+       ],
+       "description": "Matches every label row whose label template equals the row template (D-047)",
+       "properties": {
+        "label": {
+         "type": "string",
+         "description": "The key of a label row, over @"
+        },
+        "row": {
+         "type": "string",
+         "description": "The key of a source row, over $"
+        }
+       }
       }
-     }
+     },
+     "oneOf": [
+      {
+       "required": [
+        "path"
+       ]
+      },
+      {
+       "required": [
+        "key"
+       ]
+      }
+     ]
     },
     "rater_id": {
      "$ref": "#/$defs/expr"

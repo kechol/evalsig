@@ -207,7 +207,18 @@ pub struct JudgmentMap {
 pub struct Join {
     pub file: ExprDef,
     pub format: Option<Format>,
-    pub path: String,
+    pub path: Option<String>,
+    pub key: Option<JoinKey>,
+}
+
+/// Matches label rows to source rows by a key (D-047).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JoinKey {
+    /// The key of a label row, over `@`.
+    pub label: String,
+    /// The key of a source row, over `$`.
+    pub row: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -305,9 +316,18 @@ struct Judgment {
     missing_if: Vec<(Cond, Expr, Option<Expr>)>,
 }
 
+/// How a joined file's label is found for a row.
+#[derive(Debug, Clone)]
+enum Lookup {
+    /// A path through the joined file, its insertions reading the row.
+    Path(Path),
+    /// Every label row whose key equals the row's (D-047).
+    Key { label: Template, row: Template },
+}
+
 #[derive(Debug, Clone)]
 struct Label {
-    join: Option<(Expr, Format, Path)>,
+    join: Option<(Expr, Format, Lookup)>,
     fields: Vec<(&'static str, Expr)>,
     value: Expr,
 }
@@ -334,6 +354,13 @@ struct Compiler {
 impl Compiler {
     fn path(&self, at: &str, s: &str) -> Result<Path, MapError> {
         Path::parse(s).map_err(|source| MapError::Path {
+            at: at.to_owned(),
+            source,
+        })
+    }
+
+    fn template(&self, at: &str, s: &str) -> Result<Template, MapError> {
+        Template::parse(s).map_err(|source| MapError::Path {
             at: at.to_owned(),
             source,
         })
@@ -378,10 +405,7 @@ impl Compiler {
         let src = if let Some(p) = &t.path {
             Src::Path(self.path(at, p)?)
         } else if let Some(s) = &t.template {
-            Src::Template(Template::parse(s).map_err(|source| MapError::Path {
-                at: at.to_owned(),
-                source,
-            })?)
+            Src::Template(self.template(at, s)?)
         } else if let Some(a) = &t.arg {
             Src::Arg(a.clone())
         } else if let Some(c) = &t.constant {
@@ -611,11 +635,45 @@ fn compile_parts(m: &Mapping, judgments: bool) -> Result<Compiled, MapError> {
                             message: "must be an arg or a const".into(),
                         });
                     }
-                    Ok((
-                        file,
-                        j.format.unwrap_or(Format::Json),
-                        c.path("label.join.path", &j.path)?,
-                    ))
+                    let lookup = match (&j.path, &j.key) {
+                        (Some(p), None) => Lookup::Path(c.path("label.join.path", p)?),
+                        (None, Some(k)) => {
+                            // One index serves every row, so the label key reads the label
+                            // row alone; the row key reads the source row alone.
+                            let key = |at: &str, s: &str, row: bool, what: &str| {
+                                let t = c.template(at, s)?;
+                                if t.reads_only(row) {
+                                    Ok(t)
+                                } else {
+                                    Err(MapError::Invalid {
+                                        at: at.into(),
+                                        message: format!("may insert only {what}"),
+                                    })
+                                }
+                            };
+                            Lookup::Key {
+                                label: key(
+                                    "label.join.key.label",
+                                    &k.label,
+                                    false,
+                                    "@ paths of the label row",
+                                )?,
+                                row: key(
+                                    "label.join.key.row",
+                                    &k.row,
+                                    true,
+                                    "$ paths of the source row",
+                                )?,
+                            }
+                        }
+                        _ => {
+                            return Err(MapError::Invalid {
+                                at: "label.join".into(),
+                                message: "give path or key".into(),
+                            });
+                        }
+                    };
+                    Ok((file, j.format.unwrap_or(Format::Json), lookup))
                 })
                 .transpose()?;
             Ok(Label {
@@ -839,9 +897,12 @@ impl Compiled {
         }
         if let Some(l) = &self.label {
             exprs.extend(l.fields.iter().map(|(_, e)| e).chain([&l.value]));
-            if let Some((file, _, path)) = &l.join {
+            if let Some((file, _, lookup)) = &l.join {
                 exprs.push(file);
-                out.extend(path.inner());
+                match lookup {
+                    Lookup::Path(path) => out.extend(path.inner()),
+                    Lookup::Key { row, .. } => out.extend(row.paths()),
+                }
             }
         }
         for e in exprs {
@@ -1092,6 +1153,10 @@ fn invalid_output(e: &Expr, m: Miss) -> Json {
 struct Applier<'h> {
     host: &'h mut dyn Host,
     joined: BTreeMap<String, Json>,
+    /// Per joined file read by key: the positions of its label rows by key.
+    keyed: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+    /// The (file, key) pairs already joined, so rows sharing a key label once.
+    keys_joined: BTreeSet<String>,
     labelled: BTreeSet<String>,
     /// Run and item records already emitted; rows repeat them. Differing ones are
     /// emitted so the importer reports the conflict.
@@ -1216,8 +1281,9 @@ impl Applier<'_> {
     ) -> Result<(), RowError> {
         let file = match &l.join {
             None => None,
-            Some((file, format, _)) => {
-                if self.labelled.contains(item_id) {
+            Some((file, format, lookup)) => {
+                // A path join labels an item once; a key join once per key, below.
+                if matches!(lookup, Lookup::Path(_)) && self.labelled.contains(item_id) {
                     return Ok(());
                 }
                 let file = file.id(scope, &*self.host)?;
@@ -1225,45 +1291,72 @@ impl Applier<'_> {
                 Some(file)
             }
         };
-        let joined = match (&l.join, &file) {
+        let scopes: Vec<Scope<'_>> = match (&l.join, &file) {
             // The path walks the joined file; its insertions read the row.
-            (Some((_, _, path)), Some(f)) => match path.first_from(&self.joined[f], scope) {
-                Some(v) => Some(v),
-                None => return Ok(()),
-            },
-            _ => None,
+            (Some((_, _, Lookup::Path(path))), Some(f)) => {
+                match path.first_from(&self.joined[f], scope) {
+                    Some(v) => vec![scope.with_current(v)],
+                    None => return Ok(()),
+                }
+            }
+            (Some((_, _, Lookup::Key { label, row })), Some(f)) => {
+                let Some(rows) = self.joined[f].as_array() else {
+                    return Err(row_error(
+                        "label.join.file",
+                        format!("{f}: a key join needs JSONL, CSV or a JSON array"),
+                    ));
+                };
+                if !self.keyed.contains_key(f) {
+                    let mut index: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+                    for (i, r) in rows.iter().enumerate() {
+                        if let Some(k) = label.render(scope.with_current(r)) {
+                            index.entry(k).or_default().push(i);
+                        }
+                    }
+                    self.keyed.insert(f.clone(), index);
+                }
+                let Some(k) = row.render(scope) else {
+                    return Ok(());
+                };
+                if !self.keys_joined.insert(format!("{f}\n{k}")) {
+                    return Ok(());
+                }
+                let Some(at) = self.keyed[f].get(&k) else {
+                    return Ok(());
+                };
+                at.iter().map(|i| scope.with_current(&rows[*i])).collect()
+            }
+            _ => vec![scope],
         };
-        let scope = match joined {
-            Some(v) => scope.with_current(v),
-            None => scope,
-        };
-        let host = &*self.host;
-        let mut label = Map::new();
-        label.insert("record".into(), json!("label"));
-        label.insert("item_id".into(), json!(item_id));
-        for (k, e) in &l.fields {
-            let v = match *k {
-                "rater_id" | "source" => Some(e.need(scope, host)?),
-                "version" => e.int(scope, host)?,
-                _ => e.maybe(scope, host)?,
+        for scope in scopes {
+            let host = &*self.host;
+            let mut label = Map::new();
+            label.insert("record".into(), json!("label"));
+            label.insert("item_id".into(), json!(item_id));
+            for (k, e) in &l.fields {
+                let v = match *k {
+                    "rater_id" | "source" => Some(e.need(scope, host)?),
+                    "version" => e.int(scope, host)?,
+                    _ => e.maybe(scope, host)?,
+                };
+                if let Some(v) = v {
+                    label.insert((*k).into(), v);
+                }
+            }
+            label.entry("version").or_insert(json!(1));
+            match l.value.eval(scope, host).and_then(|v| match v {
+                // Text cells (CSV) become booleans or numbers as in a plain CSV import.
+                Json::String(s) => {
+                    crate::table::map_value(&s, None, None).map_err(|_| Miss::Unmapped(s))
+                }
+                other => Ok(other),
+            }) {
+                Ok(v) => label.insert("value".into(), v),
+                Err(m) => label.insert("missing".into(), invalid_output(&l.value, m)),
             };
-            if let Some(v) = v {
-                label.insert((*k).into(), v);
-            }
+            self.records.push((n, Json::Object(label)));
         }
-        label.entry("version").or_insert(json!(1));
-        match l.value.eval(scope, host).and_then(|v| match v {
-            // Text cells (CSV) become booleans or numbers as in a plain CSV import.
-            Json::String(s) => {
-                crate::table::map_value(&s, None, None).map_err(|_| Miss::Unmapped(s))
-            }
-            other => Ok(other),
-        }) {
-            Ok(v) => label.insert("value".into(), v),
-            Err(m) => label.insert("missing".into(), invalid_output(&l.value, m)),
-        };
         self.labelled.insert(item_id.to_owned());
-        self.records.push((n, Json::Object(label)));
         Ok(())
     }
 
@@ -1462,6 +1555,8 @@ pub fn apply(
     let mut a = Applier {
         host,
         joined: BTreeMap::new(),
+        keyed: BTreeMap::new(),
+        keys_joined: BTreeSet::new(),
         labelled: BTreeSet::new(),
         emitted: BTreeSet::new(),
         records: Vec::new(),

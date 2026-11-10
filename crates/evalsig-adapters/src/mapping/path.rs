@@ -133,6 +133,16 @@ impl Template {
         })
     }
 
+    /// Whether every insertion, nested ones included, starts at the row (`row`) or at
+    /// the current element, and none is a variable.
+    pub fn reads_only(&self, row: bool) -> bool {
+        self.0.iter().all(|p| match p {
+            Part::Lit(_) => true,
+            Part::Var(_) => false,
+            Part::Path(p) => p.from_row() == row && p.inserts_only(row),
+        })
+    }
+
     /// The text, or `None` if an insertion has no value.
     pub fn render(&self, scope: Scope<'_>) -> Option<String> {
         let mut out = String::new();
@@ -242,6 +252,17 @@ impl Path {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Whether the insertions in this path's names, and in its filters' names, start at
+    /// the row (`row`) or at the current element, with no variable. A filter's own test
+    /// reads the element it filters.
+    fn inserts_only(&self, row: bool) -> bool {
+        self.segs.iter().all(|s| match s {
+            Seg::Key(t) => t.reads_only(row),
+            Seg::Filter(p, _) => p.inserts_only(row),
+            Seg::Index(_) | Seg::All => true,
+        })
     }
 
     /// The paths inside this one: insertions in names and the tests of filters.
