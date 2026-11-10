@@ -71,17 +71,32 @@ pub fn replicates(
     rng: &mut Rng,
     mut statistic: impl FnMut(&[usize]) -> Option<f64>,
 ) -> (Vec<f64>, u32) {
-    let mut out = Vec::with_capacity(b as usize);
-    let mut dropped = 0;
+    let out = replicates_many(n_units, strata, b, rng, 1, |idx| [statistic(idx)])
+        .pop()
+        .expect("one statistic");
+    let dropped = b - out.len() as u32;
+    (out, dropped)
+}
+
+/// `k` statistics over the same `b` resamples, so their replicates come from the same
+/// draws. Each list drops the resamples where its statistic is undefined.
+pub fn replicates_many<I: IntoIterator<Item = Option<f64>>>(
+    n_units: usize,
+    strata: Option<&Strata>,
+    b: u32,
+    rng: &mut Rng,
+    k: usize,
+    mut statistics: impl FnMut(&[usize]) -> I,
+) -> Vec<Vec<f64>> {
+    let mut out = vec![Vec::with_capacity(b as usize); k];
     let mut idx = Vec::with_capacity(n_units);
     for _ in 0..b {
         resample_into(&mut idx, n_units, strata, rng);
-        match statistic(&idx) {
-            Some(v) if v.is_finite() => out.push(v),
-            _ => dropped += 1,
+        for (list, v) in out.iter_mut().zip(statistics(&idx)) {
+            list.extend(v.filter(|v| v.is_finite()));
         }
     }
-    (out, dropped)
+    out
 }
 
 /// Quantile by linear interpolation between order statistics (the common "type 7").

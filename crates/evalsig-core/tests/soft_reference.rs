@@ -70,6 +70,7 @@ fn settings(mode: ReferenceMode) -> Settings {
         bootstrap: 200,
         seed: 1,
         prevalence: None,
+        cost: None,
         sections: Sections::default(),
         exact_rates: false,
         proxy: None,

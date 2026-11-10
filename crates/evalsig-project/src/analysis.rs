@@ -85,6 +85,7 @@ pub fn settings(config: &Config, a: &Analysis) -> Settings {
         bootstrap: config.stats.bootstrap,
         seed: config.stats.seed.unwrap_or(0),
         prevalence: None,
+        cost: config.cost.clone(),
         sections: Sections::default(),
         exact_rates: false,
         proxy: None,

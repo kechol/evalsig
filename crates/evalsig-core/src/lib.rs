@@ -6,7 +6,7 @@
 /// The version of the metric definitions (metrics spec). It changes, with an entry
 /// in CHANGELOG.md, whenever a metric's formula or method changes, so a saved result
 /// says which definitions produced it (audit spec §5).
-pub const SPEC_VERSION: &str = "metrics/1";
+pub const SPEC_VERSION: &str = "metrics/2";
 
 pub mod agreement;
 pub mod bootstrap;

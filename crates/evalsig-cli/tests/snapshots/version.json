@@ -56,7 +56,7 @@
   "next": [],
   "provenance": {
     "tool": "evalsig <VERSION>",
-    "spec_version": "metrics/1"
+    "spec_version": "metrics/2"
   },
   "truncated": null
 }

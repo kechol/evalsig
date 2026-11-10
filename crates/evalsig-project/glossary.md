@@ -67,6 +67,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | decision threshold | `threshold` | The score or level from which a judgment counts as positive |
 | cost matrix | `[cost] matrix` | Loss per item for each (reference label, judgment level) cell |
 | expected cost | `expected_cost` | Average loss per item from the cost matrix and the judgment distribution |
+| stratum mix | `mix` (`configured`, `observed`), `[cost.strata] mix` | Each stratum's share when per-stratum expected costs are combined into one: its production share when every stratum has one, otherwise its item count in the data |
 
 ## Agreement and repeatability
 
@@ -152,7 +153,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | hash chain / head | `prev`, `ledger anchor` | Each ledger line names the hash of the line before it (`prev`); the head is the last line's hash, which `ledger anchor` prints for keeping elsewhere |
 | actor | `actor`, `EVALSIG_ACTOR` | Who an operation is recorded as in the ledger: `user:<name>` or `agent:<name>` |
 | object | `objects/` | A stored body (snapshot, provenance, content, result) named by the hash of its bytes |
-| spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/1`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
+| spec version | `spec_version` | The version of the metric definitions an output follows (`metrics/2`), in `provenance.spec_version`; it changes, with a CHANGELOG entry, when a metric's formula or method changes |
 | provenance | `provenance` | Where data and results came from, with which version and configuration |
 | purge | `purge` | Removing a content body and the free-text fields of the items that name it, through a replacement snapshot and a ledger line; the superseded snapshot remains only as a hash |
 | exclusion | `exclude`, `reason` | Leaving items out of every analysis with a reason code (`duplicate`, `invalid_input`, `out_of_scope`, `privacy`, `other`), through replacement snapshots and a ledger line. Holdout items are excluded by the referee only |

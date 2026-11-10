@@ -1,6 +1,6 @@
 # Metric definitions
 
-Version `metrics/1` (`SPEC_VERSION` in `crates/evalsig-core/src/lib.rs`; results carry it
+Version `metrics/2` (`SPEC_VERSION` in `crates/evalsig-core/src/lib.rs`; results carry it
 as `provenance.spec_version`). This page defines every number evalsig outputs: the
 formulas, the interval method behind each one, and what each command computes today.
 The dashboard's "how to read" text comes from it. Commands and options are listed in the
@@ -272,8 +272,25 @@ production prevalence π, and optionally a range of the cost ratio.
 - **Cost-ratio sensitivity.** With a range [r_lo, r_hi], the command reports whether the
   optimal threshold differs at the two ends. Given a second run, it also reports whether
   the difference in expected cost between the two runs changes sign across the range.
-- **Not in `compare`.** Expected cost and its difference are not among the metrics of
-  `compare`.
+- **Strata.** With `by` set, each value of that stratum may override π and the matrix
+  (`[cost.strata."<value>"]`); a value without an override uses `[cost]`. EC_g is the
+  formula above on the stratum's items. The overall EC is Σ m_g EC_g / Σ m_g over the
+  strata present, with m_g the stratum's configured production share `mix` when every
+  stratum present has one, otherwise its weighted item count; the output then says
+  `mix: observed` and warns (`stratum_mix_observed`), because a balanced test set does not
+  have production's mix. A configured stratum value that no compared item has is named in
+  a warning (`cost_stratum_unmatched`). EC_g is undefined without positives or negatives in the stratum,
+  and so is the overall EC.
+- **Items.** Each item with a reference contributes the share of its judgments at each
+  level (replicates included), weighted by its weight and split by a soft reference. An
+  item with no level judgment is left out, with no missing bounds. A run whose judged
+  values are not levels 0 … k − 1 of the matrix has no EC, and `compare` warns
+  (`expected_cost_not_computed`).
+- **In `compare`.** `expected_cost` is compared when `[cost]` is set and both arms' judgments
+  are levels (§7): the difference baseline − candidate (lower cost is better) with a paired
+  cluster-bootstrap interval and the §7.1 verdict with `min_effect.expected_cost`, and with
+  `by` one row per stratum with its own interval (none below five clusters with items in
+  the stratum). One set of resamples gives every interval.
 - Reference cases: `cost`, `misc`.
 
 ## 5. Feature likelihood ratios
@@ -377,14 +394,15 @@ the latest winning; a run whose imports declare none takes the item record in fo
 `false_alarm_rate`). Both arms must share value semantics, output type and decision rule.
 
 The metrics compared are those both arms support: accuracy, H, F, precision, `pass_rate`,
-`mean_score`, `rate_at_least`.
+`mean_score`, `rate_at_least`, and `expected_cost` when `[cost]` is set (§4).
 
 - **Interval of a paired difference of rates** (accuracy, H, F, `pass_rate`,
   `rate_at_least`). Without replicates, clusters, weights or fractional contributions,
   Tango's score interval (Tango 1998) from the discordant counts: b (A wrong, B right),
   c (A right, B wrong) and n paired items. Otherwise a paired cluster bootstrap that
   resamples the same clusters in both arms and recomputes the ratio of totals in each.
-  Precision and mean score use the bootstrap. Reference case: `paired_difference`.
+  Precision, mean score and expected cost use the bootstrap. Reference case:
+  `paired_difference`.
 - **p-value.** For the Tango case, the two-sided score test that Tango's interval
   inverts, at a difference of 0: 2(1 − Φ(|b − c| / √(b + c))), and 1 when b + c = 0
   (`tango_score`). The interval excludes 0 exactly when this p-value is below
@@ -401,7 +419,7 @@ The metrics compared are those both arms support: accuracy, H, F, precision, `pa
   with the largest primary difference. The best of several is biased upwards (a winner's
   curse), so the output says `selected_after_comparison` and warns; confirm the best
   candidate on another split. Holm is not applied across metrics or strata.
-- **Delta metrics not compared.** Δd′, ΔAUC and ΔEC are not among the compared metrics.
+- **Delta metrics not compared.** Δd′ and ΔAUC are not among the compared metrics.
 
 ### 7.1 The verdict rule
 

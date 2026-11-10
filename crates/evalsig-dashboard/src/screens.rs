@@ -603,7 +603,7 @@ fn comparison_body(
     body.push_str(&html::panel(
         T::Differences.text(l),
         "",
-        &svg::intervals(&svg::metric_rows(&r["metrics"], "delta"), true),
+        &svg::metric_plots(&r["metrics"], "delta", true),
     ));
     // Both runs in ROC space: a move along one curve is a changed criterion, a move to a
     // higher curve a better separation.

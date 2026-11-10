@@ -54,6 +54,19 @@ pub fn metric_rows<'a>(metrics: &'a Value, point: &str) -> Vec<Row<'a>> {
         .collect()
 }
 
+/// Interval plots of a result's `metrics`: the rates on one axis, then expected cost,
+/// which is in cost units, on its own.
+pub fn metric_plots(metrics: &Value, point: &str, zero: bool) -> String {
+    let (cost, rates): (Vec<Row<'_>>, Vec<Row<'_>>) = metric_rows(metrics, point)
+        .into_iter()
+        .partition(|r| r.label == "expected_cost");
+    let mut out = intervals(&rates, zero);
+    if !cost.is_empty() {
+        out.push_str(&intervals(&cost, zero));
+    }
+    out
+}
+
 /// The value range an interval plot of `rows` spans, padded by 5% on each side; with
 /// `zero`, 0 is inside it. `None` when no row has a number.
 pub fn range(rows: &[Row<'_>], zero: bool) -> Option<(f64, f64)> {

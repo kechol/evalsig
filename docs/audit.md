@@ -209,7 +209,7 @@ and `compare` it holds what the result was computed from:
 | `seed` | The resampling seed |
 | `request` | The command and arguments, so the computation can be repeated |
 | `output` | BLAKE3 of the canonical `results` |
-| `tool`, `spec_version` | The evalsig version and the metric definitions (`metrics/1`) it follows |
+| `tool`, `spec_version` | The evalsig version and the metric definitions (`metrics/2`) it follows |
 | `ledger`, `ledger_seq` | Which ledger recorded the command, and the line |
 
 The envelope is saved as `.evalsig/reports/<output hash>.json` before the

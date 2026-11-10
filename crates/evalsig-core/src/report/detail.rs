@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use super::{Fill, Prepared, ReportError, Unit};
+use crate::cost::{CostPart, Sums};
 use crate::features::{self, Class, Counts, Thresholds};
 use crate::numeric::{Running, mean, sum};
 use crate::ppi;
@@ -202,6 +203,46 @@ impl Prepared<'_> {
             points: roc::roc_points(&pos, &neg),
             zroc,
         })
+    }
+
+    /// Each item's part of expected cost under `[cost]` (D-041): the items with a
+    /// reference and a judged level. `None` without `[cost]` or a reference, or when a
+    /// judged value is not a level 0 … k − 1 of the matrix.
+    pub fn cost_parts(&self) -> Option<BTreeMap<String, CostPart>> {
+        let cost = self.settings.cost.as_ref()?;
+        if self.semantics != ValueSemantics::Decision || self.positive.is_none() {
+            return None;
+        }
+        let k = cost.matrix.first()?.len() as f64;
+        let mut parts = BTreeMap::new();
+        for u in &self.units {
+            let Some(s) = u.reference else { continue };
+            if u.levels.is_empty() {
+                continue;
+            }
+            if u.levels
+                .iter()
+                .any(|l| l.fract() != 0.0 || *l < 0.0 || *l >= k)
+            {
+                return None;
+            }
+            let matrix = cost.matrix_of(u.cost_stratum.as_deref());
+            let n = u.levels.len() as f64;
+            let row = |c: usize| sum(u.levels.iter().map(|l| matrix[c][*l as usize])) / n;
+            let weight = [u.weight * (1.0 - s), u.weight * s];
+            parts.insert(
+                u.item_id.clone(),
+                CostPart {
+                    cluster: u.cluster.clone(),
+                    stratum: u.cost_stratum.clone(),
+                    sums: Sums {
+                        weight,
+                        cost: [weight[0] * row(0), weight[1] * row(1)],
+                    },
+                },
+            );
+        }
+        (!parts.is_empty()).then_some(parts)
     }
 
     /// Weighted counts of positives and negatives per judgment level 0 … levels − 1

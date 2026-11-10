@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
+use crate::config::Cost;
+use crate::cost::{self, CostPart, Mix, Sums};
 use crate::interval::newcombe;
 use crate::numeric::{Rng, Running, mean, student_t, sum, two_sided_z, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
@@ -50,6 +52,36 @@ pub struct MetricDelta {
     pub p_method: &'static str,
     /// Verdict on the difference given its interval and the minimum effect.
     pub verdict: Verdict,
+    /// For expected cost with a `[cost] by` stratum: how strata were combined and one
+    /// row per stratum.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub by_stratum: Option<ByStratum>,
+}
+
+/// Expected cost per stratum (D-041).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ByStratum {
+    /// How strata were combined into the overall value.
+    pub mix: Mix,
+    /// One row per stratum.
+    pub strata: Vec<StratumDelta>,
+}
+
+/// Expected cost in one stratum of both arms (D-041).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StratumDelta {
+    /// The stratum's value; `None` for items without one.
+    pub stratum: Option<String>,
+    /// The stratum's production prevalence.
+    pub prevalence: f64,
+    /// Expected cost in the baseline arm.
+    pub baseline: Option<f64>,
+    /// Expected cost in the candidate arm.
+    pub candidate: Option<f64>,
+    /// Baseline minus candidate (positive is better).
+    pub delta: Option<f64>,
+    /// Paired cluster-bootstrap interval of the difference.
+    pub ci: Option<(f64, f64)>,
 }
 
 /// A comparison of two arms over every metric both support.
@@ -98,6 +130,7 @@ pub struct Baseline<'p, 'a> {
     prepared: &'p Prepared<'a>,
     values: BTreeMap<MetricId, Filled>,
     judged: BTreeMap<String, (f64, Option<f64>)>,
+    cost: Option<BTreeMap<String, CostPart>>,
 }
 
 /// With `bounds` false the worst and best fills are left empty, for a comparison that
@@ -134,6 +167,9 @@ impl<'p, 'a> Baseline<'p, 'a> {
             prepared,
             values,
             judged: prepared.judged(),
+            cost: keep(MetricId::ExpectedCost)
+                .then(|| prepared.cost_parts())
+                .flatten(),
         }
     }
 }
@@ -189,6 +225,7 @@ fn finish(
         p_value,
         p_method,
         verdict: paired::verdict(delta.unwrap_or(0.0), delta.and(ci), min_effect),
+        by_stratum: None,
     }
 }
 
@@ -225,7 +262,7 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
     let n_unpaired = (union - in_both.len()) as u64;
     let independent = a.independent() && b.independent();
     let system_missing = a.system_missing().0 + b.system_missing().0 > 0;
-    let metrics = ids
+    let mut metrics: Vec<MetricDelta> = ids
         .iter()
         .map(|&id| {
             metric_delta(
@@ -239,6 +276,9 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
             )
         })
         .collect();
+    if let (Some(pa), Some(pb), Some(c)) = (&base.cost, b.cost_parts(), a.cost()) {
+        metrics.push(cost_delta(pa, &pb, c, &paired, o));
+    }
     let transition = a.positive().map(|_| {
         Transition::of(paired.iter().filter_map(|item| {
             let ((va, s), (vb, _)) = (base.judged[*item], judged_b[*item]);
@@ -362,16 +402,156 @@ fn metric_delta(
                 (da > 0.0 && db > 0.0).then(|| sign * (t(2) / db - t(0) / da))
             },
         );
-        let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
-        (
-            bootstrap::percentile_interval(reps, o.level),
-            "bootstrap",
-            Some(o.bootstrap),
-            p,
-            "bootstrap",
-        )
+        bootstrap_inference(reps, delta, o)
     };
     finish(id, (base, cand, delta), missing_bounds, o, inference)
+}
+
+/// The difference in expected cost on the paired items (D-041): one paired cluster
+/// bootstrap gives the overall interval and each stratum's.
+fn cost_delta(
+    pa: &BTreeMap<String, CostPart>,
+    pb: &BTreeMap<String, CostPart>,
+    c: &Cost,
+    paired: &BTreeSet<&str>,
+    o: &Options,
+) -> MetricDelta {
+    let items: Vec<&str> = paired
+        .iter()
+        .copied()
+        .filter(|i| pa.contains_key(*i) && pb.contains_key(*i))
+        .collect();
+    let strata = cost::strata_of(items.iter().map(|i| &pa[*i]));
+    let mix = cost::mix(&strata, c);
+    let mut clusters: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for i in &items {
+        clusters.entry(pa[*i].cluster.as_str()).or_default().push(i);
+    }
+    // Each cluster's sums in both arms for the strata its items fall in, taken once.
+    let totals: Vec<Vec<(usize, [Sums; 2])>> = clusters
+        .values()
+        .map(|is| {
+            let mut entries: Vec<(usize, [Sums; 2])> = Vec::new();
+            for i in is {
+                let g = strata
+                    .binary_search(&pa[*i].stratum)
+                    .expect("the stratum of a paired item");
+                let at = match entries.iter().position(|e| e.0 == g) {
+                    Some(at) => at,
+                    None => {
+                        entries.push((g, [Sums::default(); 2]));
+                        entries.len() - 1
+                    }
+                };
+                entries[at].1[0].add(&pa[*i].sums);
+                entries[at].1[1].add(&pb[*i].sums);
+            }
+            entries
+        })
+        .collect();
+    let add = |drawn: &mut dyn Iterator<Item = usize>| {
+        let mut out = [
+            vec![Sums::default(); strata.len()],
+            vec![Sums::default(); strata.len()],
+        ];
+        for c in drawn {
+            for (g, [a, b]) in &totals[c] {
+                out[0][*g].add(a);
+                out[1][*g].add(b);
+            }
+        }
+        out
+    };
+    // Clusters with items in each stratum: a stratum's interval needs MIN_UNITS of them.
+    let mut carrying = vec![0; strata.len()];
+    for entries in &totals {
+        for (g, _) in entries {
+            carrying[*g] += 1;
+        }
+    }
+    let overall = |s: &[Vec<Sums>; 2]| {
+        let ec = |arm: &[Sums]| cost::combine(&strata, arm, c, mix);
+        ec(&s[0]).zip(ec(&s[1]))
+    };
+    let one = |s: &[Vec<Sums>; 2], g: usize| {
+        let pi = c.prevalence_of(strata[g].as_deref());
+        cost::stratum_value(&s[0][g], pi).zip(cost::stratum_value(&s[1][g], pi))
+    };
+    let diff = |p: Option<(f64, f64)>| p.map(|(x, y)| x - y);
+    let all = add(&mut (0..totals.len()));
+    let point = overall(&all);
+    let delta = diff(point);
+    // Replicates of the overall difference, then of each stratum's, from the same draws.
+    let reps = if delta.is_some() && totals.len() >= bootstrap::MIN_UNITS {
+        let mut rng = Rng::new(o.seed);
+        bootstrap::replicates_many(
+            totals.len(),
+            None,
+            o.bootstrap,
+            &mut rng,
+            strata.len() + 1,
+            |drawn| {
+                let s = add(&mut drawn.iter().copied());
+                std::iter::once(diff(overall(&s)))
+                    .chain((0..strata.len()).map(|g| diff(one(&s, g))))
+                    .collect::<Vec<_>>()
+            },
+        )
+    } else {
+        vec![Vec::new(); strata.len() + 1]
+    };
+    let mut reps = reps.into_iter();
+    let overall_reps = reps.next().expect("one list per statistic");
+    let inference = if delta.is_none() {
+        NO_INFERENCE
+    } else if totals.len() < bootstrap::MIN_UNITS {
+        TOO_FEW_UNITS
+    } else {
+        bootstrap_inference(overall_reps, delta, o)
+    };
+    let mut d = finish(
+        MetricId::ExpectedCost,
+        (point.map(|p| p.0), point.map(|p| p.1), delta),
+        None,
+        o,
+        inference,
+    );
+    if c.by.is_some() {
+        d.by_stratum = Some(ByStratum {
+            mix,
+            strata: strata
+                .iter()
+                .zip(reps)
+                .enumerate()
+                .map(|(g, (stratum, r))| {
+                    let point = one(&all, g);
+                    StratumDelta {
+                        stratum: stratum.clone(),
+                        prevalence: c.prevalence_of(stratum.as_deref()),
+                        baseline: point.map(|p| p.0),
+                        candidate: point.map(|p| p.1),
+                        delta: diff(point),
+                        ci: point
+                            .filter(|_| carrying[g] >= bootstrap::MIN_UNITS)
+                            .and_then(|_| bootstrap::percentile_interval(r, o.level)),
+                    }
+                })
+                .collect(),
+        });
+    }
+    d
+}
+
+/// The percentile interval and p-value of bootstrap replicates of a difference.
+fn bootstrap_inference(reps: Vec<f64>, delta: Option<f64>, o: &Options) -> Inference {
+    let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
+    (
+        bootstrap::percentile_interval(reps, o.level),
+        "bootstrap",
+        Some(o.bootstrap),
+        p,
+        "bootstrap",
+    )
 }
 
 /// Welch's t interval for the difference of two means, with its two-sided p-value.

@@ -289,9 +289,54 @@ pub struct Cost {
     /// Range of C_FN / C_FP for the cost-ratio sensitivity analysis.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ratio_range: Option<[f64; 2]>,
+    /// The stratum key whose values `strata` overrides (D-041).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Overrides per value of the `by` stratum.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub strata: BTreeMap<String, StratumCost>,
+}
+
+/// One stratum's cost settings; what is left out comes from `[cost]`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StratumCost {
+    /// Production prevalence of positives in this stratum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prevalence: Option<f64>,
+    /// Cost matrix in this stratum, the same shape as `[cost] matrix`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matrix: Option<Vec<Vec<f64>>>,
+    /// The stratum's share of production items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mix: Option<f64>,
 }
 
 impl Cost {
+    fn stratum(&self, value: Option<&str>) -> Option<&StratumCost> {
+        value.and_then(|v| self.strata.get(v))
+    }
+
+    /// The prevalence for one value of the `by` stratum (`None`: an item without one),
+    /// falling back to `[cost]`.
+    pub fn prevalence_of(&self, stratum: Option<&str>) -> f64 {
+        self.stratum(stratum)
+            .and_then(|s| s.prevalence)
+            .unwrap_or(self.prevalence)
+    }
+
+    /// The matrix for one value of the `by` stratum, falling back to `[cost]`.
+    pub fn matrix_of(&self, stratum: Option<&str>) -> &[Vec<f64>] {
+        self.stratum(stratum)
+            .and_then(|s| s.matrix.as_deref())
+            .unwrap_or(&self.matrix)
+    }
+
+    /// The configured production share of one value of the `by` stratum.
+    pub fn mix_of(&self, stratum: Option<&str>) -> Option<f64> {
+        self.stratum(stratum).and_then(|s| s.mix)
+    }
+
     /// C_FN / C_FP read off the matrix's corners: a positive judged at the lowest
     /// level against a negative judged at the highest. `None` when either is not a
     /// positive number.
@@ -541,6 +586,30 @@ impl Config {
                     "must be [low, high] with 0 < low <= high",
                 );
             }
+            if !cost.strata.is_empty() && cost.by.is_none() {
+                return invalid("cost.strata", "needs cost.by, the stratum key it overrides");
+            }
+            for s in cost.strata.values() {
+                if s.prevalence.is_some_and(|p| !(p > 0.0 && p < 1.0)) {
+                    return invalid(
+                        "cost.strata.prevalence",
+                        "must lie strictly between 0 and 1",
+                    );
+                }
+                if let Some(m) = &s.matrix
+                    && (m.len() != 2
+                        || m.iter().any(|row| row.len() != width)
+                        || m.iter().flatten().any(|c| !c.is_finite()))
+                {
+                    return invalid(
+                        "cost.strata.matrix",
+                        "must have the shape of cost.matrix, with finite costs",
+                    );
+                }
+                if s.mix.is_some_and(|m| !(m.is_finite() && m >= 0.0)) {
+                    return invalid("cost.strata.mix", "must be a share of at least 0");
+                }
+            }
         }
         let mut names = std::collections::BTreeSet::new();
         for import in &self.imports {
@@ -727,6 +796,10 @@ mod tests {
             "[cost]\nmatrix = [[0, 1], [1]]\nprevalence = 0.1\n",
             "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 1.0\n",
             "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\nratio_range = [10, 3]\n",
+            "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\n[cost.strata.a]\nmix = 1\n",
+            "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\nby = \"s\"\n[cost.strata.a]\nprevalence = 1\n",
+            "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\nby = \"s\"\n[cost.strata.a]\nmatrix = [[0, 1, 2], [1, 0, 0]]\n",
+            "[cost]\nmatrix = [[0, 1], [1, 0]]\nprevalence = 0.1\nby = \"s\"\n[cost.strata.a]\nmix = -1\n",
             "[compare]\nmin_effect = { accuracy = -0.1 }\n",
             "[project]\npositive = { score_at_least = nan }\n",
             "[[import]]\nname = \"a\"\nadapter = \"csv\"\npath = \"x\"\nmap.version = 0\n",

@@ -50,6 +50,8 @@ pub struct Settings {
     pub seed: u64,
     /// Production prevalence for the converted precision.
     pub prevalence: Option<f64>,
+    /// Cost matrices and prevalences for expected cost (metrics spec §4, D-041).
+    pub cost: Option<crate::config::Cost>,
     /// What the report includes beside its metrics.
     pub sections: Sections,
     /// Bound rates with the exact (Clopper-Pearson) interval on the effective number
@@ -267,6 +269,10 @@ struct Unit {
     inclusion_weighted: bool,
     /// The mean raw value of the judgments with a value (scores, levels).
     raw: Option<f64>,
+    /// The raw values of the judgments with a value, for expected cost.
+    levels: Vec<f64>,
+    /// The item's value of the `[cost] by` stratum.
+    cost_stratum: Option<String>,
     /// Each feature's share of the item's judgments that fired it.
     fired: BTreeMap<String, f64>,
 }
@@ -452,6 +458,12 @@ pub fn prepare<'a>(
                 .map(|(r, v)| (r.to_owned(), f64::from(u8::from(v))))
                 .collect()
         });
+        // A stratum value as text: a string as it is, anything else as JSON.
+        let stratum_of = |name: &str| {
+            item.and_then(|i| i.strata.as_ref())
+                .and_then(|m| m.get(name))
+                .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
+        };
         // Inverse-probability weights correct partial verification (metrics spec §9.9).
         let inverse_inclusion = reference
             .and(item.and_then(|i| i.label_inclusion_prob))
@@ -462,6 +474,12 @@ pub fn prepare<'a>(
             weight: item.map_or(1.0, |i| i.weight()) * inverse_inclusion.unwrap_or(1.0),
             inclusion_weighted: inverse_inclusion.is_some(),
             raw: mean(raw.iter().copied()),
+            cost_stratum: s
+                .cost
+                .as_ref()
+                .and_then(|c| c.by.as_deref())
+                .and_then(stratum_of),
+            levels: if s.cost.is_some() { raw } else { Vec::new() },
             // A judgment that does not report a feature counts as not firing it.
             fired: fired
                 .into_iter()
@@ -474,9 +492,7 @@ pub fn prepare<'a>(
                         .and_then(|p| reference::agreement_stratum(&item_labels, p))
                         .map(str::to_owned);
                 }
-                item.and_then(|i| i.strata.as_ref())
-                    .and_then(|m| m.get(name))
-                    .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
+                stratum_of(name)
             }),
             replicates,
             grades,
@@ -738,6 +754,9 @@ pub enum MetricId {
     MeanScore,
     /// Share of score judgments at or above the threshold.
     RateAtLeast,
+    /// Expected cost under the `[cost]` settings (D-041). Not a ratio of item parts:
+    /// computed from [`Prepared::cost_parts`], never by `item_values`.
+    ExpectedCost,
 }
 
 /// Serialized as [`MetricId::name`], the one place its identifier is written.
@@ -758,12 +777,13 @@ impl MetricId {
             MetricId::PassRate => "pass_rate",
             MetricId::MeanScore => "mean_score",
             MetricId::RateAtLeast => "rate_at_least",
+            MetricId::ExpectedCost => "expected_cost",
         }
     }
 
     /// Whether larger values are better (false alarms are better when fewer).
     pub fn higher_is_better(self) -> bool {
-        self != MetricId::FalseAlarmRate
+        !matches!(self, MetricId::FalseAlarmRate | MetricId::ExpectedCost)
     }
 
     /// `higher_is_better` or `lower_is_better`, as comparisons report it.
@@ -779,7 +799,7 @@ impl MetricId {
     /// Precision's denominator is the items judged positive, so a filled judgment moves
     /// the denominator and gives no bounds.
     pub fn has_missing_bounds(self) -> bool {
-        self != MetricId::Precision
+        !matches!(self, MetricId::Precision | MetricId::ExpectedCost)
     }
 
     /// The factor that orients a difference so that positive is better.
@@ -790,7 +810,11 @@ impl MetricId {
     fn needs_reference(self) -> bool {
         matches!(
             self,
-            MetricId::Accuracy | MetricId::HitRate | MetricId::FalseAlarmRate | MetricId::Precision
+            MetricId::Accuracy
+                | MetricId::HitRate
+                | MetricId::FalseAlarmRate
+                | MetricId::Precision
+                | MetricId::ExpectedCost
         )
     }
 
@@ -925,6 +949,7 @@ impl Calc<'_> {
                 part: Box::new(|u, v| (u.weight * v, u.weight)),
                 values: Values::AtLeast,
             },
+            MetricId::ExpectedCost => unreachable!("expected cost has no item parts"),
         }
     }
 
@@ -1231,6 +1256,11 @@ impl Prepared<'_> {
     /// Output type of the judgments.
     pub fn output_type(&self) -> OutputType {
         self.output_type
+    }
+
+    /// The `[cost]` settings, if any.
+    pub fn cost(&self) -> Option<&crate::config::Cost> {
+        self.settings.cost.as_ref()
     }
 
     /// Decision rule in effect, if any.

@@ -418,6 +418,7 @@ impl Approval<'_> {
             seed: config.stats.seed.unwrap_or(0),
             threshold: None,
             prevalence: None,
+            cost: None,
             sections: Sections::default(),
             exact_rates: false,
             proxy: None,

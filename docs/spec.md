@@ -383,7 +383,7 @@ canonicalized, so equivalent files hash the same. Tables:
 | `[reference]` | `mode` (`single`, `majority`, `soft`), `rater_design` (`auto`, `nested`, `crossed`) |
 | `[compare]` | `min_effect` per metric, `validation_warn_after` (20) |
 | `[agree]` | `parity_epsilon` (0.1), the margin of the alternative annotator test |
-| `[cost]` | `matrix`, production `prevalence`, `ratio_range` |
+| `[cost]` | `matrix`, production `prevalence`, `ratio_range`; `by` (a stratum key) with `[cost.strata."<value>"]` overriding `prevalence` and `matrix` and giving the stratum's production share `mix` (D-041) |
 | `[checks]` | Switches for the configurable validity checks |
 | `[[import]]` | Named import blocks for flat tables and harness logs (②) |
 | `[dashboard]` | `language` (`en`, `ja`) of the dashboard's own text (D-033); display only, so it stays out of the stored configuration that provenance names |
@@ -403,7 +403,7 @@ first and the signal-detection tier after it.
 |---|---|
 | Default | Accuracy, hit rate, false-alarm rate and precision (precision converted to a stated prevalence), or for `score` runs mean score, share at or above a threshold and pass rate, each with an interval; the range when system-side missing values are filled with best and worst; replicate disagreement (generation and grading separately) with a one-sided upper bound; the reference mode, rater design and estimand; for crossed designs the range of values with each rater alone as the reference; results per stratum |
 | Detail | Empirical ROC and AUC (DeLong interval; cluster-aware variance with clusters; bootstrap for soft or weighted references), z-ROC points, calibration (Brier score and reliability bins), feature likelihood ratios, performance and expected cost over k generations, prediction-powered inference with a proxy rater |
-| `compare` | Paired difference with interval, p-value, verdict, transition table; unpaired comparison; confidence sequence; pairwise win rate and position bias |
+| `compare` | Paired difference with interval, p-value, verdict, transition table; expected cost overall and per stratum when `[cost]` is set; unpaired comparison; confidence sequence; pairwise win rate and position bias |
 | `agree` | Pairwise rater agreement (Cohen's κ, quadratic-weighted κ for ordered levels, Gwet's AC1, positive and negative agreement, Spearman's ρ), rater variability, system and grader agreement with humans under the same rule, ceiling of a soft reference, pairwise-preference agreement and Bradley-Terry ranking, and the alternative annotator test (`--parity`) |
 | `threshold`, `power`, `trend` | Cost-optimal threshold with cost-ratio sensitivity; required items, minimum detectable difference, pass probability; per-period metrics |
 

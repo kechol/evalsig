@@ -746,6 +746,7 @@ fn settings(r: &Resolved, args: &Request, candidate_hash: &str) -> Settings {
         bootstrap: r.bootstrap,
         seed: u64::from_str_radix(&seed_bytes[..16], 16).unwrap_or(0),
         prevalence: None,
+        cost: None,
         sections: Sections::default(),
         exact_rates: true,
         proxy: None,

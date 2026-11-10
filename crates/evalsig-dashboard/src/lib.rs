@@ -42,8 +42,9 @@ pub fn static_report(e: &Value) -> String {
         {
             body.push_str(&format!("<h2>{}</h2>", html::esc(name)));
         }
-        body.push_str(&svg::intervals(
-            &svg::metric_rows(&part["metrics"], point),
+        body.push_str(&svg::metric_plots(
+            &part["metrics"],
+            point,
             point == "delta",
         ));
         if part["transition"].is_object() {

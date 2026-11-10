@@ -21,6 +21,16 @@ longer reproduces.
   (`evalsig.index/1`) and exits 0.
 - `exclude --dry-run` and `split --dry-run` report what they would record without
   writing anything.
+- `compare` compares expected cost (`expected_cost`) when `[cost]` is set and the runs'
+  judgments are levels, with a paired cluster-bootstrap interval and a verdict (D-041).
+  `[cost] by` and `[cost.strata."<value>"]` set a prevalence, a matrix and a production
+  share per stratum; the comparison then has one row per stratum.
+
+### Metric definitions
+
+- `metrics/2`: `compare` compares expected cost (metrics §4, §7), and expected cost takes
+  per-stratum prevalences, matrices and production shares (D-041). Saved comparisons of a
+  project with `[cost]` set gain an `expected_cost` row.
 
 ### Changed
 
