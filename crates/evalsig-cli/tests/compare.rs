@@ -1,5 +1,7 @@
 use std::path::Path;
 
+mod common;
+
 use assert_cmd::Command;
 use serde_json::Value;
 
@@ -30,7 +32,7 @@ fn project() -> tempfile::TempDir {
 }
 
 fn json(c: &mut Command) -> Value {
-    serde_json::from_slice(
+    let v = serde_json::from_slice(
         &c.arg("--format")
             .arg("json")
             .assert()
@@ -38,7 +40,9 @@ fn json(c: &mut Command) -> Value {
             .get_output()
             .stdout,
     )
-    .unwrap()
+    .unwrap();
+    common::check_results(&v);
+    v
 }
 
 #[test]

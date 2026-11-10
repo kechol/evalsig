@@ -1,6 +1,8 @@
 //! `report --decompose` (D-048): each error goes to its first cause in `[attribution]
 //! order`, with shares and ceiling rates checked against a hand count.
 
+mod common;
+
 use std::path::Path;
 
 use assert_cmd::Command;
@@ -77,6 +79,7 @@ fn errors_go_to_their_first_cause_in_order() {
         .unwrap();
     assert!(out.status.success(), "{out:?}");
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
     let d = &v["results"]["decomposition"];
     assert_eq!(d["errors"], "misses");
     assert_eq!(d["rate"], 0.5);
@@ -125,6 +128,7 @@ fn errors_go_to_their_first_cause_in_order() {
         .output()
         .unwrap();
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
     let d = &v["results"]["decomposition"];
     assert_eq!(d["rate"], 0.2);
     assert_eq!(d["causes"][3]["cause"], "unattributed");

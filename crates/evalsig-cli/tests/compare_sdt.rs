@@ -1,6 +1,8 @@
 //! `compare --sdt` (D-042): ΔH, ΔF, Δd′ and Δc with paired intervals, and the change
 //! classification for each case.
 
+mod common;
+
 use std::path::Path;
 
 use assert_cmd::Command;
@@ -75,6 +77,7 @@ fn sdt(dir: &Path, base: &str, cand: &str, extra: &[&str]) -> Value {
         .unwrap();
     assert!(out.status.code().is_some_and(|c| c < 64), "{out:?}");
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
     v["results"]["sdt"].clone()
 }
 

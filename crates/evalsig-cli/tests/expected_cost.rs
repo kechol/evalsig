@@ -2,6 +2,8 @@
 //! independent computation, the configured and the observed stratum mix, and the metric
 //! as the primary one.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -103,7 +105,9 @@ fn compare(dir: &Path, extra: &[&str]) -> Value {
         .output()
         .unwrap();
     assert!(out.status.code().is_some_and(|c| c < 64), "{out:?}");
-    serde_json::from_slice(&out.stdout).unwrap()
+    let v = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
+    v
 }
 
 /// The expected-cost row of a comparison.

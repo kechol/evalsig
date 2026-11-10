@@ -1,5 +1,7 @@
 use std::path::Path;
 
+mod common;
+
 use assert_cmd::Command;
 use serde_json::Value;
 
@@ -28,7 +30,9 @@ fn project() -> tempfile::TempDir {
 }
 
 fn json(c: &mut Command) -> Value {
-    serde_json::from_slice(&c.assert().success().get_output().stdout).unwrap()
+    let v = serde_json::from_slice(&c.assert().success().get_output().stdout).unwrap();
+    common::check_results(&v);
+    v
 }
 
 /// Results and the deterministic provenance; the tool version is normalized.

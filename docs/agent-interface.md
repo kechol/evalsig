@@ -71,7 +71,7 @@ HTML.
 | `schema` | The result's own schema, such as `evalsig.compare/1` |
 | `ok` | The command ran to the end. It does not say whether a gate passed |
 | `verdict` | `null`, or `code` (see §2.3) and `text`, one or two English sentences |
-| `results` | The command's data. Its shape is named by `schema` |
+| `results` | The command's data. Its shape is named by `schema`; `evalsig schema report` and `evalsig schema compare` print the JSON Schemas of those two |
 | `warnings` | A list of `code` and `message` (validity warnings and notices) |
 | `next` | Commands worth running next, each with `command` and `why` (for example `evalsig power ...` when the items are too few) |
 | `provenance` | `tool` and `spec_version` always. When they apply: `snapshots`, `config`, `seed`, `ledger`, `ledger_seq`, `request` (what `verify` recomputes from) and `output` (hash of the canonical results) |
@@ -235,7 +235,7 @@ running in an environment that does not hold it ([referee.md](referee.md)).
 | `evalsig` | In agent mode or with `--format json`, the command index (`evalsig.index/1`): each command's name, summary and subcommands, with `next` pointing at `help --json <command>`, `recipes` and `capabilities`. It exits 0. In a terminal, the usage text |
 | `evalsig help --json [command ...]` | The command tree (names, arguments, defaults, help text), the global arguments, and for the whole tree the exit codes and the verdict codes with their meanings. It is answered before parsing, never shaped and never needs a project |
 | `evalsig explain <name>` | What a glossary term, verdict code, validity check or exit code means. `name` is a glossary identifier or term, a verdict code, a check code, or an exit code (`3` or `exit-3`). Each match has a `kind` (`term`, `verdict`, `validity_check` or `exit_code`). An unknown name is a usage error with a hint. The glossary is [glossary.md](glossary.md), embedded in the binary |
-| `evalsig schema <name>` | A published JSON Schema: `records`, `ledger-entry`, `mapping`, `gate` or `envelope`, with its `$id`. `--raw` prints the schema document alone. `schema records --emit python` or `--emit typescript` prints a standard-library-only writer of `records/1` |
+| `evalsig schema <name>` | A published JSON Schema: `records`, `ledger-entry`, `mapping`, `gate`, `envelope`, or `report` and `compare` (the `results` of those commands, open to fields added within a version), with its `$id`. `--raw` prints the schema document alone. `schema records --emit python` or `--emit typescript` prints a standard-library-only writer of `records/1` |
 | `evalsig recipes [name]` | The steps of a common task as a list of commands: `compare`, `sample-size`, `gate`, `improve-loop`, `dspy`, and `acquire <source>` (`inspect`, `promptfoo`, `langfuse`, `csv`) for getting judgments, replicates and labels out of a source. Without a name, the list of recipes |
 | `evalsig capabilities [--run <run>]` | The analyses the imported data allow, and for each one it does not, what is missing and how to get it (replicates, clusters, a grader version, `occurred_at`, and so on) |
 | `evalsig map probe <file>` | The shape of records of an unknown form (types, counts, candidate keys), printed without their content. It is the first step of onboarding such records |

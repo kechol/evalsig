@@ -465,7 +465,7 @@ No options.
 
 ### `evalsig schema`
 
-Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`, `envelope`)
+Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`, `envelope`, and the results of `report` and `compare`)
 
 | Option | Description | Values | Default |
 |---|---|---|---|

@@ -1,0 +1,847 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:evalsig:schema:compare-results:1",
+ "title": "evalsig.compare/1 results",
+ "description": "The results of evalsig compare (schema evalsig.compare/1). Fields may be added within this version (D-008), so other properties are allowed.",
+ "type": "object",
+ "properties": {
+  "arms": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "baseline": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "candidate": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "candidates": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "comparisons": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "type": [
+     "null",
+     "object"
+    ],
+    "properties": {
+     "arms": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "baseline": {
+        "type": [
+         "null",
+         "string"
+        ]
+       },
+       "candidate": {
+        "type": [
+         "null",
+         "string"
+        ]
+       }
+      }
+     },
+     "metrics": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "$ref": "#/$defs/metric"
+      }
+     },
+     "n_input_changed": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "n_unpaired": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "n_used": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "primary_metric": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "transition": {
+      "$ref": "#/$defs/transition"
+     }
+    }
+   }
+  },
+  "decision": {
+   "$ref": "#/$defs/decision"
+  },
+  "estimand": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "features": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "type": [
+     "null",
+     "object"
+    ],
+    "properties": {
+     "baseline": {
+      "$ref": "#/$defs/baseline"
+     },
+     "candidate": {
+      "$ref": "#/$defs/baseline"
+     },
+     "lineage": {
+      "type": [
+       "null",
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "holm": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "adjusted_p": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "metric": {
+     "type": [
+      "null",
+      "string"
+     ]
+    }
+   }
+  },
+  "items": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "type": [
+     "null",
+     "object"
+    ],
+    "properties": {
+     "baseline": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "candidate": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "candidate_run": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "item_id": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "reference": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "metrics": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "$ref": "#/$defs/metric"
+   }
+  },
+  "missing_policy": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "additionalProperties": {
+    "type": [
+     "null",
+     "string"
+    ]
+   }
+  },
+  "n_input_changed": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_missing": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_unpaired": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_used": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "paired": {
+   "type": [
+    "boolean",
+    "null"
+   ]
+  },
+  "positive": {
+   "$ref": "#/$defs/decision"
+  },
+  "preference": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "position_bias": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "ci": {
+       "type": [
+        "array",
+        "null"
+       ],
+       "items": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      },
+      "decided": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "left_win_rate": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "order_consistency": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "swapped_pairs": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     }
+    },
+    "raters": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "string"
+      ]
+     }
+    },
+    "sources": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "string"
+      ]
+     }
+    },
+    "win_rate": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "ci": {
+       "type": "null"
+      },
+      "interval": {
+       "type": [
+        "null",
+        "string"
+       ]
+      },
+      "items": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "judgments": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "swapped_pairs": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "value": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "primary_metric": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "reference": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "mode": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "raters": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "sdt": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "assumption": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "change": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "deltas": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "baseline": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "candidate": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "ci": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "number"
+         ]
+        }
+       },
+       "delta": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "metric": {
+        "type": [
+         "null",
+         "string"
+        ]
+       }
+      }
+     }
+    },
+    "min_events": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "resamples": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "selected_after_comparison": {
+   "type": [
+    "boolean",
+    "null"
+   ]
+  },
+  "sequential": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "metrics": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "confidence_sequence": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "number"
+         ]
+        }
+       },
+       "delta": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "direction": {
+        "type": [
+         "null",
+         "string"
+        ]
+       },
+       "metric": {
+        "type": [
+         "null",
+         "string"
+        ]
+       },
+       "min_effect": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "n": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "verdict": {
+        "type": [
+         "null",
+         "string"
+        ]
+       }
+      }
+     }
+    },
+    "order_seed": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "split": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "transition": {
+   "$ref": "#/$defs/transition"
+  },
+  "validation_uses": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "value_semantics": {
+   "type": [
+    "null",
+    "string"
+   ]
+  }
+ },
+ "$defs": {
+  "baseline": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "adjusted_ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "class": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "lr": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "decision": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "equals": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "ordinal_at_least": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "metric": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "baseline": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "candidate": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "delta": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "direction": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "interval": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "metric": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "min_effect": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "missing_bounds": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "mix": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "p_method": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "p_value": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "resamples": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "strata": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "$ref": "#/$defs/strata"
+     }
+    },
+    "verdict": {
+     "type": [
+      "null",
+      "string"
+     ]
+    }
+   }
+  },
+  "strata": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "baseline": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "candidate": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "delta": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "prevalence": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "stratum": {
+     "type": [
+      "null",
+      "string"
+     ]
+    }
+   }
+  },
+  "transition": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "cleared_false_alarms": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "lost_hits": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "new_false_alarms": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "new_hits": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  }
+ }
+}

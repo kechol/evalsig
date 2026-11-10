@@ -131,7 +131,7 @@ enum Command {
     /// List the recorded dev / validation splits.
     Splits,
     /// Print a published JSON Schema (`records`, `ledger-entry`, `mapping`, `gate`,
-    /// `envelope`).
+    /// `envelope`, and the results of `report` and `compare`).
     Schema {
         name: String,
         /// Print only the schema document, without the envelope.

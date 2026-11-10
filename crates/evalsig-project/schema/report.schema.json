@@ -1,0 +1,1087 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:evalsig:schema:report-results:1",
+ "title": "evalsig.report/1 results",
+ "description": "The results of evalsig report (schema evalsig.report/1). Fields may be added within this version (D-008), so other properties are allowed.",
+ "type": "object",
+ "properties": {
+  "by": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "additionalProperties": {
+    "type": [
+     "array",
+     "null"
+    ],
+    "items": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "ci": {
+       "type": [
+        "array",
+        "null"
+       ],
+       "items": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      },
+      "interval": {
+       "type": [
+        "null",
+        "string"
+       ]
+      },
+      "metric": {
+       "type": [
+        "null",
+        "string"
+       ]
+      },
+      "missing_bounds": {
+       "type": [
+        "array",
+        "null"
+       ],
+       "items": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      },
+      "n": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "resamples": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "value": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "calibration": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "bins": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "bin": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "mean_score": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "n": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "positive_share": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      }
+     }
+    },
+    "brier": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "decision": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "equals": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "ordinal_at_least": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "score_at_least": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "decomposition": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "causes": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "cause": {
+        "type": [
+         "null",
+         "string"
+        ]
+       },
+       "ci": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "number"
+         ]
+        }
+       },
+       "errors": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "share": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      }
+     }
+    },
+    "ceilings": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "ci": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "number"
+         ]
+        }
+       },
+       "rate": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "removed": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "string"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "errors": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "n_errors": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "rate": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "estimand": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "expected_cost": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "interval": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "mix": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "n_used": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "strata": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "ci": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": [
+          "null",
+          "number"
+         ]
+        }
+       },
+       "n": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "prevalence": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "stratum": {
+        "type": [
+         "null",
+         "string"
+        ]
+       },
+       "value": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      }
+     }
+    },
+    "value": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "features": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "type": [
+     "null",
+     "object"
+    ],
+    "properties": {
+     "adjusted_ci": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     },
+     "ci": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     },
+     "class": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "corrected": {
+      "type": [
+       "boolean",
+       "null"
+      ]
+     },
+     "direction": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "feature_id": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "fired_negative": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "fired_positive": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "lr": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "n_negative": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "n_positive": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "p_value": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "posterior": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "items": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "type": [
+     "null",
+     "object"
+    ],
+    "properties": {
+     "item_id": {
+      "type": [
+       "null",
+       "string"
+      ]
+     },
+     "judged": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "missing": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": [
+        "null",
+        "string"
+       ]
+      }
+     },
+     "reference": {
+      "type": [
+       "null",
+       "number"
+      ]
+     },
+     "replicates": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "k_curve": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "k_max": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "points": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "k": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "metrics": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "$ref": "#/$defs/metric"
+        }
+       },
+       "rule": {
+        "type": [
+         "null",
+         "string"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "level": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "metrics": {
+   "type": [
+    "array",
+    "null"
+   ],
+   "items": {
+    "$ref": "#/$defs/metric"
+   }
+  },
+  "missing_by_reason": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "additionalProperties": {
+    "type": [
+     "null",
+     "number"
+    ]
+   }
+  },
+  "missing_policy": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "additionalProperties": {
+    "type": [
+     "null",
+     "string"
+    ]
+   }
+  },
+  "n_insufficient_replicates": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_items": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_judgments": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "n_missing": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "output_type": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "positive": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "equals": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "ordinal_at_least": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "proxy": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "corrected": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "estimate": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "labelled": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "lambda": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "metric": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "proxy": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "se": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "unlabelled": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "reference": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "by_rater": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "additionalProperties": {
+      "type": [
+       "null",
+       "object"
+      ],
+      "properties": {
+       "accuracy": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "false_alarm_rate": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "hit_rate": {
+        "type": [
+         "null",
+         "number"
+        ]
+       },
+       "precision": {
+        "type": [
+         "null",
+         "number"
+        ]
+       }
+      }
+     }
+    },
+    "detected": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "estimand": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "inclusion_weighted_items": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "items_with_reference": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "mode": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "model_derived_items": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "rater_design": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "raters": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "raters_per_item": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "additionalProperties": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "voters": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "reproducibility": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "generation": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "items": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "items_with_any_disagreement": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "pairwise_disagreement": {
+       "type": [
+        "null",
+        "number"
+       ]
+      },
+      "upper_bound": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "roc": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "auc": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "interval": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "n_negative": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "n_positive": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "points": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": [
+        "null",
+        "number"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "run": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "sdt": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "assumption": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "criterion": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "dprime": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
+  "seed": {
+   "type": [
+    "null",
+    "number"
+   ]
+  },
+  "task": {
+   "type": [
+    "null",
+    "string"
+   ]
+  },
+  "value_semantics": {
+   "type": [
+    "null",
+    "string"
+   ]
+  }
+ },
+ "$defs": {
+  "metric": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "ci": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "interval": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "metric": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "missing_bounds": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "n": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "rater_spread": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "type": [
+       "null",
+       "number"
+      ]
+     }
+    },
+    "resamples": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "value": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  }
+ }
+}

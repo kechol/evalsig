@@ -16,7 +16,7 @@ are recorded in [`decisions.md`](decisions.md) as `D-NNN`.
 
 The published schemas live in `crates/evalsig-project/schema/` and are printed by
 `evalsig schema <name>` (`records`, `ledger-entry`, `mapping`, `gate`,
-`envelope`).
+`envelope`, and `report` and `compare` for those commands' results).
 
 ## 0. Summary
 

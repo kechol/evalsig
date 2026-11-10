@@ -44,6 +44,9 @@ longer reproduces.
   each source row, such as `{@.task}:{@.unit_id}`; every matching row gives a label (D-047).
 - `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,
   such as replicates a log marks as copies (D-046).
+- `evalsig schema report` and `evalsig schema compare` publish the JSON Schemas of those
+  commands' results. They allow fields added within a version (D-008); the test suite
+  checks every result it produces against them with every object closed.
 - `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change
   as `discrimination_improved`, `discrimination_worsened`, `threshold_moved` or
   `undetermined` (`insufficient_data` below `--min-events`, default 5) (D-042).

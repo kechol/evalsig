@@ -1,6 +1,8 @@
 //! The detail tier of `evalsig report` (SPEC §6, §10.1): `--features`, `--reference`
 //! modes, `--reference human --proxy`, and the ROC and calibration outputs.
 
+mod common;
+
 use std::path::Path;
 
 use assert_cmd::Command;
@@ -83,7 +85,9 @@ fn report(dir: &Path, args: &[&str]) -> Value {
         .args(args)
         .assert()
         .success();
-    serde_json::from_slice(&out.get_output().stdout).unwrap()
+    let v = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    common::check_results(&v);
+    v
 }
 
 #[test]

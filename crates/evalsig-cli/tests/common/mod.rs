@@ -26,12 +26,59 @@ pub fn evalsig(dir: &Path) -> Command {
 }
 
 pub fn json(out: &std::process::Output) -> Value {
-    serde_json::from_slice(if out.stdout.is_empty() {
+    let v = serde_json::from_slice(if out.stdout.is_empty() {
         &out.stderr
     } else {
         &out.stdout
     })
-    .unwrap()
+    .unwrap();
+    check_results(&v);
+    v
+}
+
+/// Check the results of a report or compare envelope against the published schema, with
+/// every object closed: the published schema allows added fields (D-008), but a test
+/// output with a field it does not list means the schema needs it.
+pub fn check_results(v: &Value) {
+    static REPORT: std::sync::OnceLock<jsonschema::Validator> = std::sync::OnceLock::new();
+    static COMPARE: std::sync::OnceLock<jsonschema::Validator> = std::sync::OnceLock::new();
+    let schema = v["schema"].as_str().unwrap_or_default();
+    let (cell, text) = match schema {
+        "evalsig.report/1" => (
+            &REPORT,
+            include_str!("../../../evalsig-project/schema/report.schema.json"),
+        ),
+        "evalsig.compare/1" => (
+            &COMPARE,
+            include_str!("../../../evalsig-project/schema/compare.schema.json"),
+        ),
+        s if s.starts_with("evalsig.report/") || s.starts_with("evalsig.compare/") => {
+            panic!("no result schema for {s}")
+        }
+        _ => return,
+    };
+    let validator = cell.get_or_init(|| {
+        let mut schema: Value = serde_json::from_str(text).unwrap();
+        close(&mut schema);
+        jsonschema::validator_for(&schema).unwrap()
+    });
+    let errors: Vec<String> = validator
+        .iter_errors(&v["results"])
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect();
+    assert!(errors.is_empty(), "{schema}: {errors:?}");
+}
+
+/// Refuse properties an object schema does not list, at every depth.
+fn close(schema: &mut Value) {
+    if let Some(o) = schema.as_object_mut() {
+        if o.contains_key("properties") && !o.contains_key("additionalProperties") {
+            o.insert("additionalProperties".into(), Value::Bool(false));
+        }
+        o.values_mut().for_each(close);
+    } else if let Some(a) = schema.as_array_mut() {
+        a.iter_mut().for_each(close);
+    }
 }
 
 pub fn project(records: &str) -> tempfile::TempDir {

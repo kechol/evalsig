@@ -1,6 +1,8 @@
 //! Feature direction and lineage (D-049): `report --features` says whether each feature
 //! points the way its run declares.
 
+mod common;
+
 use std::path::Path;
 
 use assert_cmd::Command;
@@ -66,6 +68,7 @@ fn each_feature_is_read_against_the_side_it_should_point_to() {
         .output()
         .unwrap();
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
     let direction = |id: &str| {
         v["results"]["features"]
             .as_array()
@@ -141,6 +144,7 @@ fn a_split_rule_is_followed_through_its_lineage() {
         .unwrap();
     assert!(out.status.code().is_some_and(|c| c < 64), "{out:?}");
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    common::check_results(&v);
     let rows = v["results"]["features"].as_array().unwrap();
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0]["lineage"], "R10");
