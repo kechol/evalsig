@@ -1437,3 +1437,16 @@ after the entry is `Accepted`.
   Every matching label row gives a label, so several raters' rows are kept.
 - Alternatives: templates inside filter literals (not taken: a composite key needs one
   filter per field, and filters do not chain on arrays).
+
+## D-048 Attribution of errors
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: Which causes the remaining errors have, and how much revising the rules can still
+  fix, is computed outside evalsig, counting overlapping causes twice and without intervals.
+- Decision: `records/1` gains an `attribution` record (`item_id`, `run_id`, `task`,
+  `rater_id`, `causes`: user strings), an annotation made after the fact with its own author,
+  not a field of the judgment. `report --decompose misses|false_alarms` assigns each error to
+  its first cause in `[attribution] order` (unlisted causes after, by name) and gives shares
+  and `--ceiling` rates with cluster-bootstrap intervals; unattributed errors are a cause.
+- Consequences: readers of `records/1` meet one more record kind; writers gain a function.
