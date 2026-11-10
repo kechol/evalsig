@@ -238,7 +238,11 @@ pub fn summary(
     let (ci, interval) = match value {
         None => (None, "none"),
         Some(_) if groups.n_clusters() < bootstrap::MIN_UNITS => (None, "too_few_units"),
-        Some(_) => (bootstrap::percentile_interval(first, level), "bootstrap"),
+        Some(_) => match bootstrap::percentile_interval(first, level) {
+            Some(ci) => (Some(ci), "bootstrap"),
+            // Every resample lacked positives or negatives in some stratum.
+            None => (None, "none"),
+        },
     };
     CostSummary {
         value,

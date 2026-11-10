@@ -550,13 +550,16 @@ pub fn compute(
         .iter()
         .flat_map(|(_, _, c, _)| &c.metrics)
         .find(|m| m.id == MetricId::ExpectedCost);
-    warnings.extend(analysis::cost_warnings(
-        config,
-        base.semantics(),
-        ec.is_some(),
-        ec.and_then(|m| m.by_stratum.as_ref())
-            .map(|b| (b.present(), b.mix)),
-    ));
+    // Unpaired comparisons do not compare expected cost (D-041).
+    if !args.unpaired {
+        warnings.extend(analysis::cost_warnings(
+            config,
+            base.semantics(),
+            ec.is_some(),
+            ec.and_then(|m| m.by_stratum.as_ref())
+                .map(|b| (b.present(), b.mix)),
+        ));
+    }
     if undated_skipped > 0 {
         warnings.push(Warning {
             code: "undated_label_revisions".into(),
