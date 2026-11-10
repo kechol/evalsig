@@ -278,6 +278,9 @@ struct Unit {
     cost_stratum: Option<String>,
     /// Each feature's share of the item's judgments that fired it.
     fired: BTreeMap<String, f64>,
+    /// Each lineage's share of the item's judgments that fired any of its features
+    /// (D-049); empty when the run declares no lineage, every feature being its own.
+    lineage_fired: BTreeMap<String, f64>,
 }
 
 fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) -> Option<f64> {
@@ -299,6 +302,8 @@ pub struct Prepared<'a> {
     run_id: String,
     /// What the run declares each feature is for (D-049).
     feature_meta: BTreeMap<String, crate::records::FeatureMeta>,
+    /// Whether the run declares a lineage, so units hold `lineage_fired`.
+    lineages_declared: bool,
     semantics: ValueSemantics,
     output_type: OutputType,
     rule: Option<Rule>,
@@ -396,6 +401,11 @@ pub fn prepare<'a>(
     }
     let mut missing_by_reason: BTreeMap<MissingReason, u64> = BTreeMap::new();
     let mut raters = BTreeSet::new();
+    // Lineages are counted only when the run declares one; otherwise `fired` is the same.
+    let lineages = run
+        .features
+        .as_ref()
+        .filter(|m| m.values().any(|f| f.lineage.is_some()));
     let mut units = Vec::new();
     for (item_id, gens) in &by_item {
         let item = items.get(item_id);
@@ -404,6 +414,7 @@ pub fn prepare<'a>(
         let mut grades = Vec::new();
         let mut raw = Vec::new();
         let mut fired: BTreeMap<String, f64> = BTreeMap::new();
+        let mut lineage_fired: BTreeMap<String, f64> = BTreeMap::new();
         let mut n_judgments = 0.0;
         for reps in gens.values() {
             let mut values = Vec::new();
@@ -415,8 +426,20 @@ pub fn prepare<'a>(
                     raw.push(v.as_f64());
                 }
                 n_judgments += 1.0;
+                // A lineage fires once in a judgment, however many members fire.
+                let mut lit: BTreeMap<&str, bool> = BTreeMap::new();
                 for f in j.features.iter().flatten() {
                     *fired.entry(f.feature_id.clone()).or_default() += f64::from(u8::from(f.fired));
+                    if let Some(meta) = &lineages {
+                        let lineage = meta
+                            .get(&f.feature_id)
+                            .and_then(|m| m.lineage.as_deref())
+                            .unwrap_or(&f.feature_id);
+                        *lit.entry(lineage).or_default() |= f.fired;
+                    }
+                }
+                for (l, on) in lit {
+                    *lineage_fired.entry(l.to_owned()).or_default() += f64::from(u8::from(on));
                 }
                 match (&j.missing, judged_value(j, rule.as_ref(), semantics)) {
                     (Some(m), _) => {
@@ -490,6 +513,10 @@ pub fn prepare<'a>(
                 .into_iter()
                 .map(|(k, f)| (k, f / n_judgments))
                 .collect(),
+            lineage_fired: lineage_fired
+                .into_iter()
+                .map(|(k, f)| (k, f / n_judgments))
+                .collect(),
             stratum: s.sections.by.as_ref().and_then(|name| {
                 if name == reference::AGREEMENT_STRATUM {
                     return positive
@@ -521,6 +548,7 @@ pub fn prepare<'a>(
         settings: s,
         run_id: run.run_id.clone(),
         feature_meta: run.features.clone().unwrap_or_default(),
+        lineages_declared: lineages.is_some(),
         semantics,
         output_type,
         rule,

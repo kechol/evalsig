@@ -90,3 +90,71 @@ fn each_feature_is_read_against_the_side_it_should_point_to() {
         "{md}"
     );
 }
+
+#[test]
+fn a_split_rule_is_followed_through_its_lineage() {
+    let dir = tempfile::tempdir().unwrap();
+    evalsig(dir.path()).arg("init").assert().success();
+    let mut l = vec![
+        r#"{"record":"run","run_id":"before","system":{"id":"s","version":"1"},"output_type":"binary"}"#.to_owned(),
+        r#"{"record":"run","run_id":"after","system":{"id":"s","version":"2"},"output_type":"binary","features":{"R10-1":{"lineage":"R10"},"R10-2":{"lineage":"R10"}}}"#.to_owned(),
+    ];
+    for i in 0..200 {
+        let positive = i < 100;
+        let k = i % 100;
+        // R10 fires on 60 positives and 5 negatives; R10-1 and R10-2 split those items.
+        let r10 = if positive { k < 60 } else { k < 5 };
+        let first = if positive { k < 30 } else { k < 3 };
+        let f = |id: &str, on: bool| format!(r#"{{"feature_id":"{id}","fired":{on}}}"#);
+        l.push(format!(r#"{{"record":"item","item_id":"i{i:03}"}}"#));
+        l.push(format!(
+            r#"{{"record":"label","item_id":"i{i:03}","rater_id":"ana","source":"human","value":{positive},"version":1}}"#
+        ));
+        l.push(format!(
+            r#"{{"record":"judgment","item_id":"i{i:03}","run_id":"before","gen_replicate":0,"output_type":"binary","value":{positive},"features":[{}]}}"#,
+            f("R10", r10)
+        ));
+        l.push(format!(
+            r#"{{"record":"judgment","item_id":"i{i:03}","run_id":"after","gen_replicate":0,"output_type":"binary","value":{positive},"features":[{},{}]}}"#,
+            f("R10-1", r10 && first),
+            f("R10-2", r10 && !first)
+        ));
+    }
+    let file = dir.path().join("r.jsonl");
+    std::fs::write(&file, l.join("\n") + "\n").unwrap();
+    evalsig(dir.path())
+        .arg("import")
+        .arg(&file)
+        .assert()
+        .success();
+    let out = evalsig(dir.path())
+        .args([
+            "--format",
+            "json",
+            "compare",
+            "before",
+            "after",
+            "--features",
+            "--scratch",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.code().is_some_and(|c| c < 64), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = v["results"]["features"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["lineage"], "R10");
+    assert_eq!(
+        rows[0]["baseline"]["lr"], rows[0]["candidate"]["lr"],
+        "{rows:?}"
+    );
+    assert_eq!(rows[0]["baseline"]["lr"], 12.0);
+    // Markdown lists the lineage in both columns.
+    let out = evalsig(dir.path())
+        .args(["--format", "md", "compare", "before", "after"])
+        .args(["--features", "--scratch"])
+        .output()
+        .unwrap();
+    let md = String::from_utf8(out.stdout).unwrap();
+    assert!(md.contains("| R10 | 12.0000 |"), "{md}");
+}

@@ -377,6 +377,30 @@ fn compare_table(s: &mut String, c: &Value) {
             count(&t["cleared_false_alarms"]),
         );
     }
+    if let Some(rows) = c["features"].as_array().filter(|r| !r.is_empty()) {
+        // A lineage one arm lacks is null there.
+        let class = |side: &Value| {
+            if side.is_null() {
+                "—".to_owned()
+            } else {
+                id(&side["class"])
+            }
+        };
+        s.push_str(
+            "\n| Lineage | Baseline LR | Class | Candidate LR | Class |\n|---|---:|---|---:|---|\n",
+        );
+        for r in rows {
+            let _ = writeln!(
+                s,
+                "| {} | {} | {} | {} | {} |",
+                inline(r["lineage"].as_str().unwrap_or("?")),
+                num(&r["baseline"]["lr"]),
+                class(&r["baseline"]),
+                num(&r["candidate"]["lr"]),
+                class(&r["candidate"]),
+            );
+        }
+    }
     if let Some(sdt) = c["sdt"].as_object() {
         s.push_str("\n| Signal detection | Baseline | Candidate | Difference | Interval |\n|---|---:|---:|---:|---|\n");
         for d in sdt["deltas"].as_array().into_iter().flatten() {

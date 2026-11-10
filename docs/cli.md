@@ -71,6 +71,7 @@ Compare a baseline run with one or more candidates on their common items
 | `--unpaired` | Compare the arms as independent samples whose items need not overlap (Newcombe, Welch or a bootstrap per arm) |  |  |
 | `--sequential` | Also add the paired items one by one in a seeded order and report the confidence sequence, which stays valid however often it is inspected |  |  |
 | `--split <SPLIT>` | Compare only the items of this part of the latest `evalsig split` | `dev`, `validation` |  |
+| `--features` | Give each feature lineage's likelihood ratio in both runs, a lineage firing when any of its features does (D-049) |  |  |
 | `--sdt` | Add ΔH, ΔF, Δd′ and Δc with paired intervals, and whether discrimination or the criterion changed (D-042) |  |  |
 | `--min-events <N>` | With --sdt: the fewest weighted items each cell (hits, misses, false alarms, correct rejections) of each arm needs for a classification |  | `5` |
 | `--allow-unexplained-missing` | Continue although some missing values have no explained reason |  |  |

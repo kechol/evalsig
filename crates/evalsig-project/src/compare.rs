@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use evalsig_core::checks::{Finding, Overrides};
 use evalsig_core::compare::{self, Baseline, Comparison, Options};
 use evalsig_core::config::Config;
+use evalsig_core::features;
 use evalsig_core::paired::Verdict;
 use evalsig_core::preference;
 use evalsig_core::records::{Item, Label, Preference, Record, Run, ValueSemantics};
@@ -53,6 +54,9 @@ pub struct Request {
     /// Compare only the items of this part of the latest `evalsig split`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split: Option<Part>,
+    /// Give each feature lineage's likelihood ratio in both arms (D-049).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub features: bool,
     /// Add ΔH, ΔF, Δd′ and Δc with a classification; the value is the fewest weighted
     /// items a cell needs (D-042).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,6 +282,7 @@ pub fn compute(
     let mut findings = validity::dataset(&d.records, &overrides);
     let mut comparisons = Vec::new();
     let mut sequences = Vec::new();
+    let mut feature_tables = Vec::new();
     for cand_id in &args.candidates {
         let (cand_run, cand) = prepare(cand_id)?;
         if (cand.semantics(), cand.output_type(), cand.rule())
@@ -366,6 +371,21 @@ pub fn compute(
             );
         }
         sequences.push(seq);
+        if args.features {
+            if base.positive().is_none() {
+                return Err(Error::usage(
+                    "compare --features needs a reference: a positive definition",
+                ));
+            }
+            // The items the metrics are compared on: judged in both arms, in scope and
+            // not excluded for a changed input.
+            let (in_base, in_cand) = (base.judged(), cand.judged());
+            let keep =
+                |i: &str| in_base.contains_key(i) && in_cand.contains_key(i) && options.counts(i);
+            feature_tables.push(Some(lineages(&base, &cand, &keep)));
+        } else {
+            feature_tables.push(None);
+        }
         comparisons.push((cand_id.clone(), cand, c, excluded.len()));
     }
     let all: Vec<Comparison> = comparisons.iter().map(|(_, _, c, _)| c.clone()).collect();
@@ -406,7 +426,8 @@ pub fn compute(
     let list: Vec<Value> = comparisons
         .iter()
         .zip(&sequences)
-        .map(|((id, cand, c, changed), seq)| {
+        .zip(&feature_tables)
+        .map(|(((id, cand, c, changed), seq), table)| {
             let mut v = comparison_json(&args.baseline, id, c, primary, *changed);
             if let Some(s) = seq {
                 v["sequential"] = json!({ "order_seed": settings.seed, "metrics": s });
@@ -416,6 +437,9 @@ pub fn compute(
             }
             if let Some(p) = pref.get(id.as_str()) {
                 v["preference"] = p.clone();
+            }
+            if let Some(t) = table {
+                v["features"] = t.clone();
             }
             if args.items {
                 let jb = cand.judged();
@@ -621,6 +645,28 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
         )?;
     }
     Ok(checks::apply(envelope, &c.findings))
+}
+
+/// Each feature lineage's likelihood ratio, class and interval in both arms, side by
+/// side; a lineage one arm lacks is null there (D-049).
+fn lineages(base: &Prepared<'_>, cand: &Prepared<'_>, keep: &dyn Fn(&str) -> bool) -> Value {
+    let rows = |p: &Prepared<'_>| -> BTreeMap<String, report::FeatureRow> {
+        p.lineage_features(features::Thresholds::default(), keep)
+            .into_iter()
+            .map(|r| (r.feature_id.clone(), r))
+            .collect()
+    };
+    let (a, b) = (rows(base), rows(cand));
+    let names: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+    let side = |r: Option<&report::FeatureRow>| {
+        r.map(|r| json!({"lr": r.lr, "adjusted_ci": r.adjusted_ci, "class": r.class}))
+    };
+    Value::Array(
+        names
+            .into_iter()
+            .map(|n| json!({"lineage": n, "baseline": side(a.get(n)), "candidate": side(b.get(n))}))
+            .collect(),
+    )
 }
 
 fn merge(target: &mut Value, extra: &Value) {

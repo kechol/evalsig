@@ -41,6 +41,10 @@ pub struct Args {
     /// Compare only the items of this part of the latest `evalsig split`.
     #[arg(long, value_enum)]
     pub split: Option<SplitArg>,
+    /// Give each feature lineage's likelihood ratio in both runs, a lineage firing when
+    /// any of its features does (D-049).
+    #[arg(long)]
+    pub features: bool,
     /// Add ΔH, ΔF, Δd′ and Δc with paired intervals, and whether discrimination or the
     /// criterion changed (D-042).
     #[arg(long, conflicts_with = "unpaired")]
@@ -77,6 +81,7 @@ impl From<&Args> for Request {
                 SplitArg::Dev => Part::Dev,
                 SplitArg::Validation => Part::Validation,
             }),
+            features: a.features,
             sdt: a.sdt.then_some(a.min_events),
             dataset: a.dataset.into(),
             arms: a.arms.into(),

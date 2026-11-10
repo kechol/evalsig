@@ -352,23 +352,51 @@ impl Prepared<'_> {
     /// item that does not report a feature counts as not firing it. `prevalence` adds
     /// the posterior probability.
     pub fn features(&self, thresholds: Thresholds, prevalence: Option<f64>) -> Vec<FeatureRow> {
+        self.likelihoods(|u| &u.fired, thresholds, prevalence, true, &|_| true)
+    }
+
+    /// The same for each feature lineage, a lineage firing in a judgment when any of its
+    /// features does (D-049). The rows' `feature_id` is the lineage.
+    /// Only the items `keep` accepts count, such as a comparison's common items.
+    pub fn lineage_features(
+        &self,
+        thresholds: Thresholds,
+        keep: &dyn Fn(&str) -> bool,
+    ) -> Vec<FeatureRow> {
+        let fired: fn(&Unit) -> &BTreeMap<String, f64> = if self.lineages_declared {
+            |u| &u.lineage_fired
+        } else {
+            |u| &u.fired
+        };
+        // A lineage has no declared direction of its own.
+        self.likelihoods(fired, thresholds, None, false, keep)
+    }
+
+    fn likelihoods(
+        &self,
+        fired_of: impl Fn(&Unit) -> &BTreeMap<String, f64>,
+        thresholds: Thresholds,
+        prevalence: Option<f64>,
+        directed: bool,
+        keep: &dyn Fn(&str) -> bool,
+    ) -> Vec<FeatureRow> {
         let units: Vec<&Unit> = self
             .units
             .iter()
-            .filter(|u| u.reference.is_some())
+            .filter(|u| u.reference.is_some() && keep(&u.item_id))
             .collect();
         let ids: BTreeSet<&str> = units
             .iter()
-            .flat_map(|u| u.fired.keys().map(String::as_str))
+            .flat_map(|u| fired_of(u).keys().map(String::as_str))
             .collect();
-        let (kp, kn) = self.class_scales();
+        let (kp, kn) = self.class_scales_of(keep);
         let counts: Vec<Counts> = ids
             .iter()
             .map(|id| {
                 let [mut a, mut n_pos, mut b, mut n_neg] = [Running::default(); 4];
                 for u in &units {
                     let s = u.reference.unwrap_or(0.0);
-                    let f = u.fired.get(*id).copied().unwrap_or(0.0);
+                    let f = fired_of(u).get(*id).copied().unwrap_or(0.0);
                     a.add(u.weight * s * f);
                     n_pos.add(u.weight * s);
                     b.add(u.weight * (1.0 - s) * f);
@@ -401,9 +429,9 @@ impl Prepared<'_> {
                     corrected: a.ratio.corrected,
                     class: a.class,
                     posterior: prevalence.map(|p| features::posterior(a.ratio.lr, p)),
-                    direction: self
-                        .feature_meta
-                        .get(id)
+                    direction: directed
+                        .then(|| self.feature_meta.get(id))
+                        .flatten()
                         .and_then(|m| m.expected)
                         .map(|e| Direction::of(a.class, a.adjusted_interval, e)),
                 })

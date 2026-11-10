@@ -322,6 +322,9 @@ feature counts as not firing it. Only items with a reference count.
   D-049), `direction` is `insufficient` or `uninformative` with those classes, otherwise
   `as_expected` when the adjusted interval lies on the expected side of 1 and `reversed`
   when it lies on the other side.
+- **Lineage.** `compare --features` computes the LR of each lineage in each arm, a lineage
+  firing in a judgment when any feature declared with it (or, undeclared, the feature
+  itself) fires, and lists the two arms side by side; it is not a paired difference.
 - Reference cases: `feature_likelihood_ratio`, `feature_likelihood_ratio_bh`.
 
 ## 6. Replicates and reproducibility
