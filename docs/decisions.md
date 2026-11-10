@@ -1480,7 +1480,7 @@ after the entry is `Accepted`.
 
 ## D-051 Metrics per unit of several items
 
-- Status: Accepted
+- Status: Superseded by D-053
 - Date: 2026-11-11
 - Context: A document judged section by section counts a miss in one section and a false
   alarm in another, although the document as a whole was caught.
@@ -1502,3 +1502,16 @@ after the entry is `Accepted`.
 - Alternatives: dropping rater IDs loses rater agreement; hashing system IDs makes the
   comparison unreadable to the collaborator it is for.
 - Consequences: a hashed bundle's per-rater rows show hashes.
+
+## D-053 Intervals of metrics over units
+
+- Status: Accepted
+- Date: 2026-11-11
+- Supersedes: D-051
+- Context: D-051 gave metrics over units a bootstrap interval, which collapses to a point at
+  a rate of 0 or 1 and is less accurate than Wilson for unit-weighted 0/1 units.
+- Decision: as D-051, with the intervals the report gives rates over items (metrics §1.1),
+  each unit independent: Wilson, the exact interval at the edges or with few units, or the
+  bootstrap over units for weighted or soft units.
+- Alternatives: a bootstrap alone, as in D-051, for the reason above.
+- Consequences: unit and item rows of one report read their intervals the same way.
