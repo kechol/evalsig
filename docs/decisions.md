@@ -1390,3 +1390,24 @@ after the entry is `Accepted`.
   - ΔAUC is not included: a paired AUC needs its own interval method.
 - Alternatives: new verdict codes (not taken: D-008 would raise the schema version).
 - Consequences: `--sdt` needs decisions and a reference; it is refused otherwise.
+
+## D-045 Compressed sources and filters in `evalsig.mapping/1`
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: A common run log is gzipped JSONL with replicates nested in each line and a list
+  of rule results of which only the applicable ones are features. `mapping/1` could not
+  read it without a converter (D-011 prefers a declared mapping).
+- Decision:
+  - Every reader of input files decompresses gzip and Zstandard, recognised by their first
+    bytes, within the size limit applied to the decompressed bytes. `flate2` (MIT OR
+    Apache-2.0, already in the tree through `zip`, with the pure-Rust `zlib-rs` backend)
+    becomes a direct dependency of `evalsig-adapters`; Zstandard stays with `ruzstd`.
+  - `judgment.explode.filter` and `judgment.features.filter` keep the elements a condition
+    accepts; `judgment.features.fired_if` sets `fired` from a condition, in place of
+    `fired`. Replicates a log marks as copies are dropped with the filter. All three are
+    optional keys, so existing mappings keep their meaning and hash.
+- Alternatives: a `source.compression` setting (not taken: the bytes say it); a
+  `replicate.copy_of` key (not taken: the filter covers a marked copy, and an unmarked one
+  should keep raising `identical_replicates`).
+- Consequences: a compressed file's recorded hash is that of its decompressed bytes.
