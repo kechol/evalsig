@@ -265,9 +265,12 @@ adapters are shortcuts for people who have those logs.
 | ③ `inspect` | Inspect logs | `.eval` (zip of JSON entries, Zstandard or Deflate) and `.json`; `EvalLog.version` 2 | |
 | ④ `promptfoo` | promptfoo results | `-o out.json` (`results.version` 2 and 3) and the local SQLite database, opened read-only | |
 
-- **What ② can express**: splitting a row into several records (`explode`),
-  assembling IDs (`template`), mapping values (`value_map`, `offset`), missing
-  conditions (`missing_if`), joining labels from another file (`join`), and
+- **What ② can express**: splitting a row into several records (`explode`) and
+  keeping only some of them (`explode.filter`, numbering the replicates it keeps 0 … n−1
+  and counted in `map test` and an import warning, or `[?(@.x == v)]` in a path),
+  assembling IDs (`template`), mapping values (`value_map`, `offset`; with `default`,
+  `fired = { path = "@.verdict", value_map = { violated = true }, default = false }`),
+  missing conditions (`missing_if`), joining labels from another file (`join`), and
   refusing source versions it does not know (`expect`). Paths are a JSONPath
   subset. `examples/mapping.toml` states the mapping that
   `examples/custom-harness/convert_runlog.py` performs in code.
@@ -328,7 +331,7 @@ an AI agent only reads the draft and asks the person.
 
 | Part | Contents |
 |---|---|
-| Coverage | Source rows mapped, made missing, or dropped, and why |
+| Coverage | Source rows mapped, made missing, or dropped, and why; exploded elements `explode.filter` left out (`filtered`) |
 | Unused paths | Source paths no part of the mapping reads |
 | Key integrity | Duplicate item keys, missing and duplicated replicate numbers, items with no joined label |
 | Values | Distribution of mapped values and values missing from `value_map` |
@@ -946,7 +949,7 @@ the zip and decompressed with `ruzstd`.
   (checked before parsing, per line for JSONL). Archive methods other than Deflate and
   Zstandard are refused. A gzip or Zstandard file (any input, recognised by its first
   bytes) is read as its decompressed content within the same limit, and a `.gz`, `.zst` or
-  `.zstd` suffix is looked past when the extension names the format (D-045). A promptfoo
+  `.zstd` suffix is looked past when the extension names the format (D-046). A promptfoo
   database is opened by SQLite itself, so it is read uncompressed only. The records
   an adapter produces are validated like any import.
 - **promptfoo databases.** The file and its write-ahead log together must fit the byte

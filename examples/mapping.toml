@@ -26,6 +26,8 @@ strata = { task = "$.task" }
 
 [judgment]
 explode = { keys = ["a", "b"], as = "r", index = "gen_replicate" }   # Decision: replicate_kind
+# A log that marks a replicate copied from another would drop it with a filter:
+# explode = { keys = ["a", "b"], as = "r", index = "gen_replicate", filter = { path = "$.runs.{r}.copy_of", exists = false } }
 value = { path = "$.runs.{r}.level", value_map = { low = 0, normal = 1, high = 2, urgent = 3, none = 0 } }   # Decision: value.none
 features = { explode = "$.runs.{r}.rules[?(@.applies)]", feature_id = "@.rule_id", fired = "@.fired" }
 

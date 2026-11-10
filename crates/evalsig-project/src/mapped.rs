@@ -188,6 +188,8 @@ pub struct Bodies {
     /// A `content` record per distinct body.
     pub contents: Vec<Record>,
     pub redactions: Vec<Redaction>,
+    /// Exploded elements the mapping's `explode.filter` left out (D-046).
+    pub filtered: usize,
     /// Bytes to store once the import is accepted.
     objects: Vec<Vec<u8>>,
     seen: BTreeSet<String>,
@@ -218,6 +220,7 @@ impl Bodies {
             redactions: Vec::new(),
             objects: Vec::new(),
             seen: BTreeSet::new(),
+            filtered: 0,
         })
     }
 
@@ -330,15 +333,19 @@ impl Reader {
             }
             Reader::Mapping(compiled) => {
                 let rows = mapping::rows(compiled, bytes, &host.limits).map_err(|e| bad(&e))?;
-                let (records, issues) =
-                    mapping::apply(compiled, &rows, host).map_err(|e| match e {
-                        MapError::Unexpected { .. } => Error::new(
-                            "unexpected_source",
-                            format!("{}: {e}", path.display()),
-                            Exit::Rejected,
-                        ),
-                        other => invalid(other),
-                    })?;
+                let mapping::Applied {
+                    records,
+                    issues,
+                    filtered,
+                } = mapping::apply(compiled, &rows, host).map_err(|e| match e {
+                    MapError::Unexpected { .. } => Error::new(
+                        "unexpected_source",
+                        format!("{}: {e}", path.display()),
+                        Exit::Rejected,
+                    ),
+                    other => invalid(other),
+                })?;
+                host.filtered += filtered;
                 let issues = issues
                     .into_iter()
                     .map(|i| Issue {

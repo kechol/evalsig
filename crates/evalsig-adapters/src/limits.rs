@@ -63,7 +63,7 @@ fn bounded(mut r: impl Read, limit: u64, what: &str) -> Result<Vec<u8>, LimitErr
 }
 
 /// A whole file, refused before reading if it is larger than the limit; gzip and
-/// Zstandard files are decompressed within the same limit (D-045).
+/// Zstandard files are decompressed within the same limit (D-046).
 pub fn read_file(path: &Path, limits: &Limits) -> Result<Vec<u8>, LimitError> {
     let what = path.display().to_string();
     let file = std::fs::File::open(path)?;

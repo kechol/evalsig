@@ -536,7 +536,7 @@ fn the_langfuse_example_maps_judge_and_annotation_scores() {
     assert_eq!(v["results"]["reference"]["raters"], 2);
 }
 
-/// The bytes of a file gzipped and in Zstandard (D-045).
+/// The bytes of a file gzipped and in Zstandard (D-046).
 fn compressed(src: &Path, dir: &Path, stem: &str) -> [std::path::PathBuf; 2] {
     use std::io::Write as _;
     let text = std::fs::read(src).unwrap();
@@ -603,4 +603,120 @@ fn compressed_logs_map_and_import_as_their_content() {
             serde_json::from_slice(&ev(&["--format", "json", "runs"]).stdout).unwrap();
         assert!(!runs["results"]["runs"].as_array().unwrap().is_empty());
     }
+}
+
+#[test]
+fn explode_filter_drops_the_replicates_a_log_marks_as_copies() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = std::fs::read_to_string(example("mapping.toml"))
+        .unwrap()
+        .replace(
+            r#"explode = { keys = ["a", "b"], as = "r", index = "gen_replicate" }"#,
+            r#"explode = { keys = ["a", "b"], as = "r", index = "gen_replicate", filter = { path = "$.runs.{r}.copy_of", exists = false } }"#,
+        );
+    let m = dir.path().join("mapping.toml");
+    std::fs::write(&m, &mapping).unwrap();
+    let log = std::fs::read_to_string(example("custom-harness/run-log.sample.jsonl")).unwrap();
+    // The second line's run a is a copy of run b: b becomes replicate 0, with no gap.
+    let marked = log.replacen(
+        r#""ticket_id":"t-0002","runs":{"a":{"#,
+        r#""ticket_id":"t-0002","runs":{"a":{"copy_of":"b","#,
+        1,
+    );
+    assert_ne!(marked, log);
+    let file = dir.path().join("run-log.jsonl");
+    std::fs::write(&file, marked).unwrap();
+    // Judgments with a value and missing ones.
+    let judgments = |v: &Value| -> u64 {
+        ["judgments", "missing"]
+            .iter()
+            .flat_map(|k| v["results"]["values"][k].as_object().unwrap().values())
+            .map(|n| n.as_u64().unwrap())
+            .sum()
+    };
+    let all = map_test(&example("mapping.toml"), &file, 0);
+    let kept = map_test(&m, &file, 0);
+    assert_eq!(judgments(&kept), judgments(&all) - 1, "{kept}");
+    assert_eq!(kept["results"]["coverage"]["filtered"], 1, "{kept}");
+    assert_eq!(all["results"]["coverage"]["filtered"], 0, "{all}");
+    assert_eq!(kept["results"]["integrity"]["replicate_gaps"], 0, "{kept}");
+    // An import says how many elements the filter left out.
+    let project = tempfile::tempdir().unwrap();
+    let ev = |args: &[&str]| {
+        Command::cargo_bin("evalsig")
+            .unwrap()
+            .env("EVALSIG_ACTOR", "user:test")
+            .arg("--project")
+            .arg(project.path())
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(ev(&["init"]).status.success());
+    let labels = example("custom-harness/labels.sample.json");
+    let out = ev(&[
+        "--format",
+        "json",
+        "import",
+        "--mapping",
+        m.to_str().unwrap(),
+        "--arg",
+        "run-id=r1",
+        "--arg",
+        &format!("labels={}", labels.display()),
+        file.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "explode_filtered"),
+        "{v}"
+    );
+}
+
+#[test]
+fn explode_filter_tests_the_element_of_a_split_by_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = dir.path().join("mapping.toml");
+    std::fs::write(
+        &m,
+        r#"schema = "evalsig.mapping/1"
+name = "reps"
+[source]
+format = "jsonl"
+[run]
+run_id = { const = "r" }
+system = { id = { const = "s" }, version = { const = "1" } }
+value_semantics = "decision"
+output_type = "binary"
+[item]
+id = "$.id"
+[judgment]
+explode = { path = "$.reps", index = "gen_replicate", filter = { path = "@.source", in = ["model", "retry"] } }
+value = "@.ok"
+"#,
+    )
+    .unwrap();
+    let file = dir.path().join("reps.jsonl");
+    std::fs::write(
+        &file,
+        "{\"id\":\"i1\",\"reps\":[{\"source\":\"model\",\"ok\":true},{\"source\":\"cache\",\"ok\":true},{\"source\":\"retry\",\"ok\":false}]}\n",
+    )
+    .unwrap();
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .args(["--format", "json", "map", "test"])
+        .arg(&m)
+        .arg(&file)
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"]["coverage"]["filtered"], 1, "{v}");
+    assert_eq!(v["results"]["values"]["judgments"]["true"], 1, "{v}");
+    assert_eq!(v["results"]["values"]["judgments"]["false"], 1, "{v}");
+    assert_eq!(v["results"]["integrity"]["replicate_gaps"], 0, "{v}");
 }

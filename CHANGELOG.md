@@ -28,7 +28,10 @@ longer reproduces.
   expected cost overall and per stratum with cluster-bootstrap intervals, and the
   dashboard's discrimination screen draws it.
 - Input files compressed with gzip or Zstandard are read as their content, within the
-  size limit, by `import`, `map probe`, `map draft` and `map test` (D-045).
+  size limit, by `import`, `validate --records`, `gate submit` and the `map` commands
+  (D-046).
+- `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,
+  such as replicates a log marks as copies (D-046).
 - `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change
   as `discrimination_improved`, `discrimination_worsened`, `threshold_moved` or
   `undetermined` (`insufficient_data` below `--min-events`, default 5) (D-042).

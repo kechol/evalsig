@@ -165,6 +165,7 @@ pub struct Explode {
     #[serde(rename = "as")]
     pub var: Option<String>,
     pub index: Option<String>,
+    pub filter: Option<Condition>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -296,6 +297,8 @@ struct Judgment {
     replicates: Vec<(&'static str, Expr)>,
     task: Option<Expr>,
     value: Expr,
+    /// Keeps the exploded elements or keys the condition accepts (D-046).
+    filter: Option<Cond>,
     features: Option<(Path, Expr, Expr, Option<Expr>)>,
     bodies: Vec<(&'static str, Expr)>,
     cost: Vec<(String, Expr)>,
@@ -503,6 +506,12 @@ fn compile_parts(m: &Mapping, judgments: bool) -> Result<Compiled, MapError> {
         .judgment
         .as_ref()
         .map(|j| -> Result<Judgment, MapError> {
+            let filter = j
+                .explode
+                .as_ref()
+                .and_then(|e| e.filter.as_ref())
+                .map(|f| c.cond("judgment.explode.filter", f))
+                .transpose()?;
             let (spread, var, index) = match &j.explode {
                 None => (Spread::None, None, None),
                 Some(e) => {
@@ -556,6 +565,7 @@ fn compile_parts(m: &Mapping, judgments: bool) -> Result<Compiled, MapError> {
                 )?,
                 task: c.opt("judgment.task", &j.task)?,
                 value: c.expr("judgment.value", &j.value)?,
+                filter,
                 features,
                 bodies: c.fields(
                     "judgment",
@@ -817,6 +827,7 @@ impl Compiled {
             exprs.extend(j.cost.iter().map(|(_, e)| e));
             exprs.extend(j.task.iter());
             exprs.push(&j.value);
+            out.extend(j.filter.iter().map(|c| &c.path));
             if let Some((p, id, fired, strength)) = &j.features {
                 out.push(p);
                 exprs.extend([id, fired].into_iter().chain(strength));
@@ -1086,6 +1097,8 @@ struct Applier<'h> {
     /// emitted so the importer reports the conflict.
     emitted: BTreeSet<String>,
     records: Vec<(usize, Json)>,
+    /// Elements `explode.filter` left out.
+    filtered: usize,
 }
 
 impl Applier<'_> {
@@ -1349,7 +1362,10 @@ impl Applier<'_> {
                 }
             },
         };
-        for (var, index, element) in elements {
+        // Replicates are numbered among the elements the filter keeps, so dropping a
+        // copy leaves no gap.
+        let mut kept = 0;
+        for (var, _, element) in elements {
             let mut vars = BTreeMap::new();
             if let (Some(name), Some(v)) = (&j.var, var) {
                 vars.insert(name.clone(), v);
@@ -1361,6 +1377,12 @@ impl Applier<'_> {
             if let Some(e) = element {
                 scope = scope.with_current(e);
             }
+            if j.filter.as_ref().is_some_and(|c| !c.holds(scope)) {
+                self.filtered += 1;
+                continue;
+            }
+            let index = kept;
+            kept += 1;
             let host = &*self.host;
             let mut out = Map::new();
             out.insert("record".into(), json!("judgment"));
@@ -1413,13 +1435,24 @@ impl Applier<'_> {
     }
 }
 
-/// The records of the source rows, each with its row number, in row order. Stops at
-/// the first row that `source.expect` rejects; other problems are listed per row.
+/// What applying a mapping gave.
+#[derive(Debug, Clone, Default)]
+pub struct Applied {
+    /// The records, each with its row number, in row order.
+    pub records: Numbered,
+    /// The problems, per row.
+    pub issues: Vec<Issue>,
+    /// Exploded elements `explode.filter` left out (D-046).
+    pub filtered: usize,
+}
+
+/// The records of the source rows. Stops at the first row that `source.expect`
+/// rejects; other problems are listed per row.
 pub fn apply(
     c: &Compiled,
     rows: &[(usize, Json)],
     host: &mut dyn Host,
-) -> Result<(Numbered, Vec<Issue>), MapError> {
+) -> Result<Applied, MapError> {
     if let Some(at) = c.undecided.first() {
         return Err(MapError::Invalid {
             at: at.clone(),
@@ -1432,6 +1465,7 @@ pub fn apply(
         labelled: BTreeSet::new(),
         emitted: BTreeSet::new(),
         records: Vec::new(),
+        filtered: 0,
     };
     let mut issues = Vec::new();
     let none = BTreeMap::new();
@@ -1445,7 +1479,10 @@ pub fn apply(
         {
             return Err(MapError::Unexpected { row: *n });
         }
+        let filtered = a.filtered;
         if let Err(e) = a.row(c, *n, row) {
+            // A dropped row is counted as dropped, not by its elements.
+            a.filtered = filtered;
             issues.push(Issue {
                 row: *n,
                 at: e.at,
@@ -1453,7 +1490,11 @@ pub fn apply(
             });
         }
     }
-    Ok((a.records, issues))
+    Ok(Applied {
+        records: a.records,
+        issues,
+        filtered: a.filtered,
+    })
 }
 
 #[cfg(test)]

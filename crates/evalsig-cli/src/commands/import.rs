@@ -209,6 +209,15 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     records.append(&mut bodies.contents);
     sources.append(&mut bodies.joined);
     let mut warnings = Vec::new();
+    if bodies.filtered > 0 {
+        warnings.push(Warning {
+            code: "explode_filtered".into(),
+            message: format!(
+                "the mapping's explode.filter left out {} exploded elements",
+                bodies.filtered
+            ),
+        });
+    }
     apply_overrides(
         &mut records,
         args.system_version.as_deref(),

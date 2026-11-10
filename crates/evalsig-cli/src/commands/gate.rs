@@ -124,7 +124,7 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     }
 }
 
-/// The submitted records, decompressed when gzip or Zstandard (D-045).
+/// The submitted records, decompressed when gzip or Zstandard (D-046).
 fn read_records(path: &std::path::Path) -> Result<String, Error> {
     let bytes = crate::commands::import::read_within(path, &Default::default())?;
     String::from_utf8(bytes)

@@ -285,23 +285,28 @@ fn test(path: &Path, files: &[PathBuf], args: &[String], max_bytes: u64) -> Resu
     };
     let config = Config::default();
     let mut host = Bodies::new(args, &config, limits)?;
-    let (mut rows, mut records, mut issues) = (Vec::new(), Vec::new(), Vec::new());
+    let mut rows = Vec::new();
+    let mut applied = mapping::Applied::default();
     for file in files {
         let bytes = read_within(file, &limits)?;
         // Rows are numbered across the files, after the last number used so far.
         let base = rows.last().map_or(0, |(n, _)| *n);
         let these =
             mapping::rows(&compiled, &bytes, &limits).map_err(|e| Error::invalid_input(file, e))?;
-        let (r, i) = mapping::apply(&compiled, &these, &mut host)
+        let a = mapping::apply(&compiled, &these, &mut host)
             .map_err(|e| Error::invalid_input(file, e))?;
-        records.extend(r.into_iter().map(|(n, v)| (base + n, v)));
-        issues.extend(i.into_iter().map(|mut x| {
+        applied.filtered += a.filtered;
+        applied
+            .records
+            .extend(a.records.into_iter().map(|(n, v)| (base + n, v)));
+        applied.issues.extend(a.issues.into_iter().map(|mut x| {
             x.row += base;
             x
         }));
         rows.extend(these.into_iter().map(|(n, v)| (base + n, v)));
     }
-    let report = maptest::report(&rows, &records, &issues, &compiled);
+    let report = maptest::report(&rows, &applied, &compiled);
+    let records = applied.records;
     drop(rows);
     let validator = RecordValidator::new();
     let mut valid = Vec::new();

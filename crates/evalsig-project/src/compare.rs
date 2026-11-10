@@ -323,6 +323,12 @@ pub fn compute(
             scope: scope.map(|s| s.items.clone()),
             sdt_min_events: args.sdt,
         };
+        if args.unpaired && args.sdt.is_some() {
+            return Err(Error::usage_code(
+                "conflicting_arguments",
+                "--sdt needs paired arms; leave out --unpaired",
+            ));
+        }
         let c = if args.unpaired {
             compare::unpaired(&base, &cand, &options)
         } else {

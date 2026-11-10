@@ -274,6 +274,10 @@
         }
        ],
        "description": "Which replicate the element's position becomes"
+      },
+      "filter": {
+       "$ref": "#/$defs/condition",
+       "description": "Keeps the elements or keys the condition accepts, such as replicates the log marks as copies"
       }
      }
     },

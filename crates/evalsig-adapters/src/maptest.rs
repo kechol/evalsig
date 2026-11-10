@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use serde_json::Value as Json;
 
-use crate::mapping::{self, Compiled, Host, Issue, MapError};
+use crate::mapping::{self, Compiled, Host, MapError};
 use crate::probe::{self, Shape};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -18,6 +18,8 @@ pub struct Coverage {
     /// Rows left out, by the field that failed.
     pub dropped: usize,
     pub dropped_by: BTreeMap<String, usize>,
+    /// Exploded elements `explode.filter` left out (D-046).
+    pub filtered: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -137,12 +139,8 @@ fn text(v: &Json) -> String {
 }
 
 /// The report of mapping these rows.
-pub fn report(
-    rows: &[(usize, Json)],
-    records: &[(usize, Json)],
-    issues: &[Issue],
-    compiled: &Compiled,
-) -> Report {
+pub fn report(rows: &[(usize, Json)], applied: &mapping::Applied, compiled: &Compiled) -> Report {
+    let (records, issues) = (&applied.records, &applied.issues);
     let failed: BTreeSet<usize> = issues.iter().map(|i| i.row).collect();
     let mut dropped_by = BTreeMap::new();
     for i in issues {
@@ -153,6 +151,7 @@ pub fn report(
         mapped: rows.iter().filter(|(n, _)| !failed.contains(n)).count(),
         dropped: failed.len(),
         dropped_by,
+        filtered: applied.filtered,
     };
     let mut integrity = Integrity::default();
     let mut values = Values::default();
@@ -251,7 +250,11 @@ pub fn cases(c: &Compiled, tests: &str, host: &mut dyn Host) -> Result<Cases, Ma
                 .cloned()
                 .ok_or_else(|| bad("needs \"input\" and \"records\""))?,
         );
-        let (got, issues) = mapping::apply(c, &[(1, case["input"].clone())], host)?;
+        let mapping::Applied {
+            records: got,
+            issues,
+            ..
+        } = mapping::apply(c, &[(1, case["input"].clone())], host)?;
         let got = sorted(got.into_iter().map(|(_, r)| r).collect());
         out.cases += 1;
         // A row the mapping cannot map fails its case, whatever records it gave.
