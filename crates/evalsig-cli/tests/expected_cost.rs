@@ -313,7 +313,10 @@ fn report_gives_expected_cost_overall_and_per_stratum() {
         .output()
         .unwrap();
     let md = String::from_utf8(out.stdout).unwrap();
-    assert!(md.contains("Expected cost ") && md.contains("| S-1 | 0.2900 | 30.0 |"), "{md}");
+    assert!(
+        md.contains("Expected cost ") && md.contains("| S-1 | 0.2900 | 30.0 |"),
+        "{md}"
+    );
     // A run without [cost] has none, and says nothing about it.
     let dir = project("");
     let out = evalsig(dir.path())
