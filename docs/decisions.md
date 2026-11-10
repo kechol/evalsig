@@ -1343,3 +1343,30 @@ after the entry is `Accepted`.
 - Consequences: a consumer that matched `code == "usage"` for these failures matches
   the new codes or the exit code 64, which is unchanged. The error object's JSON Schema
   gains `next`.
+
+## D-041 Expected cost per stratum and in `compare`
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: Whether a revision of a leveled judge is worth adopting is a question of expected
+  cost, not accuracy: fewer misses can mean more items sent to people. `threshold` computed
+  expected cost (EC) for one run with one prevalence; `compare` did not compare it, and
+  production prevalence often differs by stratum while test sets are balanced.
+- Decision:
+  - `[cost]` gains `by` (a stratum key) and `[cost.strata."<value>"]` with optional
+    `prevalence`, `matrix` (same shape as the default) and `mix` (the stratum's production
+    share). A stratum without an override uses the defaults.
+  - EC per stratum is §4's formula on that stratum's items; each item contributes the share of
+    its judgments at each level. Overall EC is Σ m_g EC_g / Σ m_g over the strata present.
+    m_g is the configured `mix` when every stratum present has one, otherwise the stratum's
+    weighted item count, and the output then says `mix: observed` and warns.
+  - `expected_cost` is a metric of `compare` (lower is better) when `[cost]` is set and both
+    runs' judgments are levels 0 … k−1: a paired cluster bootstrap on the common items, the
+    §7.1 verdict with `min_effect.expected_cost`, and one row per stratum. `report` gives EC
+    overall and per stratum with a cluster-bootstrap interval.
+  - Items with no level judgment are left out of EC (no missing bounds, as for precision).
+- Alternatives: the requested `weight` multiplier on the positive row (not taken: a per-stratum
+  matrix says the same with one shape); a fixed observed mix (not taken: a balanced test set
+  misstates production).
+- Consequences: `compare` lists one more metric when `[cost]` is set; the default primary metric
+  is unchanged. Unpaired and sequential comparisons do not include EC.
