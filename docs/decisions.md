@@ -1463,3 +1463,17 @@ after the entry is `Accepted`.
   (`as_expected`, `reversed`, `uninformative`, `insufficient`) from the adjusted interval;
   `compare --features` gives each lineage's LR in both runs, a lineage firing when any member
   fires in a judgment. Declared per run, since rules change between runs.
+
+## D-050 Shareable bundles of a project's records
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: Collaborators reproduce each other's reports from raw run logs. A canonical export
+  imported as one file reproduces the snapshot and `verify` passes (T-150).
+- Decision: `export --to bundle` writes `records.jsonl` (the records in force, canonical, in
+  primary-key order: the snapshot's bytes; no content records) and `manifest.json` (its
+  BLAKE3, the configuration hash, tool and spec version). `--hash-ids` replaces item IDs,
+  clusters and strata values with a keyed BLAKE3 under `EVALSIG_BUNDLE_KEY`, which is never
+  written, and drops `attrs`, label reasons and missing details. `import --from-bundle` refuses
+  a records file whose hash differs from the manifest's.
+- Consequences: a hashed bundle's reports verify against the bundle, not the original.
