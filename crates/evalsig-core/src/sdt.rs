@@ -27,6 +27,25 @@ pub struct Confusion {
 pub const ASSUMPTION: &str = "equal_variance_normal";
 
 impl Confusion {
+    /// The cells of weighted (hits, positives) and (false alarms, negatives), each class
+    /// scaled by its factor (`report`'s Kish scaling, metrics spec §2).
+    pub fn scaled((h, p): (f64, f64), (f, n): (f64, f64), (kp, kn): (f64, f64)) -> Self {
+        Confusion {
+            hits: h * kp,
+            misses: (p - h) * kp,
+            false_alarms: f * kn,
+            correct_rejections: (n - f) * kn,
+        }
+    }
+
+    /// The smallest of the four cells.
+    pub fn fewest(&self) -> f64 {
+        self.hits
+            .min(self.misses)
+            .min(self.false_alarms)
+            .min(self.correct_rejections)
+    }
+
     fn positives(&self) -> f64 {
         self.hits + self.misses
     }

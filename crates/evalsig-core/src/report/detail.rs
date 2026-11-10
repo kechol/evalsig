@@ -287,13 +287,20 @@ impl Prepared<'_> {
     /// the scaled weights can be read as numbers of items, as the log-linear correction
     /// and the Katz standard error do, whatever the scale of the weights.
     fn class_scales(&self) -> (f64, f64) {
+        self.class_scales_of(|_| true)
+    }
+
+    /// [`Self::class_scales`] over the items `keep` accepts, such as a comparison's
+    /// paired items.
+    pub(crate) fn class_scales_of(&self, keep: impl Fn(&str) -> bool) -> (f64, f64) {
         let kish = |positive: bool| {
             let [s1, s2] = self
                 .units
                 .iter()
                 .filter(|u| {
-                    u.reference
-                        .is_some_and(|s| if positive { s > 0.0 } else { s < 1.0 })
+                    keep(&u.item_id)
+                        && u.reference
+                            .is_some_and(|s| if positive { s > 0.0 } else { s < 1.0 })
                 })
                 .fold([Running::default(); 2], |[mut a, mut b], u| {
                     a.add(u.weight);
@@ -314,15 +321,10 @@ impl Prepared<'_> {
 
     /// d′ and c under the decision rule.
     pub fn sdt(&self) -> Option<Sdt> {
-        let ((h, p), (f, n)) = self.counts()?;
-        let (kp, kn) = self.class_scales();
-        let (dprime, criterion) = crate::sdt::Confusion {
-            hits: h * kp,
-            misses: (p - h) * kp,
-            false_alarms: f * kn,
-            correct_rejections: (n - f) * kn,
-        }
-        .dprime_and_criterion();
+        let (hits, false_alarms) = self.counts()?;
+        let (dprime, criterion) =
+            crate::sdt::Confusion::scaled(hits, false_alarms, self.class_scales())
+                .dprime_and_criterion();
         Some(Sdt {
             dprime,
             criterion,

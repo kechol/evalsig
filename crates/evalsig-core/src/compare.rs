@@ -103,6 +103,9 @@ pub struct Comparison {
     /// Items moving between correct and wrong; present for a binary decision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition: Option<Transition>,
+    /// Signal-detection deltas, when asked for (`compare --sdt`, D-042).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sdt: Option<SdtChange>,
 }
 
 /// Settings of a comparison.
@@ -120,6 +123,9 @@ pub struct Options {
     pub excluded: BTreeSet<String>,
     /// When set, only these items are compared (a part of a split).
     pub scope: Option<BTreeSet<String>>,
+    /// Add signal-detection deltas, with this fewest weighted items per cell for a
+    /// classification (D-042).
+    pub sdt_min_events: Option<f64>,
 }
 
 impl Options {
@@ -292,11 +298,15 @@ pub fn compare(base: &Baseline<'_, '_>, b: &Prepared<'_>, o: &Options) -> Compar
             s.map(|s| (s, decided_positive(va), decided_positive(vb)))
         }))
     });
+    let sdt = o
+        .sdt_min_events
+        .and_then(|k| sdt_change(a, b, &paired, o, k));
     Comparison {
         n_used: paired.len(),
         n_unpaired,
         metrics,
         transition,
+        sdt,
     }
 }
 
@@ -494,6 +504,174 @@ fn cost_delta(
     d
 }
 
+/// The change of signal-detection quantities between two arms on their paired items
+/// (D-042): candidate − baseline as measured, with paired cluster-bootstrap intervals.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SdtChange {
+    /// The model behind d′ and c.
+    pub assumption: &'static str,
+    /// ΔH, ΔF, Δd′ and Δc.
+    pub deltas: Vec<SdtDelta>,
+    /// What the intervals say changed.
+    pub change: SdtClass,
+    /// The fewest weighted items each cell of each arm needs for a classification.
+    pub min_events: f64,
+    /// Number of bootstrap resamples, when intervals were formed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resamples: Option<u32>,
+}
+
+/// One signal-detection quantity in both arms.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SdtDelta {
+    /// `hit_rate`, `false_alarm_rate`, `dprime` or `criterion`.
+    pub metric: &'static str,
+    /// Value in the baseline arm.
+    pub baseline: f64,
+    /// Value in the candidate arm.
+    pub candidate: f64,
+    /// Candidate minus baseline.
+    pub delta: f64,
+    /// Paired cluster-bootstrap interval of the difference.
+    pub ci: Option<(f64, f64)>,
+}
+
+/// What changed between the arms, read from the intervals of Δd′ and Δc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SdtClass {
+    /// Δd′'s interval lies above 0.
+    DiscriminationImproved,
+    /// Δd′'s interval lies below 0.
+    DiscriminationWorsened,
+    /// Δd′'s interval contains 0 and Δc's does not.
+    ThresholdMoved,
+    /// Neither interval excludes 0.
+    Undetermined,
+    /// A cell of either arm is below the minimum, or there are too few clusters.
+    InsufficientData,
+}
+
+/// Per arm: hits, positives, false alarms, negatives (weighted).
+type Counts = [f64; 4];
+
+fn add(acc: &mut [Counts; 2], t: &[Counts; 2]) {
+    for (x, y) in acc.iter_mut().flatten().zip(t.iter().flatten()) {
+        *x += y;
+    }
+}
+
+fn confusion(&[h, p, f, n]: &Counts, scales: (f64, f64)) -> crate::sdt::Confusion {
+    crate::sdt::Confusion::scaled((h, p), (f, n), scales)
+}
+
+/// H, F, d′ and c of an arm's counts, with the arm's class scaling (as `report`'s d′).
+fn sdt_of(t: &Counts, scales: (f64, f64)) -> Option<[f64; 4]> {
+    let [h, p, f, n] = *t;
+    if p <= 0.0 || n <= 0.0 {
+        return None;
+    }
+    let (d, c) = confusion(t, scales).dprime_and_criterion();
+    Some([h / p, f / n, d, c])
+}
+
+/// ΔH, ΔF, Δd′ and Δc on the paired items (D-042). `None` without decisions and a
+/// reference.
+fn sdt_change(
+    a: &Prepared<'_>,
+    b: &Prepared<'_>,
+    paired: &BTreeSet<&str>,
+    o: &Options,
+    min_events: f64,
+) -> Option<SdtChange> {
+    if a.positive().is_none() || a.semantics() != crate::records::ValueSemantics::Decision {
+        return None;
+    }
+    let values = [a, b].map(|p| {
+        [MetricId::HitRate, MetricId::FalseAlarmRate].map(|id| p.item_values(id, Fill::Policy))
+    });
+    // An item counts when both arms give it the same classes: the missing policy can
+    // drop an item from one arm only.
+    let in_both = |i: &str| {
+        (0..2).all(|c| values[0][c].contains_key(i) == values[1][c].contains_key(i))
+            && (0..2).any(|c| values[0][c].contains_key(i))
+    };
+    let items: BTreeSet<&str> = paired.iter().copied().filter(|i| in_both(i)).collect();
+    let scales = [a, b].map(|p| p.class_scales_of(|i| items.contains(i)));
+    let counts = |arm: usize, i: &str| -> Counts {
+        let part = |v: &BTreeMap<String, ItemValue>| {
+            v.get(i)
+                .map_or((0.0, 0.0), |x| (x.numerator, x.denominator))
+        };
+        let [(h, p), (f, n)] = values[arm].each_ref().map(part);
+        [h, p, f, n]
+    };
+    let mut clusters: BTreeMap<&str, [Counts; 2]> = BTreeMap::new();
+    for i in &items {
+        let [hv, fv] = &values[0];
+        let Some(first) = hv.get(*i).or_else(|| fv.get(*i)) else {
+            continue;
+        };
+        add(
+            clusters.entry(first.cluster.as_str()).or_default(),
+            &[counts(0, i), counts(1, i)],
+        );
+    }
+    let totals: Vec<[Counts; 2]> = clusters.into_values().collect();
+    let sum_of = |drawn: &mut dyn Iterator<Item = usize>| {
+        let mut out = [[0.0; 4]; 2];
+        drawn.for_each(|g| add(&mut out, &totals[g]));
+        out
+    };
+    let points = |t: &[Counts; 2]| sdt_of(&t[0], scales[0]).zip(sdt_of(&t[1], scales[1]));
+    let all = sum_of(&mut (0..totals.len()));
+    let (pa, pb) = points(&all)?;
+    let enough = totals.len() >= bootstrap::MIN_UNITS;
+    let reps = if enough {
+        let mut rng = Rng::new(o.seed);
+        bootstrap::replicates_many(totals.len(), None, o.bootstrap, &mut rng, 4, |drawn| {
+            let d = points(&sum_of(&mut drawn.iter().copied()))
+                .map(|(x, y)| std::array::from_fn::<f64, 4, _>(|k| y[k] - x[k]));
+            std::array::from_fn::<Option<f64>, 4, _>(|k| d.map(|d| d[k]))
+        })
+    } else {
+        vec![Vec::new(); 4]
+    };
+    let deltas: Vec<SdtDelta> = ["hit_rate", "false_alarm_rate", "dprime", "criterion"]
+        .into_iter()
+        .zip(reps)
+        .enumerate()
+        .map(|(k, (metric, r))| SdtDelta {
+            metric,
+            baseline: pa[k],
+            candidate: pb[k],
+            delta: pb[k] - pa[k],
+            ci: bootstrap::percentile_interval(r, o.level),
+        })
+        .collect();
+    // The weighted cells on the item scale, as the log-linear correction counts them.
+    let fewest = (0..2)
+        .map(|arm| confusion(&all[arm], scales[arm]).fewest())
+        .fold(f64::INFINITY, f64::min);
+    let change = if !enough || fewest < min_events {
+        SdtClass::InsufficientData
+    } else {
+        match (deltas[2].ci, deltas[3].ci) {
+            (Some((lo, _)), _) if lo > 0.0 => SdtClass::DiscriminationImproved,
+            (Some((_, hi)), _) if hi < 0.0 => SdtClass::DiscriminationWorsened,
+            (Some(_), Some((lo, hi))) if lo > 0.0 || hi < 0.0 => SdtClass::ThresholdMoved,
+            _ => SdtClass::Undetermined,
+        }
+    };
+    Some(SdtChange {
+        assumption: crate::sdt::ASSUMPTION,
+        deltas,
+        change,
+        min_events,
+        resamples: enough.then_some(o.bootstrap),
+    })
+}
+
 /// The percentile interval and p-value of bootstrap replicates of a difference.
 fn bootstrap_inference(reps: Vec<f64>, delta: Option<f64>, o: &Options) -> Inference {
     let p = delta.and_then(|d| bootstrap::p_value(&reps, d));
@@ -566,6 +744,7 @@ pub fn unpaired(a: &Prepared<'_>, b: &Prepared<'_>, o: &Options) -> Comparison {
         n_unpaired: 0,
         metrics,
         transition: None,
+        sdt: None,
     }
 }
 

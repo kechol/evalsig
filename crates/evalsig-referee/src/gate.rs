@@ -696,6 +696,7 @@ fn ladder(j: &Judging, h: &Holdout) -> Result<Option<NewBest>, Error> {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     // MetricDelta is oriented so that positive is better.
     let Some(m) = compare::compare(&Baseline::only(&best, &l.metric), &cand, &options)
@@ -783,6 +784,7 @@ fn evidence(
             min_effect: BTreeMap::new(),
             excluded: BTreeSet::new(),
             scope: None,
+            sdt_min_events: None,
         };
         let c = compare::compare(&Baseline::only(&pa, metric), &pb, &options);
         let Some(m) = c.metrics.iter().find(|m| m.metric == metric) else {

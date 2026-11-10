@@ -422,7 +422,18 @@ The metrics compared are those both arms support: accuracy, H, F, precision, `pa
   with the largest primary difference. The best of several is biased upwards (a winner's
   curse), so the output says `selected_after_comparison` and warns; confirm the best
   candidate on another split. Holm is not applied across metrics or strata.
-- **Delta metrics not compared.** Δd′ and ΔAUC are not among the compared metrics.
+- **Signal-detection deltas (`--sdt`).** ΔH, ΔF, Δd′ and Δc, candidate − baseline as
+  measured, from the weighted counts and class scaling of §2 on the paired items, with
+  paired cluster-bootstrap intervals from one set of resamples (D-042). `sdt.change` reads
+  the intervals: `discrimination_improved` when Δd′'s lies above 0,
+  `discrimination_worsened` below 0, `threshold_moved` when it contains 0 and Δc's does
+  not, otherwise `undetermined`; `insufficient_data` when a cell (hits, misses, false
+  alarms, correct rejections, weighted on the item scale) of either arm is below
+  `--min-events` (default 5) or there are fewer than five clusters; near H or F of 0 or 1
+  the intervals cover less than their level below that minimum. Items count when both
+  arms give them the same classes, and the class scaling is taken over those items. The
+  classification is not a verdict.
+- **ΔAUC is not compared.**
 
 ### 7.1 The verdict rule
 

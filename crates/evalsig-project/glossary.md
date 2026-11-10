@@ -63,6 +63,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | z-ROC | `zroc` | ROC with both axes transformed to normal quantiles. The straighter, the better the equal-variance normal model fits |
 | d_a | `d_a` | Sensitivity index when the z-ROC slope is not 1 (unequal variances) |
 | isosensitivity curve | — | The (F, H) curve of constant d′. Moving along it only shifts the criterion |
+| change classification | `sdt.change`: `discrimination_improved`, `discrimination_worsened`, `threshold_moved`, `undetermined` | What `compare --sdt` reads from the intervals of Δd′ and Δc: better or worse separation of the classes, or the same separation at another criterion |
 | likelihood ratio | `likelihood_ratio` (LR), `features` | Feature firing probability among positives divided by that among negatives. 1 means uninformative. `features` lists each feature's LR and class |
 | decision threshold | `threshold` | The score or level from which a judgment counts as positive |
 | cost matrix | `[cost] matrix` | Loss per item for each (reference label, judgment level) cell |

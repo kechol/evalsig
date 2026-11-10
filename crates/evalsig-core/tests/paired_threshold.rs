@@ -93,6 +93,7 @@ fn rate_at_least_takes_tangos_interval_and_score_test() {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     let cmp = compare::compare(&Baseline::new(&pa), &pb, &options);
     let m = cmp
@@ -130,6 +131,7 @@ fn a_baseline_for_one_metric_compares_only_that_metric() {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     let full = compare::compare(&Baseline::new(&pa), &pb, &options);
     let only = Baseline::only(&pa, "rate_at_least");

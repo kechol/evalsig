@@ -41,10 +41,25 @@ pub struct Args {
     /// Compare only the items of this part of the latest `evalsig split`.
     #[arg(long, value_enum)]
     pub split: Option<SplitArg>,
+    /// Add ΔH, ΔF, Δd′ and Δc with paired intervals, and whether discrimination or the
+    /// criterion changed (D-042).
+    #[arg(long, conflicts_with = "unpaired")]
+    pub sdt: bool,
+    /// With --sdt: the fewest weighted items each cell (hits, misses, false alarms,
+    /// correct rejections) of each arm needs for a classification.
+    #[arg(long, value_name = "N", default_value_t = 5.0, requires = "sdt", value_parser = at_least_zero)]
+    pub min_events: f64,
     #[command(flatten)]
     pub dataset: DatasetArgs,
     #[command(flatten)]
     pub arms: ArmArgs,
+}
+
+fn at_least_zero(s: &str) -> Result<f64, String> {
+    match s.parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err("a finite number of at least 0".into()),
+    }
 }
 
 impl From<&Args> for Request {
@@ -62,6 +77,7 @@ impl From<&Args> for Request {
                 SplitArg::Dev => Part::Dev,
                 SplitArg::Validation => Part::Validation,
             }),
+            sdt: a.sdt.then_some(a.min_events),
             dataset: a.dataset.into(),
             arms: a.arms.into(),
         }

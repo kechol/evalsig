@@ -27,10 +27,14 @@ longer reproduces.
   share per stratum; the comparison then has one row per stratum. `report` gives the run's
   expected cost overall and per stratum with cluster-bootstrap intervals, and the
   dashboard's discrimination screen draws it.
+- `compare --sdt` adds ΔH, ΔF, Δd′ and Δc with paired intervals and classifies the change
+  as `discrimination_improved`, `discrimination_worsened`, `threshold_moved` or
+  `undetermined` (`insufficient_data` below `--min-events`, default 5) (D-042).
 
 ### Metric definitions
 
-- `metrics/2`: `compare` compares expected cost (metrics §4, §7), and expected cost takes
+- `metrics/2`: `compare` compares expected cost (metrics §4, §7) and, with `--sdt`, d′ and
+  c (§7); expected cost takes
   per-stratum prevalences, matrices and production shares (D-041). Saved comparisons of a
   project with `[cost]` set gain an `expected_cost` row.
 

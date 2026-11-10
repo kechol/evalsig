@@ -330,6 +330,26 @@ fn compare_table(s: &mut String, c: &Value) {
             count(&t["cleared_false_alarms"]),
         );
     }
+    if let Some(sdt) = c["sdt"].as_object() {
+        s.push_str("\n| Signal detection | Baseline | Candidate | Difference | Interval |\n|---|---:|---:|---:|---|\n");
+        for d in sdt["deltas"].as_array().into_iter().flatten() {
+            let _ = writeln!(
+                s,
+                "| {} | {} | {} | {} | {} |",
+                inline(d["metric"].as_str().unwrap_or("?")),
+                num(&d["baseline"]),
+                num(&d["candidate"]),
+                signed(&d["delta"]),
+                pair(&d["ci"], signed),
+            );
+        }
+        let _ = writeln!(
+            s,
+            "\nChange: {} (equal-variance normal model; at least {} items per cell).",
+            id(&sdt["change"]),
+            sdt["min_events"],
+        );
+    }
     if let Some(seq) = c["sequential"]["metrics"].as_array() {
         s.push_str("\n| Metric | Items added | Difference | Confidence sequence | Verdict |\n|---|---:|---:|---|---|\n");
         for m in seq {

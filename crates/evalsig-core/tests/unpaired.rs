@@ -43,6 +43,7 @@ fn options() -> Options {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     }
 }
 

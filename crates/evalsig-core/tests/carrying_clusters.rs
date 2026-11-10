@@ -108,6 +108,7 @@ fn clusters_without_positives_do_not_count_toward_the_hit_rate() {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     let cmp = compare::compare(&Baseline::new(&pa), &pb, &options);
     let metric = |name: &str| cmp.metrics.iter().find(|m| m.metric == name).unwrap();

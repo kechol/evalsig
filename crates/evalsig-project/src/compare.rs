@@ -9,7 +9,7 @@ use evalsig_core::compare::{self, Baseline, Comparison, Options};
 use evalsig_core::config::Config;
 use evalsig_core::paired::Verdict;
 use evalsig_core::preference;
-use evalsig_core::records::{Item, Label, Preference, Record, Run};
+use evalsig_core::records::{Item, Label, Preference, Record, Run, ValueSemantics};
 use evalsig_core::replicates;
 use evalsig_core::report::{self, Fill, MetricId, Prepared};
 use evalsig_core::split::Part;
@@ -53,6 +53,10 @@ pub struct Request {
     /// Compare only the items of this part of the latest `evalsig split`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split: Option<Part>,
+    /// Add ΔH, ΔF, Δd′ and Δc with a classification; the value is the fewest weighted
+    /// items a cell needs (D-042).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdt: Option<f64>,
     pub dataset: DatasetChecks,
     pub arms: ArmChecks,
 }
@@ -83,7 +87,7 @@ fn comparison_json(
     primary: &str,
     n_input_changed: usize,
 ) -> Value {
-    json!({
+    let mut v = json!({
         "arms": { "baseline": baseline, "candidate": candidate },
         "primary_metric": primary,
         "n_used": c.n_used,
@@ -91,7 +95,11 @@ fn comparison_json(
         "n_input_changed": n_input_changed,
         "metrics": c.metrics,
         "transition": c.transition,
-    })
+    });
+    if let Some(s) = &c.sdt {
+        v["sdt"] = json!(s);
+    }
+    v
 }
 
 /// Items present in both arms whose input differs: each arm's `input_ref` is the one its
@@ -313,12 +321,28 @@ pub fn compute(
             min_effect: config.compare.min_effect.clone(),
             excluded: excluded.clone(),
             scope: scope.map(|s| s.items.clone()),
+            sdt_min_events: args.sdt,
         };
         let c = if args.unpaired {
             compare::unpaired(&base, &cand, &options)
         } else {
             compare::compare(&baseline, &cand, &options)
         };
+        if args.sdt.is_some() && c.sdt.is_none() {
+            return Err(
+                if base.positive().is_none() || base.semantics() != ValueSemantics::Decision {
+                    Error::usage(
+                        "compare --sdt needs decisions and a reference: a positive definition and a decision rule",
+                    )
+                } else {
+                    Error::new(
+                        "insufficient_data",
+                        "the compared items have no positives or no negatives for --sdt",
+                        Exit::InsufficientData,
+                    )
+                },
+            );
+        }
         let seq = args
             .sequential
             .then(|| compare::sequential(&baseline, &cand, &options));

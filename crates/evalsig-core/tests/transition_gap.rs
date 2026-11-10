@@ -108,6 +108,7 @@ fn a_candidate_gap_on_negatives_is_a_new_false_alarm() {
         min_effect: BTreeMap::new(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     let cmp = compare::compare(&Baseline::new(&pa), &pb, &options);
     let delta = |name: &str| {

@@ -119,6 +119,7 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Output, Erro
         min_effect: config.compare.min_effect.clone(),
         excluded: BTreeSet::new(),
         scope: None,
+        sdt_min_events: None,
     };
     let mut rows = Vec::new();
     let mut primary_status = None;
