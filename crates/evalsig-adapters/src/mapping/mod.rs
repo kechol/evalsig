@@ -1155,7 +1155,7 @@ struct Applier<'h> {
     joined: BTreeMap<String, Json>,
     /// Per joined file read by key: the positions of its label rows by key.
     keyed: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
-    /// The (file, key) pairs already joined, so rows sharing a key label once.
+    /// The (file, key, item) triples already joined, so rows sharing them label once.
     keys_joined: BTreeSet<String>,
     labelled: BTreeSet<String>,
     /// Run and item records already emitted; rows repeat them. Differing ones are
@@ -1318,7 +1318,7 @@ impl Applier<'_> {
                 let Some(k) = row.render(scope) else {
                     return Ok(());
                 };
-                if !self.keys_joined.insert(format!("{f}\n{k}")) {
+                if !self.keys_joined.insert(format!("{f}\n{k}\n{item_id}")) {
                     return Ok(());
                 }
                 let Some(at) = self.keyed[f].get(&k) else {
@@ -1428,25 +1428,19 @@ impl Applier<'_> {
         item_id: &str,
         run_id: &str,
     ) -> Result<(), RowError> {
-        // Each element: the variable's value, its position and the element itself.
-        let elements: Vec<(Option<String>, usize, Option<&Json>)> = match &j.spread {
-            Spread::None => vec![(None, 0, None)],
-            Spread::Keys(keys) => keys
-                .iter()
-                .enumerate()
-                .map(|(i, k)| (Some(k.clone()), i, None))
-                .collect(),
+        // Each element: the variable's value and the element itself.
+        let elements: Vec<(Option<String>, Option<&Json>)> = match &j.spread {
+            Spread::None => vec![(None, None)],
+            Spread::Keys(keys) => keys.iter().map(|k| (Some(k.clone()), None)).collect(),
             Spread::Path(p) => match p.first(scope) {
                 Some(Json::Array(xs)) => xs
                     .iter()
                     .enumerate()
-                    .map(|(i, x)| (Some(i.to_string()), i, Some(x)))
+                    .map(|(i, x)| (Some(i.to_string()), Some(x)))
                     .collect(),
-                Some(Json::Object(m)) => m
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (k, x))| (Some(k.clone()), i, Some(x)))
-                    .collect(),
+                Some(Json::Object(m)) => {
+                    m.iter().map(|(k, x)| (Some(k.clone()), Some(x))).collect()
+                }
                 _ => {
                     return Err(row_error(
                         "judgment.explode.path",
@@ -1458,7 +1452,7 @@ impl Applier<'_> {
         // Replicates are numbered among the elements the filter keeps, so dropping a
         // copy leaves no gap.
         let mut kept = 0;
-        for (var, _, element) in elements {
+        for (var, element) in elements {
             let mut vars = BTreeMap::new();
             if let (Some(name), Some(v)) = (&j.var, var) {
                 vars.insert(name.clone(), v);
