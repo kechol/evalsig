@@ -1393,7 +1393,7 @@ after the entry is `Accepted`.
 
 ## D-045 Compressed sources and filters in `evalsig.mapping/1`
 
-- Status: Accepted
+- Status: Superseded by D-046
 - Date: 2026-11-11
 - Context: A common run log is gzipped JSONL with replicates nested in each line and a list
   of rule results of which only the applicable ones are features. `mapping/1` could not
@@ -1411,3 +1411,16 @@ after the entry is `Accepted`.
   `replicate.copy_of` key (not taken: the filter covers a marked copy, and an unmarked one
   should keep raising `identical_replicates`).
 - Consequences: a compressed file's recorded hash is that of its decompressed bytes.
+
+## D-046 Compressed sources and `explode.filter` in `evalsig.mapping/1`
+
+- Status: Accepted
+- Date: 2026-11-11
+- Supersedes: D-045
+- Context: D-045 added `features.filter` and `features.fired_if`, but the path subset
+  already filters elements (`[?(@.applies == true)]`) and `value_map` with `default` turns
+  a value into `fired`; two ways to say one thing would be kept forever.
+- Decision: compressed sources as in D-045. `judgment.explode.filter` keeps the elements or
+  keys a condition accepts; it is new because a split by keys has no element a path filter
+  could test. Features are filtered and set with the existing path and expression syntax.
+- Consequences: a mapping written for D-045's two feature keys is refused as unknown keys.
