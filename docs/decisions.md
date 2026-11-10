@@ -1370,3 +1370,23 @@ after the entry is `Accepted`.
   misstates production).
 - Consequences: `compare` lists one more metric when `[cost]` is set; the default primary metric
   is unchanged. Unpaired and sequential comparisons do not include EC.
+
+## D-042 Paired signal-detection deltas in `compare`
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: When a revision lowers the miss rate, the question is whether the judge separates
+  the classes better or only says "positive" more often. `report` gives d′ and c per run;
+  the before/after question needs paired intervals on the same items.
+- Decision:
+  - `compare --sdt` adds `sdt`: ΔH, ΔF, Δd′ and Δc (candidate − baseline as measured) from
+    the same weighted counts and class scaling as `report`, with paired cluster-bootstrap
+    intervals from one set of resamples, and the equal-variance assumption named.
+  - `sdt.change` classifies from the intervals: `discrimination_improved` (Δd′ above 0),
+    `discrimination_worsened` (below 0), `threshold_moved` (Δd′ contains 0, Δc excludes it),
+    else `undetermined`; `insufficient_data` when a cell (hits, misses, false alarms,
+    correct rejections) of either arm is below `--min-events` (default 5, T-140) or there
+    are fewer than five clusters. It is not a `verdict.code`; the verdict set is unchanged.
+  - ΔAUC is not included: a paired AUC needs its own interval method.
+- Alternatives: new verdict codes (not taken: D-008 would raise the schema version).
+- Consequences: `--sdt` needs decisions and a reference; it is refused otherwise.
