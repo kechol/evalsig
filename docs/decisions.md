@@ -1424,3 +1424,16 @@ after the entry is `Accepted`.
   keys a condition accepts; it is new because a split by keys has no element a path filter
   could test. Features are filtered and set with the existing path and expression syntax.
 - Consequences: a mapping written for D-045's two feature keys is refused as unknown keys.
+
+## D-047 Joining row-based label files by a key
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: A JSONL or CSV label file joins as an array, and a path filter compares with a
+  fixed literal, so labels could not be matched to rows by a computed key.
+- Decision: `label.join.key = { label = "<template>", row = "<template>" }`, in place of
+  `join.path`, matches each label row whose `label` template (over `@`) equals the row's
+  `row` template (over `$`), such as `"{@.task}:{@.unit_id}"` and `"{$.task}:{$.id}"`.
+  Every matching label row gives a label, so several raters' rows are kept.
+- Alternatives: templates inside filter literals (not taken: a composite key needs one
+  filter per field, and filters do not chain on arrays).
