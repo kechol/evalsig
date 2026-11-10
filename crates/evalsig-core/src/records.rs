@@ -3,6 +3,8 @@
 //! Optional fields stay `None` when absent so that a record serializes back to what
 //! was read; defaults from the schema are applied by accessor methods instead.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
@@ -470,6 +472,32 @@ pub struct Run {
     /// Number of ordinal levels (at least 2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<u32>,
+    /// What each feature is written to do, by feature ID (D-049).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub features: Option<BTreeMap<String, FeatureMeta>>,
+}
+
+/// What a feature is written to do (D-049).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeatureMeta {
+    /// The reference class the feature should point to when it fires.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<Pointing>,
+    /// A name kept across runs when the feature is renamed or split; absent means the
+    /// feature ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<String>,
+}
+
+/// The reference class a feature points to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pointing {
+    /// Firing is evidence for a positive.
+    Positive,
+    /// Firing is evidence for a negative.
+    Negative,
 }
 
 impl Run {
@@ -775,6 +803,14 @@ impl Record {
             }
             Record::Run(r) => {
                 check_time(&r.started_at)?;
+                if r.features.iter().flatten().any(|(id, _)| {
+                    let n = id.chars().count();
+                    n == 0 || n > 512
+                }) {
+                    return Err(RecordError::OutOfRange(
+                        "feature IDs in features must be 1 to 512 characters",
+                    ));
+                }
                 check_levels(r.levels)
             }
             Record::Item(i) => {

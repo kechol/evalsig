@@ -127,6 +127,8 @@ pub struct RunMap {
     pub value_semantics: String,
     pub output_type: Option<String>,
     pub levels: Option<u32>,
+    /// Per feature ID, its `expected` class and `lineage` (D-049).
+    pub features: Option<BTreeMap<String, evalsig_core::records::FeatureMeta>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -282,6 +284,7 @@ struct Run {
     value_semantics: String,
     output_type: Option<String>,
     levels: Option<u32>,
+    features: Option<BTreeMap<String, evalsig_core::records::FeatureMeta>>,
 }
 
 #[derive(Debug, Clone)]
@@ -500,6 +503,7 @@ fn compile_parts(m: &Mapping, judgments: bool) -> Result<Compiled, MapError> {
             .as_deref()
             .map(|o| c.choice("run.output_type", o)),
         levels: r.levels,
+        features: r.features.clone(),
     };
     let i = &m.item;
     let item = Item {
@@ -791,6 +795,7 @@ pub fn from_import(import: &Import) -> Result<Compiled, MapError> {
         value_semantics: semantics,
         output_type: m.output_type.map(|o| unit_name(&o)),
         levels: m.levels,
+        features: None,
     };
     let (judgment, label) = match import.import_as {
         ImportAs::Judgment => (
@@ -1225,6 +1230,9 @@ impl Applier<'_> {
         }
         if let Some(l) = r.levels {
             run.insert("levels".into(), json!(l));
+        }
+        if let Some(f) = &r.features {
+            run.insert("features".into(), json!(f));
         }
         self.push_once(n, Json::Object(run));
         Ok(id)

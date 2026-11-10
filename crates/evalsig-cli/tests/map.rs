@@ -849,3 +849,87 @@ fn a_key_join_on_a_json_object_says_so() {
         "{v}"
     );
 }
+
+#[test]
+fn a_mapping_declares_what_its_features_are_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = std::fs::read_to_string(example("mapping.toml")).unwrap().replace(
+        "levels = 4\n",
+        "levels = 4\nfeatures = { \"priority.R01\" = { expected = \"positive\", lineage = \"R01\" } }\n",
+    );
+    let m = dir.path().join("mapping.toml");
+    std::fs::write(&m, mapping).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let ev = |args: &[&str]| evalsig(project.path()).args(args).output().unwrap();
+    assert!(ev(&["init"]).status.success());
+    let labels = example("custom-harness/labels.sample.json");
+    let out = ev(&[
+        "import",
+        "--mapping",
+        m.to_str().unwrap(),
+        "--arg",
+        "run-id=r1",
+        "--arg",
+        &format!("labels={}", labels.display()),
+        example("custom-harness/run-log.sample.jsonl")
+            .to_str()
+            .unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let export = project.path().join("out");
+    assert!(
+        ev(&["export", "--to", "jsonl", "--out", export.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let text: String = std::fs::read_dir(&export)
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    assert!(
+        text.contains(r#""features":{"priority.R01":{"expected":"positive","lineage":"R01"}}"#),
+        "{text}"
+    );
+}
+
+#[test]
+fn bad_feature_declarations_are_refused_where_they_are_written() {
+    let dir = tempfile::tempdir().unwrap();
+    for bad in [
+        "{ a = { expected = \"maybe\" } }",
+        "{ a = { typo = 1 } }",
+        "5",
+    ] {
+        let mapping = std::fs::read_to_string(example("mapping.toml"))
+            .unwrap()
+            .replace("levels = 4\n", &format!("levels = 4\nfeatures = {bad}\n"));
+        let m = dir.path().join("mapping.toml");
+        std::fs::write(&m, mapping).unwrap();
+        let out = Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["--format", "json", "map", "test"])
+            .arg(&m)
+            .arg(example("custom-harness/run-log.sample.jsonl"))
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success() && err.contains("mapping.toml"),
+            "{bad}: {err}"
+        );
+    }
+    // An empty feature ID is refused by record validation.
+    let records = dir.path().join("r.jsonl");
+    std::fs::write(
+        &records,
+        r#"{"record":"run","run_id":"r","system":{"id":"s","version":"1"},"features":{"":{"expected":"positive"}}}"#,
+    )
+    .unwrap();
+    let out = Command::cargo_bin("evalsig")
+        .unwrap()
+        .args(["--format", "json", "validate", "--records"])
+        .arg(&records)
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{out:?}");
+}

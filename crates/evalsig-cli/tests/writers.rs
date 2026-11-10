@@ -38,7 +38,8 @@ sys.path.insert(0, sys.argv[1])
 from evalsig_records import Writer, missing
 with open(sys.argv[2], "w", encoding="utf-8") as f:
     w = Writer(f)
-    w.run("r1", system_id="triage", system_version="v1", output_type="ordinal", levels=4)
+    w.run("r1", system_id="triage", system_version="v1", output_type="ordinal", levels=4,
+          features={"R10-1": {"expected": "positive", "lineage": "R10"}})
     w.run("r2", system_id="grader", system_version="v1", output_type="score", value_semantics="score", grader={"id": "rubric"})
     w.item("t-1", cluster="c-1", strata={"lang": "en"}, occurred_at="2026-09-01T00:00:00Z")
     w.label("t-1", rater_id="rater:a", source="human", value=True)

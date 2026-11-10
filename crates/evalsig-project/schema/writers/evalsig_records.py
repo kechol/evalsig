@@ -72,7 +72,7 @@ class Writer:
         self.f.write(json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
 
     def run(self, run_id, system_id, system_version, output_type, value_semantics="decision",
-            levels=None, grader=None):
+            levels=None, grader=None, features=None):
         if output_type not in OUTPUT_TYPES:
             raise ValueError(f"output_type is one of {OUTPUT_TYPES}")
         if value_semantics == "score" and grader is None:
@@ -80,7 +80,7 @@ class Writer:
         self.write(_put({"record": "run", "run_id": run_id,
                          "system": {"id": system_id, "version": system_version},
                          "value_semantics": value_semantics, "output_type": output_type},
-                        levels=levels, grader=grader))
+                        levels=levels, grader=grader, features=features))
 
     def item(self, item_id, cluster=None, strata=None, weight=None, occurred_at=None,
              input_ref=None, reference_ref=None, attrs=None):

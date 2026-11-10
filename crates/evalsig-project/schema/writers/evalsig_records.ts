@@ -84,6 +84,7 @@ export class RecordsWriter {
     valueSemantics?: "decision" | "score";
     levels?: number;
     grader?: { id?: string; version?: string; kind?: string };
+    features?: Record<string, { expected?: "positive" | "negative"; lineage?: string }>;
   }): void {
     const semantics = r.valueSemantics ?? "decision";
     if (semantics === "score" && r.grader === undefined) {
@@ -98,7 +99,7 @@ export class RecordsWriter {
           value_semantics: semantics,
           output_type: r.outputType,
         },
-        { levels: r.levels, grader: r.grader },
+        { levels: r.levels, grader: r.grader, features: r.features },
       ),
     );
   }

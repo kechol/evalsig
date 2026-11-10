@@ -197,6 +197,34 @@
     "levels": {
      "type": "integer",
      "minimum": 2
+    },
+    "features": {
+     "type": "object",
+     "description": "Per feature ID, its expected class and lineage (D-049), copied to the run record as written",
+     "additionalProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "expected": {
+        "enum": [
+         "positive",
+         "negative"
+        ],
+        "description": "The reference class the feature should point to when it fires"
+       },
+       "lineage": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "description": "A name kept across runs when the feature is renamed or split; absent means the feature ID"
+       }
+      }
+     },
+     "propertyNames": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     }
     }
    }
   },

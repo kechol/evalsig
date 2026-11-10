@@ -562,6 +562,34 @@
     "levels": {
      "type": "integer",
      "minimum": 2
+    },
+    "features": {
+     "type": "object",
+     "description": "What each feature is written to do, by feature ID (D-049)",
+     "additionalProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "expected": {
+        "enum": [
+         "positive",
+         "negative"
+        ],
+        "description": "The reference class the feature should point to when it fires"
+       },
+       "lineage": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "description": "A name kept across runs when the feature is renamed or split; absent means the feature ID"
+       }
+      }
+     },
+     "propertyNames": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     }
     }
    },
    "allOf": [

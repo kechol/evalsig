@@ -203,7 +203,7 @@ Unknown records and unknown fields are rejected. Examples:
 | `label` | `item_id`, `rater_id`, `task`, `label_replicate`, adjudication or not (`kind`), `version` | Value or `missing`; `source` (`human`, `model`, `consensus`, `external`); `kind` (`independent`, `revision`, `adjudication`); `reason`; `source_ref` |
 | `judgment` | `item_id`, `run_id`, `task`, `gen_replicate`, `grade_replicate` | Value or `missing`; `features` that fired; `output_ref`, `rationale_ref`; `cost`; `source_ref` |
 | `preference` | `item_id`, `left_run_id`, `right_run_id`, `rater_id`, `task`, `grade_replicate` | `outcome` (`left`, `right`, `tie`) or `missing`. A judgment with the presentation order swapped is a separate record |
-| `run` | `run_id` | `system` (id, version, config hash), `value_semantics`, `output_type` and `levels`, `grader` (id, version, config hash, kind), `harness` (name, version, run reference) |
+| `run` | `run_id` | `system` (id, version, config hash), `value_semantics`, `output_type` and `levels`, `grader` (id, version, config hash, kind), `harness` (name, version, run reference), `features` (per feature ID its `expected` class and `lineage`, D-049; a mapping file sets them in `[run] features`, an `[[import]]` block cannot, and since they are part of the run record, editing them changes an approved baseline's hash) |
 | `content` | `ref` | Catalogue of a body: media type, size, storage state (`full`, `hash`, `redact`, `purged`) |
 | `attribution` | `item_id`, `run_id`, `task`, `rater_id` | `causes`: the rater's own cause names for the run's error on the item, made after the run (D-048) |
 
