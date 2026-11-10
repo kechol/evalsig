@@ -86,7 +86,14 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Computed, Er
         &d.records,
         &checks::overrides(args.checks, ArmChecks::default()),
     );
-    let mut warnings = Vec::new();
+    let ec = report.expected_cost.as_ref();
+    let mut warnings = analysis::cost_warnings(
+        config,
+        report.value_semantics,
+        ec.is_some(),
+        ec.and_then(|c| c.by_stratum.as_ref())
+            .map(|b| (b.present(), b.mix)),
+    );
     if undated_skipped > 0 {
         warnings.push(Warning {
             code: "undated_label_revisions".into(),

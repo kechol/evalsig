@@ -1028,6 +1028,37 @@ fn discrimination(v: &View, q: &[(String, String)]) -> Result<Screen, Error> {
         "",
         l,
     );
+    if let Some(ec) = r["expected_cost"].as_object() {
+        // The overall value, then each stratum's, on one axis (D-041).
+        // Without a `by` stratum the one row is the run.
+        let overall = if ec.contains_key("strata") {
+            T::AllStrata.text(l).to_owned()
+        } else {
+            run.clone()
+        };
+        let mut rows = vec![svg::Row {
+            label: overall,
+            point: &ec["value"],
+            ci: &ec["ci"],
+        }];
+        for s in ec
+            .get("strata")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            rows.push(svg::Row {
+                label: s["stratum"].as_str().unwrap_or("—").to_owned(),
+                point: &s["value"],
+                ci: &s["ci"],
+            });
+        }
+        // No row has a number when a stratum lacks positives or negatives.
+        let plot = svg::intervals(&rows, false);
+        if !plot.is_empty() {
+            body.push_str(&html::panel(T::ExpectedCost.text(l), "", &plot));
+        }
+    }
     if r["sdt"].is_object() {
         body.push_str(&html::panel(
             T::EqualVarianceModel.text(l),

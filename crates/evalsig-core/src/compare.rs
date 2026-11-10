@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::bootstrap::{self, Strata};
 use crate::config::Cost;
-use crate::cost::{self, CostPart, Mix, Sums};
+use crate::cost::{self, Clustered, CostPart, Mix, Sums};
 use crate::interval::newcombe;
 use crate::numeric::{Rng, Running, mean, student_t, sum, two_sided_z, variance};
 use crate::paired::{self, Discordant, Transition, Verdict};
@@ -65,6 +65,13 @@ pub struct ByStratum {
     pub mix: Mix,
     /// One row per stratum.
     pub strata: Vec<StratumDelta>,
+}
+
+impl ByStratum {
+    /// The strata present.
+    pub fn present(&self) -> Vec<Option<String>> {
+        self.strata.iter().map(|s| s.stratum.clone()).collect()
+    }
 }
 
 /// Expected cost in one stratum of both arms (D-041).
@@ -421,56 +428,11 @@ fn cost_delta(
         .copied()
         .filter(|i| pa.contains_key(*i) && pb.contains_key(*i))
         .collect();
-    let strata = cost::strata_of(items.iter().map(|i| &pa[*i]));
-    let mix = cost::mix(&strata, c);
-    let mut clusters: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for i in &items {
-        clusters.entry(pa[*i].cluster.as_str()).or_default().push(i);
-    }
-    // Each cluster's sums in both arms for the strata its items fall in, taken once.
-    let totals: Vec<Vec<(usize, [Sums; 2])>> = clusters
-        .values()
-        .map(|is| {
-            let mut entries: Vec<(usize, [Sums; 2])> = Vec::new();
-            for i in is {
-                let g = strata
-                    .binary_search(&pa[*i].stratum)
-                    .expect("the stratum of a paired item");
-                let at = match entries.iter().position(|e| e.0 == g) {
-                    Some(at) => at,
-                    None => {
-                        entries.push((g, [Sums::default(); 2]));
-                        entries.len() - 1
-                    }
-                };
-                entries[at].1[0].add(&pa[*i].sums);
-                entries[at].1[1].add(&pb[*i].sums);
-            }
-            entries
-        })
-        .collect();
-    let add = |drawn: &mut dyn Iterator<Item = usize>| {
-        let mut out = [
-            vec![Sums::default(); strata.len()],
-            vec![Sums::default(); strata.len()],
-        ];
-        for c in drawn {
-            for (g, [a, b]) in &totals[c] {
-                out[0][*g].add(a);
-                out[1][*g].add(b);
-            }
-        }
-        out
-    };
-    // Clusters with items in each stratum: a stratum's interval needs MIN_UNITS of them.
-    let mut carrying = vec![0; strata.len()];
-    for entries in &totals {
-        for (g, _) in entries {
-            carrying[*g] += 1;
-        }
-    }
+    let groups = Clustered::new(&items, [pa, pb]);
+    let strata = &groups.strata;
+    let mix = cost::mix(strata, c);
     let overall = |s: &[Vec<Sums>; 2]| {
-        let ec = |arm: &[Sums]| cost::combine(&strata, arm, c, mix);
+        let ec = |arm: &[Sums]| cost::combine(strata, arm, c, mix);
         ec(&s[0]).zip(ec(&s[1]))
     };
     let one = |s: &[Vec<Sums>; 2], g: usize| {
@@ -478,24 +440,16 @@ fn cost_delta(
         cost::stratum_value(&s[0][g], pi).zip(cost::stratum_value(&s[1][g], pi))
     };
     let diff = |p: Option<(f64, f64)>| p.map(|(x, y)| x - y);
-    let all = add(&mut (0..totals.len()));
+    let all = groups.sums(0..groups.n_clusters());
     let point = overall(&all);
     let delta = diff(point);
-    // Replicates of the overall difference, then of each stratum's, from the same draws.
-    let reps = if delta.is_some() && totals.len() >= bootstrap::MIN_UNITS {
-        let mut rng = Rng::new(o.seed);
-        bootstrap::replicates_many(
-            totals.len(),
-            None,
+    let reps = if delta.is_some() {
+        groups.replicates(
             o.bootstrap,
-            &mut rng,
-            strata.len() + 1,
-            |drawn| {
-                let s = add(&mut drawn.iter().copied());
-                std::iter::once(diff(overall(&s)))
-                    .chain((0..strata.len()).map(|g| diff(one(&s, g))))
-                    .collect::<Vec<_>>()
-            },
+            o.seed,
+            c.by.is_some(),
+            |s| diff(overall(s)),
+            |s, g| diff(one(s, g)),
         )
     } else {
         vec![Vec::new(); strata.len() + 1]
@@ -504,7 +458,7 @@ fn cost_delta(
     let overall_reps = reps.next().expect("one list per statistic");
     let inference = if delta.is_none() {
         NO_INFERENCE
-    } else if totals.len() < bootstrap::MIN_UNITS {
+    } else if groups.n_clusters() < bootstrap::MIN_UNITS {
         TOO_FEW_UNITS
     } else {
         bootstrap_inference(overall_reps, delta, o)
@@ -531,9 +485,7 @@ fn cost_delta(
                         baseline: point.map(|p| p.0),
                         candidate: point.map(|p| p.1),
                         delta: diff(point),
-                        ci: point
-                            .filter(|_| carrying[g] >= bootstrap::MIN_UNITS)
-                            .and_then(|_| bootstrap::percentile_interval(r, o.level)),
+                        ci: groups.stratum_ci(g, point.is_some(), r, o.level),
                     }
                 })
                 .collect(),

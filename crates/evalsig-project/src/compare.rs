@@ -9,7 +9,7 @@ use evalsig_core::compare::{self, Baseline, Comparison, Options};
 use evalsig_core::config::Config;
 use evalsig_core::paired::Verdict;
 use evalsig_core::preference;
-use evalsig_core::records::{Item, Label, Preference, Record, Run, ValueSemantics};
+use evalsig_core::records::{Item, Label, Preference, Record, Run};
 use evalsig_core::replicates;
 use evalsig_core::report::{self, Fill, MetricId, Prepared};
 use evalsig_core::split::Part;
@@ -516,28 +516,17 @@ pub fn compute(
                     .into(),
         });
     }
-    if let Some(cost) = &config.cost {
-        let rows: Vec<&compare::MetricDelta> = comparisons
-            .iter()
-            .flat_map(|(_, _, c, _)| &c.metrics)
-            .filter(|m| m.id == MetricId::ExpectedCost)
-            .collect();
-        if rows.is_empty() && base.semantics() == ValueSemantics::Decision {
-            warnings.push(Warning {
-                code: "expected_cost_not_computed".into(),
-                message: "[cost] is set but expected cost needs every judged value to be a level 0 … k−1 of its matrix, and a reference".into(),
-            });
-        }
-        if let Some(b) = rows.iter().find_map(|m| m.by_stratum.as_ref()) {
-            let present: Vec<Option<String>> = b.strata.iter().map(|s| s.stratum.clone()).collect();
-            for (code, message) in evalsig_core::cost::notes(cost, &present, b.mix) {
-                warnings.push(Warning {
-                    code: code.into(),
-                    message,
-                });
-            }
-        }
-    }
+    let ec = comparisons
+        .iter()
+        .flat_map(|(_, _, c, _)| &c.metrics)
+        .find(|m| m.id == MetricId::ExpectedCost);
+    warnings.extend(analysis::cost_warnings(
+        config,
+        base.semantics(),
+        ec.is_some(),
+        ec.and_then(|m| m.by_stratum.as_ref())
+            .map(|b| (b.present(), b.mix)),
+    ));
     if undated_skipped > 0 {
         warnings.push(Warning {
             code: "undated_label_revisions".into(),

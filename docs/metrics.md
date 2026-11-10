@@ -291,6 +291,9 @@ production prevalence π, and optionally a range of the cost ratio.
   cluster-bootstrap interval and the §7.1 verdict with `min_effect.expected_cost`, and with
   `by` one row per stratum with its own interval (none below five clusters with items in
   the stratum). One set of resamples gives every interval.
+- **In `report`.** `expected_cost` gives the run's EC overall and, with `by`, per stratum
+  with each stratum's weighted item count, all with cluster-bootstrap intervals from one set
+  of resamples; the dashboard's discrimination screen draws them.
 - Reference cases: `cost`, `misc`.
 
 ## 5. Feature likelihood ratios

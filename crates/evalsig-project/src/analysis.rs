@@ -2,8 +2,11 @@
 //! they resolve to.
 
 use evalsig_core::config::{Config, Estimand, ReferenceMode};
-use evalsig_core::records::DEFAULT_TASK;
+use evalsig_core::cost::{self, Mix};
+use evalsig_core::records::{DEFAULT_TASK, ValueSemantics};
 use evalsig_core::report::{Sections, Settings};
+
+use crate::envelope::Warning;
 
 /// The options shared by the analyses. Their serde names are the recorded form of a
 /// request (D-030).
@@ -67,6 +70,34 @@ impl Analysis {
         }
         Ok(())
     }
+}
+
+/// Warnings on how `[cost]` met a run's data (D-041): whether expected cost was
+/// computed, and with a `by` stratum the strata present and how they were combined.
+pub fn cost_warnings(
+    config: &Config,
+    semantics: ValueSemantics,
+    computed: bool,
+    by: Option<(Vec<Option<String>>, Mix)>,
+) -> Vec<Warning> {
+    let Some(cost) = &config.cost else {
+        return Vec::new();
+    };
+    let notes = match by {
+        Some((present, mix)) => cost::notes(cost, &present, mix),
+        None if !computed && semantics == ValueSemantics::Decision => {
+            let (code, message) = cost::NOT_COMPUTED;
+            vec![(code, message.to_owned())]
+        }
+        None => Vec::new(),
+    };
+    notes
+        .into_iter()
+        .map(|(code, message)| Warning {
+            code: code.into(),
+            message,
+        })
+        .collect()
 }
 
 /// The settings for these options under a configuration; `prevalence`, `by` and

@@ -76,6 +76,8 @@ pub enum T {
     ItemsWithAnyDisagreement,
     UpperBound,
     Dprime,
+    ExpectedCost,
+    AllStrata,
     Criterion,
     Gained,
     Lost,
@@ -211,6 +213,8 @@ impl T {
             }
             T::UpperBound => ("Upper bound", "上限"),
             T::Dprime => ("d′ (sensitivity)", "d′（弁別力）"),
+            T::ExpectedCost => ("Expected cost", "期待コスト"),
+            T::AllStrata => ("all strata", "全体"),
             T::Criterion => ("c (criterion)", "c（判定基準）"),
             T::Gained => ("Gained", "増えた"),
             T::Lost => ("Lost", "減った"),

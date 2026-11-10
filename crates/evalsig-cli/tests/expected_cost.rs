@@ -282,3 +282,45 @@ fn cost_settings_that_do_not_fit_the_levels_are_reported() {
             .any(|m| m["metric"] == "expected_cost")
     );
 }
+
+#[test]
+fn report_gives_expected_cost_overall_and_per_stratum() {
+    let dir = project(&format!("{STRATA}mix = 0.75\n"));
+    let out = evalsig(dir.path())
+        .args(["--format", "json", "report", "base"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ec = &v["results"]["expected_cost"];
+    let pi = BTreeMap::from([("S-1", 0.29), ("S-2", 0.12)]);
+    let a = by_stratum(0, &pi);
+    close(&ec["value"], 0.25 * a["S-1"].0 + 0.75 * a["S-2"].0);
+    assert_eq!(ec["interval"], "bootstrap");
+    assert_eq!(ec["n_used"], 80);
+    assert_eq!(ec["mix"], "configured");
+    let (lo, hi) = (ec["ci"][0].as_f64().unwrap(), ec["ci"][1].as_f64().unwrap());
+    assert!(lo <= ec["value"].as_f64().unwrap() && ec["value"].as_f64().unwrap() <= hi);
+    for s in ec["strata"].as_array().unwrap() {
+        let g = s["stratum"].as_str().unwrap();
+        close(&s["value"], a[g].0);
+        close(&s["n"], a[g].1);
+        assert!(s["ci"].is_array(), "{s}");
+    }
+    // The Markdown report shows it too.
+    let out = evalsig(dir.path())
+        .args(["--format", "md", "report", "base"])
+        .output()
+        .unwrap();
+    let md = String::from_utf8(out.stdout).unwrap();
+    assert!(md.contains("Expected cost ") && md.contains("| S-1 | 0.2900 | 30.0 |"), "{md}");
+    // A run without [cost] has none, and says nothing about it.
+    let dir = project("");
+    let out = evalsig(dir.path())
+        .args(["--format", "json", "report", "base"])
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v["results"].get("expected_cost").is_none());
+    assert!(!warned(&v, "expected_cost_not_computed"));
+}

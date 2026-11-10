@@ -24,7 +24,9 @@ longer reproduces.
 - `compare` compares expected cost (`expected_cost`) when `[cost]` is set and the runs'
   judgments are levels, with a paired cluster-bootstrap interval and a verdict (D-041).
   `[cost] by` and `[cost.strata."<value>"]` set a prevalence, a matrix and a production
-  share per stratum; the comparison then has one row per stratum.
+  share per stratum; the comparison then has one row per stratum. `report` gives the run's
+  expected cost overall and per stratum with cluster-bootstrap intervals, and the
+  dashboard's discrimination screen draws it.
 
 ### Metric definitions
 

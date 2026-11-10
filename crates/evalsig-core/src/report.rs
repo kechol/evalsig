@@ -242,6 +242,9 @@ pub struct Report {
     /// Proxy-corrected human-scale estimate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyEstimate>,
+    /// Expected cost under `[cost]` (D-041).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_cost: Option<crate::cost::CostSummary>,
 }
 
 /// One item of the run: its replicates (judged value or missing reason, one per
@@ -707,6 +710,13 @@ pub fn from_prepared(
             .as_deref()
             .map(|r| p.proxy_estimate(items, labels, r))
             .transpose()?,
+        // A full cluster bootstrap: only the detail tier asks for it.
+        expected_cost: s
+            .cost
+            .as_ref()
+            .filter(|_| s.sections.detail)
+            .zip(p.cost_parts())
+            .map(|(c, parts)| crate::cost::summary(&parts, c, s.bootstrap, s.seed, s.level)),
     })
 }
 

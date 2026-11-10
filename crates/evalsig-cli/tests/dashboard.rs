@@ -99,7 +99,7 @@ fn every_screen_renders_for_the_examples() {
     evalsig(ordinal.path()).arg("init").assert().success();
     std::fs::write(
         ordinal.path().join(".evalsig/config.toml"),
-        "[project]\nname = \"example\"\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n[stats]\nseed = 20261029\n",
+        "[project]\nname = \"example\"\npositive = { ordinal_at_least = 2 }\ndecision = { ordinal_at_least = 2 }\n[stats]\nseed = 20261029\n[cost]\nmatrix = [[0, 1, 3, 5], [9, 6, 1, 0]]\nprevalence = 0.12\n",
     )
     .unwrap();
     evalsig(ordinal.path())
@@ -159,6 +159,14 @@ fn every_screen_renders_for_the_examples() {
                 !page.contains("http://") || page.contains("xmlns=\"http://www.w3.org/2000/svg\"")
             );
         }
+        // With [cost], the run screen shows expected cost (D-041).
+        let page = get(d.port, &format!("{base}discrimination"), &host);
+        assert_eq!(
+            page.contains("Expected cost"),
+            p == ordinal.path(),
+            "{}",
+            &page[..page.len().min(2000)]
+        );
         // The reproducibility screen shows that k-curve.
         let page = get(d.port, &format!("{base}reproducibility?run={run}"), &host);
         assert!(page.contains("Performance and cost by k"), "{page}");

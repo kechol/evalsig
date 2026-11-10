@@ -215,6 +215,34 @@ fn report(e: &Envelope) -> String {
     if let Some(c) = r["calibration"].as_object() {
         let _ = writeln!(s, "\nBrier score {}", num(&c["brier"]));
     }
+    if let Some(ec) = r["expected_cost"].as_object() {
+        let _ = writeln!(
+            s,
+            "\nExpected cost {} ({}, {}; {} items)",
+            num(&ec["value"]),
+            pair(&ec["ci"], num),
+            id(&ec["interval"]),
+            ec["n_used"],
+        );
+        if let Some(strata) = ec.get("strata").and_then(Value::as_array) {
+            let _ = writeln!(
+                s,
+                "\nStrata combined by {} shares.\n\n| Stratum | Prevalence | Items | Expected cost | Interval |\n|---|---:|---:|---:|---|",
+                id(&ec["mix"]),
+            );
+            for g in strata {
+                let _ = writeln!(
+                    s,
+                    "| {} | {} | {} | {} | {} |",
+                    inline(g["stratum"].as_str().unwrap_or("(none)")),
+                    num(&g["prevalence"]),
+                    g["n"],
+                    num(&g["value"]),
+                    pair(&g["ci"], num),
+                );
+            }
+        }
+    }
     if let Some(p) = r["proxy"].as_object() {
         let _ = writeln!(
             s,

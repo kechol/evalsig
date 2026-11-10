@@ -5,10 +5,13 @@
 //! production prevalence π, not the test set's share. Counts may be weighted, so a soft
 //! reference counts item i as s_i positive and 1 − s_i negative.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::Serialize;
 
+use crate::bootstrap;
 use crate::config::Cost;
-use crate::numeric::sum;
+use crate::numeric::{Rng, sum};
 
 /// Weights and weighted costs as a negative and as a positive (index 0 and 1), summed
 /// over items.
@@ -56,25 +59,211 @@ pub enum Mix {
     Observed,
 }
 
-/// The strata of the parts, in order.
-pub fn strata_of<'a>(parts: impl IntoIterator<Item = &'a CostPart>) -> Vec<Option<String>> {
-    let set: std::collections::BTreeSet<&Option<String>> =
-        parts.into_iter().map(|p| &p.stratum).collect();
-    set.into_iter().cloned().collect()
+/// Items' cost parts grouped by cluster for the bootstrap, in `A` arms that share items:
+/// each cluster keeps the sums of the strata its items fall in, taken once.
+pub struct Clustered<const A: usize> {
+    /// The strata of the items, in order.
+    pub strata: Vec<Option<String>>,
+    clusters: Vec<Vec<(usize, [Sums; A])>>,
 }
 
-/// The parts' sums per stratum of `strata`.
-pub fn sums<'a>(
-    strata: &[Option<String>],
-    parts: impl IntoIterator<Item = &'a CostPart>,
-) -> Vec<Sums> {
-    let mut out = vec![Sums::default(); strata.len()];
-    for p in parts {
-        if let Ok(g) = strata.binary_search(&p.stratum) {
-            out[g].add(&p.sums);
+impl<const A: usize> Clustered<A> {
+    /// Group `items`, which every arm has, by the first arm's clusters and strata.
+    pub fn new(items: &[&str], arms: [&BTreeMap<String, CostPart>; A]) -> Self {
+        let first = arms[0];
+        let strata: Vec<Option<String>> = items
+            .iter()
+            .map(|i| first[*i].stratum.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let mut by_cluster: BTreeMap<&str, Vec<(usize, [Sums; A])>> = BTreeMap::new();
+        for i in items {
+            let g = strata
+                .binary_search(&first[*i].stratum)
+                .expect("the stratum of an item");
+            let entries = by_cluster.entry(first[*i].cluster.as_str()).or_default();
+            let at = match entries.iter().position(|e| e.0 == g) {
+                Some(at) => at,
+                None => {
+                    entries.push((g, [Sums::default(); A]));
+                    entries.len() - 1
+                }
+            };
+            for (sums, arm) in entries[at].1.iter_mut().zip(arms) {
+                sums.add(&arm[*i].sums);
+            }
+        }
+        Clustered {
+            strata,
+            clusters: by_cluster.into_values().collect(),
         }
     }
-    out
+
+    /// Number of clusters, the bootstrap's resampling units.
+    pub fn n_clusters(&self) -> usize {
+        self.clusters.len()
+    }
+
+    /// Stratum `g`'s interval from its replicates, when it has a value and at least
+    /// [`bootstrap::MIN_UNITS`] clusters with items in it.
+    pub fn stratum_ci(
+        &self,
+        g: usize,
+        has_value: bool,
+        reps: Vec<f64>,
+        level: f64,
+    ) -> Option<(f64, f64)> {
+        let carrying = self
+            .clusters
+            .iter()
+            .filter(|entries| entries.iter().any(|e| e.0 == g))
+            .count();
+        (has_value && carrying >= bootstrap::MIN_UNITS)
+            .then(|| bootstrap::percentile_interval(reps, level))
+            .flatten()
+    }
+
+    /// Each arm's per-stratum sums over the drawn clusters.
+    pub fn sums(&self, drawn: impl Iterator<Item = usize>) -> [Vec<Sums>; A] {
+        let mut out: [Vec<Sums>; A] =
+            std::array::from_fn(|_| vec![Sums::default(); self.strata.len()]);
+        for c in drawn {
+            for (g, arms) in &self.clusters[c] {
+                for (acc, sums) in out.iter_mut().zip(arms) {
+                    acc[*g].add(sums);
+                }
+            }
+        }
+        out
+    }
+
+    /// Replicates of the overall statistic, then, with `per_stratum`, of each stratum's,
+    /// from one set of resamples; empty lists below [`bootstrap::MIN_UNITS`] clusters.
+    pub fn replicates(
+        &self,
+        b: u32,
+        seed: u64,
+        per_stratum: bool,
+        overall: impl Fn(&[Vec<Sums>; A]) -> Option<f64>,
+        stratum: impl Fn(&[Vec<Sums>; A], usize) -> Option<f64>,
+    ) -> Vec<Vec<f64>> {
+        let k = if per_stratum {
+            self.strata.len() + 1
+        } else {
+            1
+        };
+        if self.n_clusters() < bootstrap::MIN_UNITS {
+            return vec![Vec::new(); k];
+        }
+        let mut rng = Rng::new(seed);
+        bootstrap::replicates_many(self.n_clusters(), None, b, &mut rng, k, |drawn| {
+            let s = self.sums(drawn.iter().copied());
+            std::iter::once(overall(&s))
+                .chain((1..k).map(|g| stratum(&s, g - 1)))
+                .collect::<Vec<_>>()
+        })
+    }
+}
+
+/// A run's expected cost in `report` (D-041).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CostSummary {
+    /// Expected cost over the strata; `None` when a stratum lacks positives or negatives.
+    pub value: Option<f64>,
+    /// Cluster-bootstrap interval.
+    pub ci: Option<(f64, f64)>,
+    /// `bootstrap`, `too_few_units` or `none`.
+    pub interval: &'static str,
+    /// Items with a reference and a judged level.
+    pub n_used: usize,
+    /// With a `[cost] by` stratum: how strata were combined and one row per stratum.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub by_stratum: Option<StrataCost>,
+}
+
+/// Expected cost per stratum of one run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StrataCost {
+    /// How strata were combined into the overall value.
+    pub mix: Mix,
+    /// One row per stratum.
+    pub strata: Vec<StratumCost>,
+}
+
+impl StrataCost {
+    /// The strata present.
+    pub fn present(&self) -> Vec<Option<String>> {
+        self.strata.iter().map(|s| s.stratum.clone()).collect()
+    }
+}
+
+/// Expected cost in one stratum of one run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StratumCost {
+    /// The stratum's value; `None` for items without one.
+    pub stratum: Option<String>,
+    /// The stratum's production prevalence.
+    pub prevalence: f64,
+    /// Weighted number of items in the stratum.
+    pub n: f64,
+    /// Expected cost in the stratum.
+    pub value: Option<f64>,
+    /// Cluster-bootstrap interval; none below five clusters with items in the stratum.
+    pub ci: Option<(f64, f64)>,
+}
+
+/// One run's expected cost overall and per stratum, with cluster-bootstrap intervals.
+pub fn summary(
+    parts: &BTreeMap<String, CostPart>,
+    cost: &Cost,
+    b: u32,
+    seed: u64,
+    level: f64,
+) -> CostSummary {
+    let items: Vec<&str> = parts.keys().map(String::as_str).collect();
+    let groups = Clustered::new(&items, [parts]);
+    let strata = &groups.strata;
+    let mix = mix(strata, cost);
+    let overall = |s: &[Vec<Sums>; 1]| combine(strata, &s[0], cost, mix);
+    let one = |s: &[Vec<Sums>; 1], g: usize| {
+        stratum_value(&s[0][g], cost.prevalence_of(strata[g].as_deref()))
+    };
+    let all = groups.sums(0..groups.n_clusters());
+    let value = overall(&all);
+    let mut reps = groups
+        .replicates(b, seed, cost.by.is_some(), overall, one)
+        .into_iter();
+    let first = reps.next().expect("one list per statistic");
+    let (ci, interval) = match value {
+        None => (None, "none"),
+        Some(_) if groups.n_clusters() < bootstrap::MIN_UNITS => (None, "too_few_units"),
+        Some(_) => (bootstrap::percentile_interval(first, level), "bootstrap"),
+    };
+    CostSummary {
+        value,
+        ci,
+        interval,
+        n_used: items.len(),
+        by_stratum: cost.by.is_some().then(|| StrataCost {
+            mix,
+            strata: strata
+                .iter()
+                .zip(reps)
+                .enumerate()
+                .map(|(g, (stratum, r))| {
+                    let value = one(&all, g);
+                    StratumCost {
+                        stratum: stratum.clone(),
+                        prevalence: cost.prevalence_of(stratum.as_deref()),
+                        n: all[0][g].total(),
+                        value,
+                        ci: groups.stratum_ci(g, value.is_some(), r, level),
+                    }
+                })
+                .collect(),
+        }),
+    }
 }
 
 /// Configured when every stratum present has a production share.
@@ -86,11 +275,17 @@ pub fn mix(strata: &[Option<String>], cost: &Cost) -> Mix {
     }
 }
 
-/// How `[cost]` met the data, as (code, message) warnings: strata combined by their
+/// The warning when `[cost]` is set but a run's judgments give no expected cost.
+pub const NOT_COMPUTED: (&str, &str) = (
+    "expected_cost_not_computed",
+    "[cost] is set but expected cost needs every judged value to be a level 0 … k−1 of its matrix, and a reference",
+);
+
+/// How `[cost] by` met the data, as (code, message) warnings: strata combined by their
 /// counts, and configured strata that no item has (a likely misspelt value).
 pub fn notes(cost: &Cost, present: &[Option<String>], mix: Mix) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
-    if cost.by.is_some() && mix == Mix::Observed {
+    if mix == Mix::Observed {
         out.push((
             "stratum_mix_observed",
             "expected cost combines strata by their item counts, not production shares; give every stratum a mix under [cost.strata]".to_owned(),
@@ -106,7 +301,7 @@ pub fn notes(cost: &Cost, present: &[Option<String>], mix: Mix) -> Vec<(&'static
         out.push((
             "cost_stratum_unmatched",
             format!(
-                "no compared item has these values of the [cost] by stratum, so their settings are unused: {}",
+                "no item has these values of the [cost] by stratum, so their settings are unused: {}",
                 unmatched.join(", ")
             ),
         ));
