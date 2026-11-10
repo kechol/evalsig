@@ -535,3 +535,72 @@ fn the_langfuse_example_maps_judge_and_annotation_scores() {
     assert_eq!(accuracy["value"], 0.75, "{accuracy}");
     assert_eq!(v["results"]["reference"]["raters"], 2);
 }
+
+/// The bytes of a file gzipped and in Zstandard (D-045).
+fn compressed(src: &Path, dir: &Path, stem: &str) -> [std::path::PathBuf; 2] {
+    use std::io::Write as _;
+    let text = std::fs::read(src).unwrap();
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    e.write_all(&text).unwrap();
+    let gz = dir.join(format!("{stem}.gz"));
+    std::fs::write(&gz, e.finish().unwrap()).unwrap();
+    let zst = dir.join(format!("{stem}.zst"));
+    std::fs::write(
+        &zst,
+        ruzstd::encoding::compress_to_vec(&text[..], ruzstd::encoding::CompressionLevel::Fastest),
+    )
+    .unwrap();
+    [gz, zst]
+}
+
+#[test]
+fn compressed_logs_map_and_import_as_their_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let mapping = example("mapping.toml");
+    let log = example("custom-harness/run-log.sample.jsonl");
+    let plain = map_test(&mapping, &log, 0);
+    for file in compressed(&log, dir.path(), "run-log.jsonl") {
+        let got = map_test(&mapping, &file, 0);
+        assert_eq!(
+            got["results"]["records"], plain["results"]["records"],
+            "{file:?}"
+        );
+        let out = Command::cargo_bin("evalsig")
+            .unwrap()
+            .args(["--format", "json", "map", "probe"])
+            .arg(&file)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(v["results"]["probe"]["shape"], "jsonl", "{v}");
+    }
+    // A compressed canonical records file imports like the plain one.
+    for file in compressed(&example("records.jsonl"), dir.path(), "records.jsonl") {
+        let project = tempfile::tempdir().unwrap();
+        let ev = |args: &[&str]| {
+            Command::cargo_bin("evalsig")
+                .unwrap()
+                .env("EVALSIG_ACTOR", "user:test")
+                .arg("--project")
+                .arg(project.path())
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        assert!(ev(&["init"]).status.success());
+        let out = ev(&[
+            "--format",
+            "json",
+            "validate",
+            "--records",
+            file.to_str().unwrap(),
+        ]);
+        assert!(out.status.success(), "{out:?}");
+        let out = ev(&["--format", "json", "import", file.to_str().unwrap()]);
+        assert!(out.status.success(), "{out:?}");
+        let runs: Value =
+            serde_json::from_slice(&ev(&["--format", "json", "runs"]).stdout).unwrap();
+        assert!(!runs["results"]["runs"].as_array().unwrap().is_empty());
+    }
+}

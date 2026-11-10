@@ -87,7 +87,7 @@ fn probe_rows(
 ) -> Result<(probe::Probe, Vec<serde_json::Value>), Error> {
     let shape = Shape::from_extension(file).ok_or_else(|| {
         Error::usage(format!("cannot tell the format of {}", file.display()))
-            .with_hint("name the file .json, .jsonl, .ndjson, .csv, .eval or .zip")
+            .with_hint("name the file .json, .jsonl, .ndjson, .csv, .eval or .zip, optionally followed by .gz, .zst or .zstd")
     })?;
     let limits = Limits {
         max_bytes,
@@ -150,11 +150,7 @@ fn draft_command(file: &Path, out: &Path, force: bool, max_bytes: u64) -> Result
         p = probe::probe(Shape::Json, elements, false);
         records_path = Some(rp);
     }
-    let name = file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("records")
-        .to_owned();
+    let name = evalsig_adapters::limits::content_stem(file).unwrap_or_else(|| "records".to_owned());
     let d = draft::draft(&name, &p, records_path.as_deref());
     let text = toml::to_string(&d.mapping).expect("tables serialize");
     // Written beside the target and renamed over it, so a link at the destination is

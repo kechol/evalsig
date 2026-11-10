@@ -62,7 +62,8 @@ fn bounded(mut r: impl Read, limit: u64, what: &str) -> Result<Vec<u8>, LimitErr
     Ok(out)
 }
 
-/// A whole file, refused before reading if it is larger than the limit.
+/// A whole file, refused before reading if it is larger than the limit; gzip and
+/// Zstandard files are decompressed within the same limit (D-045).
 pub fn read_file(path: &Path, limits: &Limits) -> Result<Vec<u8>, LimitError> {
     let what = path.display().to_string();
     let file = std::fs::File::open(path)?;
@@ -72,7 +73,66 @@ pub fn read_file(path: &Path, limits: &Limits) -> Result<Vec<u8>, LimitError> {
             limit: limits.max_bytes,
         });
     }
-    bounded(file, limits.max_bytes, &what)
+    let bytes = bounded(file, limits.max_bytes, &what)?;
+    match bytes.get(..4) {
+        Some([0x1f, 0x8b, ..]) => gzip(&bytes, limits.max_bytes, &what),
+        Some([0x28, 0xb5, 0x2f, 0xfd]) => zstd(&bytes, limits.max_bytes, &what),
+        _ => Ok(bytes),
+    }
+}
+
+/// The extension of a file's content, past a `.gz`, `.zst` or `.zstd` suffix, in lower
+/// case: `jsonl` for `run.jsonl.gz`.
+pub fn content_extension(path: &Path) -> Option<String> {
+    let ext = |p: &Path| p.extension()?.to_str().map(str::to_ascii_lowercase);
+    match ext(path)?.as_str() {
+        "gz" | "zst" | "zstd" => ext(&path.with_extension("")),
+        other => Some(other.to_owned()),
+    }
+}
+
+/// Decompress gzip members of at most `limit` bytes in all.
+pub fn gzip(bytes: &[u8], limit: u64, what: &str) -> Result<Vec<u8>, LimitError> {
+    decompressed(flate2::read::MultiGzDecoder::new(bytes), limit, what)
+}
+
+/// A file as a buffered reader of its content for readers that go line by line: gzip
+/// and Zstandard are decompressed as they are read, and fail past `limit` bytes.
+pub fn open(path: &Path, limit: u64) -> std::io::Result<Box<dyn std::io::BufRead>> {
+    use std::io::{BufRead as _, BufReader};
+    let mut r = BufReader::new(std::fs::File::open(path)?);
+    let capped = |inner: Box<dyn Read>| -> Box<dyn std::io::BufRead> {
+        Box::new(BufReader::new(Capped {
+            inner,
+            left: limit,
+            limit,
+        }))
+    };
+    Ok(match r.fill_buf()?.get(..4) {
+        Some([0x1f, 0x8b, ..]) => capped(Box::new(flate2::bufread::MultiGzDecoder::new(r))),
+        Some([0x28, 0xb5, 0x2f, 0xfd]) => capped(Box::new(ZstdFrames::new(r)?)),
+        _ => Box::new(r),
+    })
+}
+
+/// A file name without its compression suffix and extension: `run` for `run.jsonl.gz`.
+pub fn content_stem(path: &Path) -> Option<String> {
+    let inner = match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "gz" | "zst" | "zstd" => path.with_extension(""),
+        _ => path.to_path_buf(),
+    };
+    inner.file_stem()?.to_str().map(str::to_owned)
+}
+
+/// `bounded` over a decoder, whose read errors are decompression errors.
+fn decompressed(r: impl Read, limit: u64, what: &str) -> Result<Vec<u8>, LimitError> {
+    bounded(r, limit, what).map_err(|e| match e {
+        LimitError::Io(io) => LimitError::Decompress {
+            what: what.to_owned(),
+            message: io.to_string(),
+        },
+        other => other,
+    })
 }
 
 /// Check that a JSON document nests no deeper than the limit, before parsing.
@@ -128,18 +188,62 @@ fn depth_scan(bytes: &[u8], limits: &Limits, per_line: bool) -> Result<(), Limit
 
 /// Decompress a zstd frame of at most `limit` bytes.
 pub fn zstd(bytes: &[u8], limit: u64, what: &str) -> Result<Vec<u8>, LimitError> {
-    let decoder =
-        ruzstd::decoding::StreamingDecoder::new(bytes).map_err(|e| LimitError::Decompress {
-            what: what.to_owned(),
-            message: e.to_string(),
+    let frames = ZstdFrames::new(bytes).map_err(|e| LimitError::Decompress {
+        what: what.to_owned(),
+        message: e.to_string(),
+    })?;
+    decompressed(frames, limit, what)
+}
+
+/// Every frame of a Zstandard stream in turn: ruzstd's decoder stops after one, while
+/// `zstd` and parallel compressors write several.
+struct ZstdFrames<R: std::io::BufRead> {
+    frame: Option<ruzstd::decoding::StreamingDecoder<R, ruzstd::decoding::FrameDecoder>>,
+}
+
+impl<R: std::io::BufRead> ZstdFrames<R> {
+    fn new(r: R) -> std::io::Result<Self> {
+        let frame = ruzstd::decoding::StreamingDecoder::new(r).map_err(std::io::Error::other)?;
+        Ok(ZstdFrames { frame: Some(frame) })
+    }
+}
+
+impl<R: std::io::BufRead> Read for ZstdFrames<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        while let Some(frame) = &mut self.frame {
+            let n = frame.read(buf)?;
+            if n > 0 || buf.is_empty() {
+                return Ok(n);
+            }
+            let mut rest = self.frame.take().expect("a frame").into_inner();
+            if !rest.fill_buf()?.is_empty() {
+                self.frame = Some(
+                    ruzstd::decoding::StreamingDecoder::new(rest).map_err(std::io::Error::other)?,
+                );
+            }
+        }
+        Ok(0)
+    }
+}
+
+/// A reader that fails once more than `left` bytes come through it.
+struct Capped<R> {
+    inner: R,
+    left: u64,
+    limit: u64,
+}
+
+impl<R: Read> Read for Capped<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.left = self.left.checked_sub(n as u64).ok_or_else(|| {
+            std::io::Error::other(format!(
+                "decompressed content exceeds the limit of {} bytes",
+                self.limit
+            ))
         })?;
-    bounded(decoder, limit, what).map_err(|e| match e {
-        LimitError::Io(io) => LimitError::Decompress {
-            what: what.to_owned(),
-            message: io.to_string(),
-        },
-        other => other,
-    })
+        Ok(n)
+    }
 }
 
 /// The entries of a zip archive whose names `want` accepts, decompressed, in archive
@@ -278,6 +382,80 @@ mod tests {
         check_jsonl_depth(broken.as_bytes(), &small()).unwrap();
         let quoted = r#"{"s": "[[[[[[[[[[[[[[[[[[[["}"#;
         check_json_depth(quoted.as_bytes(), &small()).unwrap();
+    }
+
+    fn gz(data: &[u8]) -> Vec<u8> {
+        let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        e.write_all(data).unwrap();
+        e.finish().unwrap()
+    }
+
+    #[test]
+    fn every_zstd_frame_is_read() {
+        let frame = |t: &[u8]| {
+            ruzstd::encoding::compress_to_vec(t, ruzstd::encoding::CompressionLevel::Fastest)
+        };
+        let two = [frame(b"a\n"), frame(b"b\n")].concat();
+        assert_eq!(zstd(&two, 1 << 20, "x").unwrap(), b"a\nb\n");
+    }
+
+    #[test]
+    fn a_streamed_bomb_fails_at_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bomb.jsonl.gz");
+        std::fs::write(&p, gz(&vec![b'x'; 4 << 20])).unwrap();
+        let mut out = Vec::new();
+        assert!(open(&p, 1 << 20).unwrap().read_to_end(&mut out).is_err());
+        assert_eq!(content_stem(&p).as_deref(), Some("bomb"));
+        assert_eq!(content_stem(Path::new("run.jsonl")).as_deref(), Some("run"));
+    }
+
+    #[test]
+    fn concatenated_gzip_members_read_as_one_stream() {
+        let two = [gz(b"{\"a\":1}\n"), gz(b"{\"b\":2}\n")].concat();
+        assert_eq!(gzip(&two, 1 << 20, "x").unwrap(), b"{\"a\":1}\n{\"b\":2}\n");
+    }
+
+    #[test]
+    fn a_gzip_bomb_stops_at_the_limit() {
+        let bomb = gz(&vec![0u8; 16 << 20]);
+        assert!(bomb.len() < 200_000, "{}", bomb.len());
+        assert!(matches!(
+            gzip(&bomb, 1 << 20, "x"),
+            Err(LimitError::TooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn compressed_files_read_as_their_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let text = b"{\"x\":1}\n";
+        let zst = ruzstd::encoding::compress_to_vec(
+            &text[..],
+            ruzstd::encoding::CompressionLevel::Fastest,
+        );
+        for (name, bytes) in [
+            ("a.jsonl.gz", gz(text)),
+            ("b.jsonl.zst", zst),
+            ("c.jsonl", text.to_vec()),
+        ] {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            assert_eq!(read_file(&p, &small()).unwrap(), text, "{name}");
+            assert_eq!(content_extension(&p).as_deref(), Some("jsonl"), "{name}");
+            let mut lines = String::new();
+            open(&p, 1 << 20)
+                .unwrap()
+                .read_to_string(&mut lines)
+                .unwrap();
+            assert_eq!(lines.as_bytes(), text, "{name}");
+        }
+        assert_eq!(content_extension(Path::new("x.GZ")), None);
+        assert_eq!(
+            content_extension(Path::new("x.CSV")).as_deref(),
+            Some("csv")
+        );
     }
 
     #[test]

@@ -357,7 +357,8 @@ impl Reader {
                 ))
             }
             Reader::Inspect(options) => {
-                let zip = path.extension().is_some_and(|x| x == "eval");
+                // An `.eval` log is a zip archive, compressed or not on disk.
+                let zip = bytes.starts_with(b"PK\x03\x04");
                 let (log, samples) =
                     inspect::read_log(bytes, zip, &host.limits).map_err(|e| bad(&e))?;
                 let records =

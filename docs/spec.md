@@ -944,7 +944,11 @@ the zip and decompressed with `ruzstd`.
   most the limit in memory. Defaults: 1 GiB for one file or decompressed archive entry
   (`--max-bytes` changes it), 100,000 entries per archive, and 64 levels of JSON nesting
   (checked before parsing, per line for JSONL). Archive methods other than Deflate and
-  Zstandard are refused. The records an adapter produces are validated like any import.
+  Zstandard are refused. A gzip or Zstandard file (any input, recognised by its first
+  bytes) is read as its decompressed content within the same limit, and a `.gz`, `.zst` or
+  `.zstd` suffix is looked past when the extension names the format (D-045). A promptfoo
+  database is opened by SQLite itself, so it is read uncompressed only. The records
+  an adapter produces are validated like any import.
 - **promptfoo databases.** The file and its write-ahead log together must fit the byte
   limit, and the database is opened read-only in SQLite's defensive mode with
   untrusted schemas off; `evals` and `eval_results` must be plain tables without

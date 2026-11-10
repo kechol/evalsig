@@ -36,7 +36,7 @@ pub enum Shape {
 impl Shape {
     /// The shape a file's extension names, in any letter case.
     pub fn from_extension(path: &std::path::Path) -> Option<Shape> {
-        match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        match crate::limits::content_extension(path)?.as_str() {
             "eval" | "zip" => Some(Shape::Zip),
             "json" => Some(Shape::Json),
             "jsonl" | "ndjson" => Some(Shape::Jsonl),

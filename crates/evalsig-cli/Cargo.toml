@@ -30,6 +30,8 @@ serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
+ruzstd.workspace = true
 jsonschema.workspace = true
 evalsig-core.workspace = true
 evalsig-store.workspace = true

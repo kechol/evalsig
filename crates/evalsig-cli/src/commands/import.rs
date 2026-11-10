@@ -139,14 +139,15 @@ fn adapter_for(path: &Path, explicit: Option<AdapterArg>) -> Result<AdapterArg, 
     if let Some(a) = explicit {
         return Ok(a);
     }
-    match path.extension().and_then(|e| e.to_str()) {
+    match limits::content_extension(path).as_deref() {
         Some("jsonl" | "json") => Ok(AdapterArg::Records),
         Some("csv") => Ok(AdapterArg::Csv),
         Some("eval") => Ok(AdapterArg::Inspect),
-        Some("db") => Ok(AdapterArg::Promptfoo),
+        // SQLite opens the file itself, so a compressed database is not read.
+        Some("db") if path.extension().is_some_and(|x| x == "db") => Ok(AdapterArg::Promptfoo),
         _ => Err(
             Error::usage(format!("cannot tell the format of {}", path.display()))
-                .with_hint("pass --adapter records, csv, inspect or promptfoo"),
+                .with_hint("pass --adapter records, csv, inspect or promptfoo; a .gz, .zst or .zstd suffix may follow the format's extension"),
         ),
     }
 }

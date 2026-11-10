@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use evalsig_project::Error;
 use evalsig_project::envelope::Output;
-use evalsig_project::project::io_error;
 use evalsig_referee::gate::{Request, judge_request};
 use evalsig_referee::home::Referee;
 use evalsig_referee::serve::{self, Destination};
@@ -97,7 +96,7 @@ impl Submission {
         Ok(Request {
             approved: self.approved.clone().expect("required by clap"),
             candidate: self.candidate.clone().expect("required by clap"),
-            records: std::fs::read_to_string(records).map_err(|e| io_error(records, &e))?,
+            records: read_records(records)?,
             mapping_hash: self.mapping_hash.clone(),
             agent_ledger_head,
         })
@@ -123,4 +122,11 @@ pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
             judge_request(root, &referee, &args.submission.request()?)
         }
     }
+}
+
+/// The submitted records, decompressed when gzip or Zstandard (D-045).
+fn read_records(path: &std::path::Path) -> Result<String, Error> {
+    let bytes = crate::commands::import::read_within(path, &Default::default())?;
+    String::from_utf8(bytes)
+        .map_err(|_| Error::usage(format!("{} is not UTF-8 text", path.display())))
 }

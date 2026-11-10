@@ -51,8 +51,8 @@ pub fn project(root: &Path, args: DatasetArgs, list: bool) -> Result<Output, Err
 }
 
 pub fn run(records: &Path) -> Result<Output, Error> {
-    let file = std::fs::File::open(records).map_err(|e| io_error(records, &e))?;
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = evalsig_adapters::limits::open(records, evalsig_adapters::limits::MAX_BYTES)
+        .map_err(|e| io_error(records, &e))?;
     let validator = RecordValidator::new();
     let (mut lines, mut invalid_lines, mut issues_total) = (0usize, 0usize, 0usize);
     let mut issues = Vec::new();
