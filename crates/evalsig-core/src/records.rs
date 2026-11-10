@@ -36,6 +36,32 @@ pub enum Record {
     Run(Run),
     /// A content blob referenced by hash from other records.
     Content(Content),
+    /// The causes a rater gave to a run's error on an item (D-048).
+    Attribution(Attribution),
+}
+
+/// The causes a rater gave to a run's error on an item, made after the run (D-048).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attribution {
+    /// Identifier of the item.
+    pub item_id: String,
+    /// The run whose error is attributed.
+    pub run_id: String,
+    /// Task name when the item has several judgment tasks. Absent means `default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    /// Who attributed the error: a person or an agent.
+    pub rater_id: String,
+    /// The causes, user strings evalsig does not interpret (1 to 128 characters each).
+    pub causes: Vec<String>,
+}
+
+impl Attribution {
+    /// The task, `default` when absent.
+    pub fn task(&self) -> &str {
+        self.task.as_deref().unwrap_or(DEFAULT_TASK)
+    }
 }
 
 /// One object being judged, such as an Inspect sample or a promptfoo test case.
@@ -695,7 +721,19 @@ impl Record {
             Record::Judgment(j) => j.missing.as_ref(),
             Record::Label(l) => l.missing.as_ref(),
             Record::Preference(p) => p.missing.as_ref(),
-            Record::Item(_) | Record::Run(_) | Record::Content(_) => None,
+            Record::Item(_) | Record::Run(_) | Record::Content(_) | Record::Attribution(_) => None,
+        }
+    }
+
+    /// The item a record is about; `None` for runs and contents.
+    pub fn item_id(&self) -> Option<&str> {
+        match self {
+            Record::Item(x) => Some(&x.item_id),
+            Record::Label(x) => Some(&x.item_id),
+            Record::Judgment(x) => Some(&x.item_id),
+            Record::Preference(x) => Some(&x.item_id),
+            Record::Attribution(x) => Some(&x.item_id),
+            Record::Run(_) | Record::Content(_) => None,
         }
     }
 
@@ -753,6 +791,18 @@ impl Record {
                 check_time(&i.occurred_at)
             }
             Record::Content(_) => Ok(()),
+            Record::Attribution(a) => {
+                if a.causes.is_empty()
+                    || a.causes
+                        .iter()
+                        .any(|c| c.is_empty() || c.chars().count() > 128)
+                {
+                    return Err(RecordError::OutOfRange(
+                        "causes must be 1 or more strings of 1 to 128 characters",
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 }

@@ -195,6 +195,22 @@ fn sealing_refuses_when_the_agent_holds_holdout_labels() {
 }
 
 #[test]
+fn an_attribution_of_a_holdout_item_stops_the_seal() {
+    let s = setup();
+    let item = s.held.iter().next().unwrap();
+    let records = agent_records(&s.held)
+        + &format!(
+            r#"{{"record":"attribution","item_id":"{item}","run_id":"r","rater_id":"agent:review","causes":["no_rule"]}}"#
+        )
+        + "\n";
+    let agent = project(&records);
+    let out = seal(&s, agent.path());
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let e: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(e["error"]["code"], "holdout_labels_in_agent");
+}
+
+#[test]
 fn labels_in_a_replaced_snapshot_still_stop_the_seal() {
     let s = setup();
     let agent = project(&std::fs::read_to_string(SYNTHETIC).unwrap());

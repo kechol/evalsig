@@ -64,6 +64,7 @@ fn kind(r: &Record) -> Option<&'static str> {
         Record::Judgment(_) => Some("judgments"),
         Record::Label(_) => Some("labels"),
         Record::Preference(_) => Some("preferences"),
+        Record::Attribution(_) => Some("attributions"),
         Record::Content(_) => None,
     }
 }

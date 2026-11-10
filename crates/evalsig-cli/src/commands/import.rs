@@ -395,6 +395,7 @@ fn counts(records: &[Record]) -> BTreeMap<&'static str, u64> {
             Record::Preference(_) => "preferences",
             Record::Run(_) => "runs",
             Record::Content(_) => "contents",
+            Record::Attribution(_) => "attributions",
         };
         *c.entry(k).or_insert(0) += 1;
     }

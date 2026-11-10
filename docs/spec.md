@@ -205,6 +205,7 @@ Unknown records and unknown fields are rejected. Examples:
 | `preference` | `item_id`, `left_run_id`, `right_run_id`, `rater_id`, `task`, `grade_replicate` | `outcome` (`left`, `right`, `tie`) or `missing`. A judgment with the presentation order swapped is a separate record |
 | `run` | `run_id` | `system` (id, version, config hash), `value_semantics`, `output_type` and `levels`, `grader` (id, version, config hash, kind), `harness` (name, version, run reference) |
 | `content` | `ref` | Catalogue of a body: media type, size, storage state (`full`, `hash`, `redact`, `purged`) |
+| `attribution` | `item_id`, `run_id`, `task`, `rater_id` | `causes`: the rater's own cause names for the run's error on the item, made after the run (D-048) |
 
 ### 5.1 Rules
 

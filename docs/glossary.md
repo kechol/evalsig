@@ -32,6 +32,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | decision rule | `decision` | From which judgment value a judgment counts as positive, e.g. `score_at_least = 0.5`. Separate from the label-side `positive` |
 | label inclusion probability | `label_inclusion_prob` | When humans check only some items, the probability that this item received a human label |
 | preference | `preference` | A record comparing the outputs of two arms on the same item and saying which is better |
+| attribution | `attribution`, `causes` | A record naming the causes a rater (a person or an agent) gave to a run's error on an item, in the rater's own words |
 | win rate | `win_rate` | An arm's mean preference score (1 preferred, ½ tie, 0 not), averaged over each item's raters and then over items; the interval resamples items |
 | feature | `feature` | A rule, aspect or assertion that fired inside a judgment, with whether it fired and its strength |
 | content | `content` / `store.content` | The text of an input, output or grader rationale, stored as an object and named by records through its hash. Kept in full, as a hash only, or with `redact_patterns` matches replaced by `[redacted]` |

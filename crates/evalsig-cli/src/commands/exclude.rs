@@ -48,16 +48,6 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-fn item_of(r: &Record) -> Option<&str> {
-    match r {
-        Record::Item(x) => Some(&x.item_id),
-        Record::Label(x) => Some(&x.item_id),
-        Record::Judgment(x) => Some(&x.item_id),
-        Record::Preference(x) => Some(&x.item_id),
-        Record::Run(_) | Record::Content(_) => None,
-    }
-}
-
 pub fn run(root: &Path, args: &Args) -> Result<Output, Error> {
     if args.reason == Reason::Other && args.detail.as_deref().is_none_or(|d| d.trim().is_empty()) {
         return Err(Error::usage("--reason other needs --detail"));
@@ -123,7 +113,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
     }
     let known: BTreeSet<&str> = sets
         .iter()
-        .flat_map(|(_, rs)| rs.iter().filter_map(item_of))
+        .flat_map(|(_, rs)| rs.iter().filter_map(Record::item_id))
         .collect();
     if let Some(unknown) = items.iter().find(|i| !known.contains(i.as_str())) {
         return Err(
@@ -131,7 +121,7 @@ fn agent_side(root: &Path, args: &Args) -> Result<Output, Error> {
                 .with_next("evalsig items", "list the imported items"),
         );
     }
-    let leaves = |r: &Record| item_of(r).is_some_and(|i| items.contains(i));
+    let leaves = |r: &Record| r.item_id().is_some_and(|i| items.contains(i));
     if !args.dry_run {
         store.put(&bytes).map_err(Error::store)?;
     }

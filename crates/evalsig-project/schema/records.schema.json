@@ -616,6 +616,46 @@
      ]
     }
    }
+  },
+  "attribution": {
+   "type": "object",
+   "description": "The causes a rater gave to a run's error on an item, made after the run (D-048)",
+   "required": [
+    "record",
+    "item_id",
+    "run_id",
+    "rater_id",
+    "causes"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "record": {
+     "const": "attribution"
+    },
+    "item_id": {
+     "$ref": "#/$defs/id"
+    },
+    "run_id": {
+     "$ref": "#/$defs/id"
+    },
+    "task": {
+     "$ref": "#/$defs/id",
+     "description": "Task name when an item has several judgment tasks. Default \"default\""
+    },
+    "rater_id": {
+     "$ref": "#/$defs/id"
+    },
+    "causes": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     },
+     "description": "User strings evalsig does not interpret"
+    }
+   }
   }
  },
  "oneOf": [
@@ -636,6 +676,9 @@
   },
   {
    "$ref": "#/$defs/content"
+  },
+  {
+   "$ref": "#/$defs/attribution"
   }
  ]
 }

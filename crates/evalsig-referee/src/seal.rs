@@ -40,14 +40,15 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
     for h in store.list().map_err(Error::store)? {
         let bytes = store.get(&h).map_err(Error::store)?;
         for line in snapshot::lines(&bytes) {
-            let Some(Record::Label(l)) = std::str::from_utf8(line)
+            // An attribution names a run's errors, so it carries the label too.
+            let Some(r @ (Record::Label(_) | Record::Attribution(_))) = std::str::from_utf8(line)
                 .ok()
                 .and_then(|t| Record::from_json(t).ok())
             else {
                 continue;
             };
-            if held.contains(&l.item_id) {
-                leaked.insert(l.item_id);
+            if let Some(item) = r.item_id().filter(|i| held.contains(*i)) {
+                leaked.insert(item.to_owned());
             }
         }
     }
@@ -55,7 +56,7 @@ pub fn run(root: &Path, args: &Request) -> Result<Output, Error> {
         return Err(Error::new(
             "holdout_labels_in_agent",
             format!(
-                "the agent's snapshots hold labels of {} holdout items; cut a new holdout from items the agent has no labels for",
+                "the agent's snapshots hold labels or attributions of {} holdout items; cut a new holdout from items the agent has none for",
                 leaked.len()
             ),
             Exit::Rejected,

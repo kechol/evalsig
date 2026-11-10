@@ -27,7 +27,15 @@ pub struct RecordValidator {
 }
 
 /// The record kinds of `records/1`, one `$defs` entry each.
-const KINDS: [&str; 6] = ["item", "label", "judgment", "preference", "run", "content"];
+const KINDS: [&str; 7] = [
+    "item",
+    "label",
+    "judgment",
+    "preference",
+    "run",
+    "content",
+    "attribution",
+];
 
 impl Default for RecordValidator {
     fn default() -> Self {

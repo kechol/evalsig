@@ -45,6 +45,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
     w.judgment("t-1", "r1", gen_replicate=0, output_type="ordinal", levels=4, value=3)
     w.judgment("t-1", "r1", gen_replicate=1, output_type="ordinal", levels=4, missing=missing("timeout", "60 s"))
     w.judgment("t-1", "r2", gen_replicate=0, output_type="score", value=0.75)
+    w.attribution("t-1", "r1", rater_id="agent:review", causes=["needs_external_info", "no_rule"])
     try:
         w.judgment("t-1", "r1", gen_replicate=2, output_type="ordinal", value=1, missing=missing("error"))
     except ValueError:
@@ -63,7 +64,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
         .status()
         .expect("python3 runs");
     assert!(status.success());
-    assert_eq!(std::fs::read_to_string(&out).unwrap().lines().count(), 7);
+    assert_eq!(std::fs::read_to_string(&out).unwrap().lines().count(), 8);
     validates(&out);
 }
 
@@ -85,6 +86,7 @@ w.item({ itemId: "t-1", cluster: "c-1" });
 w.label({ itemId: "t-1", raterId: "rater:a", source: "human", value: true });
 w.judgment({ itemId: "t-1", runId: "r1", genReplicate: 0, outputType: "binary", value: false });
 w.judgment({ itemId: "t-1", runId: "r1", genReplicate: 1, outputType: "binary", missing: missing("error") });
+w.attribution({ itemId: "t-1", runId: "r1", raterId: "agent:review", causes: ["fixable"] });
 writeFileSync(process.argv[2], lines.join(""));
 "#,
     )
@@ -104,6 +106,6 @@ writeFileSync(process.argv[2], lines.join(""));
     }
     assert!(node(&main).unwrap().success());
     let out = dir.path().join("records.jsonl");
-    assert_eq!(std::fs::read_to_string(&out).unwrap().lines().count(), 5);
+    assert_eq!(std::fs::read_to_string(&out).unwrap().lines().count(), 6);
     validates(&out);
 }

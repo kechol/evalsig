@@ -1,7 +1,7 @@
 //! Primary-key order of canonical records in a snapshot file (audit spec §1).
 //!
-//! Records sort by kind (run, item, label, judgment, preference, content), then by the
-//! kind's key fields. Strings compare by Unicode code point, which is UTF-8 byte order.
+//! Records sort by kind (run, item, label, judgment, preference, content, attribution),
+//! then by the kind's key fields. Strings compare by Unicode code point, which is UTF-8 byte order.
 
 use std::cmp::Ordering;
 
@@ -65,10 +65,23 @@ fn key(r: &Record) -> (u8, [Part<'_>; 8]) {
             ],
         ),
         Record::Content(x) => (5, [Str(&x.content_ref), N, N, N, N, N, N, N]),
+        Record::Attribution(x) => (
+            6,
+            [
+                Str(&x.item_id),
+                Str(&x.run_id),
+                Str(x.task()),
+                Str(&x.rater_id),
+                N,
+                N,
+                N,
+                N,
+            ],
+        ),
     }
 }
 
-const KEY_NAMES: [&[&str]; 6] = [
+const KEY_NAMES: [&[&str]; 7] = [
     &["run_id"],
     &["item_id"],
     &[
@@ -97,6 +110,7 @@ const KEY_NAMES: [&[&str]; 6] = [
         "grade_replicate",
     ],
     &["ref"],
+    &["item_id", "run_id", "task", "rater_id"],
 ];
 
 /// Primary-key order of two records.
@@ -112,7 +126,15 @@ pub fn sort(records: &mut [Record]) {
 /// The primary key as `kind{field=value, …}`, for messages.
 pub fn describe_key(r: &Record) -> String {
     let (rank, parts) = key(r);
-    let kind = ["run", "item", "label", "judgment", "preference", "content"][rank as usize];
+    let kind = [
+        "run",
+        "item",
+        "label",
+        "judgment",
+        "preference",
+        "content",
+        "attribution",
+    ][rank as usize];
     let fields: Vec<String> = KEY_NAMES[rank as usize]
         .iter()
         .zip(parts)

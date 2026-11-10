@@ -30,6 +30,9 @@ longer reproduces.
 - Input files compressed with gzip or Zstandard are read as their content, within the
   size limit, by `import`, `validate --records`, `gate submit` and the `map` commands
   (D-046).
+- An `attribution` record names the causes a rater gave to a run's error on an item
+  (D-048); `import`, `validate --records`, `export` and the Python and TypeScript writers
+  handle it.
 - `label.join.key` joins a JSONL or CSV label file by a key built from each label row and
   each source row, such as `{@.task}:{@.unit_id}`; every matching row gives a label (D-047).
 - `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,

@@ -96,7 +96,7 @@ gates serialize.
 An import writes two objects.
 
 - The **snapshot** is the set of canonical records (`records/1`, D-003) of
-  the import: run, item, label, judgment, preference and content records, one
+  the import: run, item, label, judgment, preference, content and attribution records, one
   per line, in primary-key order (by kind in that order, then by the kind's
   key fields, strings by code point). Its name is the file hash of those
   lines, so it depends on the data alone: importing the same records in

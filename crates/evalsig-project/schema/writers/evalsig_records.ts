@@ -148,6 +148,17 @@ export class RecordsWriter {
     this.write(valueOrMissing(record, l.value, l.missing));
   }
 
+  /** The causes a rater gave to the run's error on the item (D-048). */
+  attribution(a: { itemId: string; runId: string; raterId: string; causes: string[]; task?: string }): void {
+    if (a.causes.length === 0) throw new Error("causes is a non-empty list of strings");
+    this.write(
+      put(
+        { record: "attribution", item_id: a.itemId, run_id: a.runId, rater_id: a.raterId, causes: [...a.causes] },
+        { task: a.task },
+      ),
+    );
+  }
+
   judgment(j: {
     itemId: string;
     runId: string;

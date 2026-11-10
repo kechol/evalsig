@@ -173,7 +173,8 @@ fn fields(record: &mut Record) -> Vec<Field<'_>> {
             .collect(),
         Record::Judgment(j) => missing(&mut j.missing).into_iter().collect(),
         Record::Preference(p) => missing(&mut p.missing).into_iter().collect(),
-        Record::Run(_) | Record::Content(_) => Vec::new(),
+        // Causes are the attributing rater's own vocabulary, not evaluated text.
+        Record::Run(_) | Record::Content(_) | Record::Attribution(_) => Vec::new(),
     }
 }
 
@@ -194,16 +195,6 @@ pub fn redact_records(records: &mut [Record], redactor: &Redactor) -> usize {
         .count()
 }
 
-fn item_id(record: &Record) -> Option<&str> {
-    match record {
-        Record::Item(i) => Some(&i.item_id),
-        Record::Label(l) => Some(&l.item_id),
-        Record::Judgment(j) => Some(&j.item_id),
-        Record::Preference(p) => Some(&p.item_id),
-        Record::Run(_) | Record::Content(_) => None,
-    }
-}
-
 /// The bodies a record names: its `*_ref` fields, or a `content` record's `ref`.
 pub fn bodies(record: &Record) -> impl Iterator<Item = &str> {
     let refs: [Option<&String>; 2] = match record {
@@ -211,7 +202,7 @@ pub fn bodies(record: &Record) -> impl Iterator<Item = &str> {
         Record::Judgment(j) => [j.output_ref.as_ref(), j.rationale_ref.as_ref()],
         Record::Preference(p) => [p.rationale_ref.as_ref(), None],
         Record::Content(c) => [Some(&c.content_ref), None],
-        Record::Label(_) | Record::Run(_) => [None, None],
+        Record::Label(_) | Record::Run(_) | Record::Attribution(_) => [None, None],
     };
     refs.into_iter().flatten().map(String::as_str)
 }
@@ -245,7 +236,7 @@ pub fn items_naming(records: &[Record], body: &str) -> BTreeSet<String> {
     records
         .iter()
         .filter(|r| names(r, body))
-        .filter_map(item_id)
+        .filter_map(Record::item_id)
         .map(str::to_owned)
         .collect()
 }
@@ -275,7 +266,7 @@ pub fn purge_records(
                 c.stored = Some(Stored::Purged);
                 touched = true;
             }
-        } else if item_id(r).is_some_and(|i| items.contains(i)) {
+        } else if r.item_id().is_some_and(|i| items.contains(i)) {
             for f in fields(r) {
                 match f {
                     Field::Json(v) if !v.as_str().is_some_and(is_ref) => {

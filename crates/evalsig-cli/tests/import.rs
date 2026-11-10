@@ -264,3 +264,82 @@ fn non_utf8_arguments_do_not_panic() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
     assert_ne!(out.status.code(), Some(101));
 }
+
+#[test]
+fn attribution_records_import_and_export() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    let run = |args: &[&str]| {
+        assert_cmd::Command::cargo_bin("evalsig")
+            .unwrap()
+            .env("EVALSIG_ACTOR", "user:test")
+            .env_remove("AI_AGENT")
+            .arg("--project")
+            .arg(d)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["init"]).status.success());
+    let file = d.join("r.jsonl");
+    std::fs::write(
+        &file,
+        concat!(
+            r#"{"record":"run","run_id":"r","system":{"id":"s","version":"1"},"output_type":"binary"}"#, "\n",
+            r#"{"record":"item","item_id":"i"}"#, "\n",
+            r#"{"record":"judgment","item_id":"i","run_id":"r","gen_replicate":0,"output_type":"binary","value":false}"#, "\n",
+            r#"{"record":"attribution","item_id":"i","run_id":"r","rater_id":"agent:review","causes":["no_rule"]}"#, "\n",
+        ),
+    )
+    .unwrap();
+    let out = run(&["--format", "json", "import", file.to_str().unwrap()]);
+    assert!(out.status.success(), "{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"]["records"]["attributions"], 1, "{v}");
+    let export = d.join("out");
+    assert!(
+        run(&["export", "--to", "jsonl", "--out", export.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let exported: String = std::fs::read_dir(&export)
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    assert!(exported.contains(r#""record":"attribution""#), "{exported}");
+    // Two attributions with one key and different causes are a conflict, not a crash.
+    let twice = d.join("twice.jsonl");
+    std::fs::write(
+        &twice,
+        concat!(
+            r#"{"record":"attribution","item_id":"i","run_id":"r","rater_id":"a","causes":["x"]}"#,
+            "\n",
+            r#"{"record":"attribution","item_id":"i","run_id":"r","rater_id":"a","causes":["y"]}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let out = run(&["--format", "json", "import", twice.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("attribution{"),
+        "{out:?}"
+    );
+    let bad = d.join("bad.jsonl");
+    std::fs::write(
+        &bad,
+        r#"{"record":"attribution","item_id":"i","run_id":"r","rater_id":"a","causes":[]}"#,
+    )
+    .unwrap();
+    assert!(
+        !run(&[
+            "--format",
+            "json",
+            "validate",
+            "--records",
+            bad.to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+}

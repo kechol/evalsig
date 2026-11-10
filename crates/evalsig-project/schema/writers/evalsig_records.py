@@ -107,3 +107,10 @@ class Writer:
                       levels=levels, task=task, grade_replicate=grade_replicate,
                       features=features, output_ref=output_ref, judged_at=judged_at)
         self.write(_value_or_missing(record, value, missing))
+
+    def attribution(self, item_id, run_id, rater_id, causes, task=None):
+        """The causes a rater gave to the run's error on the item (D-048)."""
+        if isinstance(causes, str) or not causes:
+            raise ValueError("causes is a non-empty list of strings")
+        self.write(_put({"record": "attribution", "item_id": item_id, "run_id": run_id,
+                         "rater_id": rater_id, "causes": list(causes)}, task=task))
