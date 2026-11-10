@@ -28,6 +28,7 @@ this file. Each term gives the identifier used in CLI flags and JSON keys.
 | generation replicate | `gen_replicate` | Which re-run of the system on the same item. Inspect's epoch, promptfoo's repeat |
 | grading replicate | `grade_replicate` | Which re-grading of the same output by a grader |
 | cluster | `cluster` | A set of correlated items (same document, same conversation, several tasks on one object). The resampling and splitting unit |
+| cluster as a unit | `report --unit cluster`, `units` | The items of a cluster counted as one for accuracy, hit rate and false-alarm rate; under `--aggregate any` the unit is positive, or flagged, when any of its items is (metrics §14, D-051, D-053) |
 | value semantics | `value_semantics` | `decision` (a system decision compared with reference labels) or `score` (a grade of an output that is itself the result; no reference label needed) |
 | decision rule | `decision` | From which judgment value a judgment counts as positive, e.g. `score_at_least = 0.5`. Separate from the label-side `positive` |
 | label inclusion probability | `label_inclusion_prob` | When humans check only some items, the probability that this item received a human label |

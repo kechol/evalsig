@@ -929,3 +929,28 @@ records name for the run's items (D-048).
   negatives): the rate if fixing those causes removed their errors and added none, an
   optimistic bound, so the output warns (`ceiling_is_optimistic`). Every interval comes
   from one set of resamples.
+
+## 14. Clusters as units
+
+`report --unit cluster --aggregate any` counts the items of each cluster as one unit, such
+as a document judged section by section, and reports accuracy, H and F over units
+(D-051, D-053). A document whose positive section is missed but whose other section is
+flagged is then caught once, not counted as a miss and a false alarm.
+
+- **Unit values.** A unit's items are the project's items with its cluster key. Its
+  reference share is the largest of its items' reference shares, and its judged value the
+  largest of its items' values after the missing policy and the estimand (§0.1, §6.1). For
+  0/1 values the unit is positive, or flagged, when any of its items is.
+- **Missing units.** A unit with an item that has no judgment in the run, or none left
+  under the missing policy, is missing, not negative (`n_missing`). A unit whose items are
+  all judged but one has no reference is left out (`n_without_reference`).
+- **Filling.** A system-side gap in an item takes the value the metric's worst judgment of
+  the unit would have (the opposite of the unit's reference for accuracy, 0 for H, 1 for
+  F), so filling every item with it gives the unit that worst value. The range with gaps
+  filled worst and best is reported as for items.
+- **Weights.** A unit's weight is the mean of its items' weights. Label inclusion
+  probabilities (§9.9) are refused: a unit's chance of being labelled is not its items'.
+- **Intervals.** As for rates over items (§1.1), each unit independent: Wilson when every
+  unit has unit weight and a 0/1 reference, otherwise the bootstrap over units (§8), with
+  the exact interval at a rate of 0 or 1 or with fewer than 5 units in the denominator.
+- Reference case: none.

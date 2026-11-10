@@ -1001,6 +1001,47 @@
     "string"
    ]
   },
+  "units": {
+   "type": [
+    "null",
+    "object"
+   ],
+   "properties": {
+    "aggregate": {
+     "type": [
+      "null",
+      "string"
+     ]
+    },
+    "metrics": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "items": {
+      "$ref": "#/$defs/metric"
+     }
+    },
+    "n_missing": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "n_units": {
+     "type": [
+      "null",
+      "number"
+     ]
+    },
+    "n_without_reference": {
+     "type": [
+      "null",
+      "number"
+     ]
+    }
+   }
+  },
   "value_semantics": {
    "type": [
     "null",

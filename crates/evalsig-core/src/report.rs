@@ -21,7 +21,9 @@ use crate::replicates::{Disagreement, decided_positive, item_value};
 use crate::rules::Rule;
 
 mod detail;
+mod units;
 pub use detail::{Calibration, FeatureRow, ProxyEstimate, Roc, Sdt};
+pub use units::{Aggregate, UnitMetrics};
 
 /// What a report needs besides the records.
 #[derive(Debug, Clone)]
@@ -74,6 +76,8 @@ pub struct Sections {
     pub detail: bool,
     /// Add the feature likelihood ratios (`report --features`).
     pub features: bool,
+    /// Add the metrics over clusters taken as units (`report --unit cluster`, D-051).
+    pub units: Option<Aggregate>,
 }
 
 /// Why a report could not be built.
@@ -100,6 +104,13 @@ pub enum ReportError {
     /// The named rater has no item that also has a judgment.
     #[error("no item has both a label by {0:?} and a judgment, so it cannot serve as the proxy")]
     NoProxyLabels(String),
+    /// Metrics over units were asked of a run without decisions or a reference.
+    #[error("--unit needs decisions and a reference: a positive definition and a decision rule")]
+    UnitsNeedDecisions,
+    /// Metrics over units were asked of items weighted by label inclusion probabilities,
+    /// which a unit's weight cannot carry.
+    #[error("--unit does not support label_inclusion_prob weights")]
+    UnitsWithInclusionWeights,
 }
 
 /// One interval-bearing metric.
@@ -239,6 +250,9 @@ pub struct Report {
     /// Feature likelihood ratios.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<FeatureRow>>,
+    /// Metrics over clusters taken as units (D-051).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub units: Option<UnitMetrics>,
     /// Proxy-corrected human-scale estimate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyEstimate>,
@@ -249,7 +263,7 @@ pub struct Report {
 
 /// One item of the run: its replicates (judged value or missing reason, one per
 /// generation replicate, grading replicates averaged), reference share and weight.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct Unit {
     item_id: String,
     cluster: String,
@@ -732,6 +746,7 @@ pub fn from_prepared(
         roc: s.sections.detail.then(|| p.roc()).flatten(),
         sdt: s.sections.detail.then(|| p.sdt()).flatten(),
         calibration: s.sections.detail.then(|| p.calibration()).flatten(),
+        units: s.sections.units.map(|a| p.units(items, a)).transpose()?,
         features: s
             .sections
             .features
@@ -1407,10 +1422,14 @@ impl Prepared<'_> {
         self.units
             .iter()
             .filter_map(|u| {
-                let worst = |u: &Unit| u.reference.map(|s| if s >= 0.5 { 0.0 } else { 1.0 });
-                calc.item_value(u, worst)
+                calc.item_value(u, accuracy_worst)
                     .map(|v| (u.item_id.clone(), (v, u.reference)))
             })
             .collect()
     }
+}
+
+/// The worst judgment for accuracy: the one opposite to the reference majority.
+fn accuracy_worst(u: &Unit) -> Option<f64> {
+    u.reference.map(|s| if s >= 0.5 { 0.0 } else { 1.0 })
 }

@@ -40,6 +40,9 @@ longer reproduces.
 - `report --decompose misses|false_alarms` splits a run's errors by attributed cause, each
   error to its first cause in `[attribution] order`, with shares and `--ceiling` rates and
   their intervals (D-048).
+- `report --unit cluster --aggregate any` adds accuracy, hit rate and false-alarm rate
+  over clusters taken as units, a unit positive or flagged when any of its items is, with
+  intervals over units; a unit with an unjudged item is missing (D-051, D-053).
 - `label.join.key` joins a JSONL or CSV label file by a key built from each label row and
   each source row, such as `{@.task}:{@.unit_id}`; every matching row gives a label (D-047).
 - `judgment.explode.filter` in a mapping keeps the elements or keys a condition accepts,
@@ -62,6 +65,7 @@ longer reproduces.
   c (§7); expected cost takes
   per-stratum prevalences, matrices and production shares (D-041). Saved comparisons of a
   project with `[cost]` set gain an `expected_cost` row.
+- `metrics/2` §14 defines accuracy, H and F over clusters taken as units (D-051, D-053).
 
 ### Changed
 

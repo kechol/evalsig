@@ -6,7 +6,7 @@ use evalsig_core::attribution::{self, Errors};
 use evalsig_core::checks::Finding;
 use evalsig_core::config::Config;
 use evalsig_core::records::Label;
-use evalsig_core::report::Sections;
+use evalsig_core::report::{Aggregate, Sections};
 use evalsig_core::validity;
 use evalsig_core::{kcurve, report};
 use serde_json::{Value, json};
@@ -37,6 +37,10 @@ pub struct Request {
     /// Add each feature's likelihood ratio and class.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub features: bool,
+    /// Also report accuracy, hit rate and false-alarm rate over clusters taken as
+    /// units, their items combined this way (D-051).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<Aggregate>,
     /// With --reference human: correct the human-scale value with this model rater's
     /// labels on the items humans did not label (PPI++).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -69,6 +73,7 @@ pub fn compute(d: &Data, config: &Config, args: &Request) -> Result<Computed, Er
         items: args.items,
         detail: true,
         features: args.features,
+        units: args.units,
     };
     let human = matches!(
         args.analysis.reference,

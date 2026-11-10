@@ -1,6 +1,7 @@
 //! `evalsig report <run>`: the default-tier metrics of one run.
 
 use evalsig_core::attribution::Errors;
+use evalsig_core::report::Aggregate;
 use evalsig_project::report::Request;
 
 use crate::args::{AnalysisArgs, DatasetArgs};
@@ -11,6 +12,18 @@ use crate::args::{AnalysisArgs, DatasetArgs};
 pub enum ErrorsArg {
     Misses,
     FalseAlarms,
+}
+
+/// What `--unit` groups items by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum UnitArg {
+    Cluster,
+}
+
+/// How `--aggregate` combines a unit's items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum AggregateArg {
+    Any,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -33,6 +46,14 @@ pub struct Args {
     /// Add each feature's likelihood ratio and class.
     #[arg(long)]
     pub features: bool,
+    /// Also report accuracy, hit rate and false-alarm rate over the items of each
+    /// cluster taken as one unit (D-051, D-053).
+    #[arg(long, value_enum, requires = "aggregate")]
+    pub unit: Option<UnitArg>,
+    /// With --unit: a unit is positive or flagged when any of its items is; a unit with
+    /// an item without a judgment is missing.
+    #[arg(long, value_enum, requires = "unit")]
+    pub aggregate: Option<AggregateArg>,
     /// With --reference human: correct the human-scale value with this model rater's
     /// labels on the items humans did not label (PPI++).
     #[arg(long, value_name = "RATER")]
@@ -58,6 +79,10 @@ impl From<&Args> for Request {
             items: a.items,
             k_curve: a.k_curve,
             features: a.features,
+            units: a
+                .unit
+                .zip(a.aggregate)
+                .map(|(UnitArg::Cluster, AggregateArg::Any)| Aggregate::Any),
             proxy: a.proxy.clone(),
             decompose: a.decompose.map(|e| match e {
                 ErrorsArg::Misses => Errors::Misses,

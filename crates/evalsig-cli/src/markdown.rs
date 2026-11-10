@@ -180,6 +180,17 @@ fn report(e: &Envelope) -> String {
             metric_table(&mut s, metrics, level);
         }
     }
+    if let Some(u) = r["units"].as_object() {
+        let _ = writeln!(
+            s,
+            "\n**Clusters as units** ({} item decides): {} units, {} with an item without a judgment, {} with an item without a reference\n",
+            id(&u["aggregate"]),
+            u["n_units"],
+            u["n_missing"],
+            u["n_without_reference"],
+        );
+        metric_table(&mut s, &u["metrics"], level);
+    }
     if let Some(rep) = r["reproducibility"].as_object().filter(|m| !m.is_empty()) {
         s.push_str("\n| Replicates | Pairwise disagreement | Upper bound | Items |\n|---|---:|---:|---:|\n");
         for (kind, row) in rep {

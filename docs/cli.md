@@ -392,6 +392,8 @@ The default-tier metrics of one run
 | `--items` | Include one row per item |  |  |
 | `--k-curve` | Also report majority@k, any@k and all@k for k = 1 … the fewest replicates of any item, with the expected cost per item |  |  |
 | `--features` | Add each feature's likelihood ratio and class |  |  |
+| `--unit <UNIT>` | Also report accuracy, hit rate and false-alarm rate over the items of each cluster taken as one unit (D-051, D-053) | `cluster` |  |
+| `--aggregate <AGGREGATE>` | With --unit: a unit is positive or flagged when any of its items is; a unit with an item without a judgment is missing | `any` |  |
 | `--proxy <RATER>` | With --reference human: correct the human-scale value with this model rater's labels on the items humans did not label (PPI++) |  |  |
 | `--decompose <DECOMPOSE>` | Split the misses or false alarms by the causes attributions name, each error to its first cause in `[attribution] order` (D-048) | `misses`, `false_alarms` |  |
 | `--ceiling <CAUSES>` | With --decompose: the rate left if the errors of these causes (comma-separated) were removed; an optimistic bound. Repeat for several sets |  |  |
