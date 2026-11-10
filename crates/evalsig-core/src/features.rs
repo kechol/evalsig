@@ -5,6 +5,7 @@
 use serde::Serialize;
 
 use crate::numeric::{norm_sf, two_sided_z};
+use crate::records::Pointing;
 
 /// Firing counts of one feature: `a` of `n_pos` positives and `b` of `n_neg`
 /// negatives. Counts may be fractional (replicate shares, soft references).
@@ -86,6 +87,47 @@ pub enum Class {
     Strong,
     /// The interval excludes 1 but its lower end is below `strong`.
     Informative,
+}
+
+/// How a feature's likelihood ratio relates to the class it is written to point to
+/// (D-049).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    /// The adjusted interval lies on the expected side of 1.
+    AsExpected,
+    /// The adjusted interval lies on the other side of 1.
+    Reversed,
+    /// The adjusted interval contains 1.
+    Uninformative,
+    /// Too few firings to tell.
+    Insufficient,
+}
+
+impl Direction {
+    /// From a feature's class and adjusted interval, for a feature written to point to
+    /// `expected`.
+    pub fn of(class: Class, (lo, hi): (f64, f64), expected: Pointing) -> Direction {
+        match class {
+            Class::Insufficient => Direction::Insufficient,
+            Class::Uninformative => Direction::Uninformative,
+            Class::Strong | Class::Informative => {
+                // A degenerate (NaN) interval lies on neither side.
+                let points = if lo > 1.0 {
+                    Pointing::Positive
+                } else if hi < 1.0 {
+                    Pointing::Negative
+                } else {
+                    return Direction::Uninformative;
+                };
+                if points == expected {
+                    Direction::AsExpected
+                } else {
+                    Direction::Reversed
+                }
+            }
+        }
+    }
 }
 
 /// Thresholds for the classes (configurable).
@@ -186,4 +228,46 @@ pub fn assess(features: &[Counts], level: f64, t: Thresholds) -> Vec<Option<Asse
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direction_reads_the_side_of_one_against_the_expected_class() {
+        use Pointing::{Negative, Positive};
+        let above = (1.5, 4.0);
+        let below = (0.2, 0.7);
+        for (class, ci, expected, want) in [
+            (Class::Strong, above, Positive, Direction::AsExpected),
+            (Class::Strong, above, Negative, Direction::Reversed),
+            (Class::Informative, below, Negative, Direction::AsExpected),
+            (Class::Informative, below, Positive, Direction::Reversed),
+            (
+                Class::Uninformative,
+                (0.8, 1.3),
+                Positive,
+                Direction::Uninformative,
+            ),
+            (
+                Class::Insufficient,
+                above,
+                Positive,
+                Direction::Insufficient,
+            ),
+            (
+                Class::Informative,
+                (f64::NAN, f64::NAN),
+                Negative,
+                Direction::Uninformative,
+            ),
+        ] {
+            assert_eq!(
+                Direction::of(class, ci, expected),
+                want,
+                "{class:?} {ci:?} {expected:?}"
+            );
+        }
+    }
 }

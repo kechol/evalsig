@@ -296,13 +296,26 @@ fn report(e: &Envelope) -> String {
         );
     }
     if let Some(features) = r["features"].as_array().filter(|f| !f.is_empty()) {
-        s.push_str(
-            "\n| Feature | LR | Interval | Adjusted interval | Class |\n|---|---:|---|---|---|\n",
-        );
+        // The direction column appears when the run declares what features are for.
+        let directed = features.iter().any(|f| f.get("direction").is_some());
+        s.push_str("\n| Feature | LR | Interval | Adjusted interval | Class |");
+        s.push_str(if directed {
+            " Direction |\n|---|---:|---|---|---|---|\n"
+        } else {
+            "\n|---|---:|---|---|---|\n"
+        });
         for f in features {
+            let direction = if directed {
+                format!(
+                    " {} |",
+                    f.get("direction").map_or_else(|| "—".to_owned(), id)
+                )
+            } else {
+                String::new()
+            };
             let _ = writeln!(
                 s,
-                "| {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} |{direction}",
                 inline(f["feature_id"].as_str().unwrap_or("?")),
                 num(&f["lr"]),
                 pair(&f["ci"], num),

@@ -318,6 +318,10 @@ feature counts as not firing it. Only items with a reference count.
   with m the number of features, R the number of Benjamini-Hochberg rejections of the
   p-values of log LR = 0, and α = 1 − level (a false coverage rate adjustment, Benjamini
   and Yekutieli 2005). The unadjusted interval is output beside it.
+- **Direction.** When the run declares the class a feature should point to (`expected`,
+  D-049), `direction` is `insufficient` or `uninformative` with those classes, otherwise
+  `as_expected` when the adjusted interval lies on the expected side of 1 and `reversed`
+  when it lies on the other side.
 - Reference cases: `feature_likelihood_ratio`, `feature_likelihood_ratio_bh`.
 
 ## 6. Replicates and reproducibility

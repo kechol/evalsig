@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use super::{Fill, Prepared, ReportError, Unit};
 use crate::cost::{CostPart, Sums};
-use crate::features::{self, Class, Counts, Thresholds};
+use crate::features::{self, Class, Counts, Direction, Thresholds};
 use crate::numeric::{Running, mean, sum};
 use crate::ppi;
 use crate::records::{Item, Label, Source};
@@ -86,6 +86,10 @@ pub struct FeatureRow {
     /// Posterior probability of a positive given the feature, at the stated prevalence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posterior: Option<f64>,
+    /// Whether the feature points the way its run declares it should (D-049); absent
+    /// when the run declares nothing for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Direction>,
 }
 
 impl Prepared<'_> {
@@ -397,6 +401,11 @@ impl Prepared<'_> {
                     corrected: a.ratio.corrected,
                     class: a.class,
                     posterior: prevalence.map(|p| features::posterior(a.ratio.lr, p)),
+                    direction: self
+                        .feature_meta
+                        .get(id)
+                        .and_then(|m| m.expected)
+                        .map(|e| Direction::of(a.class, a.adjusted_interval, e)),
                 })
             })
             .collect()

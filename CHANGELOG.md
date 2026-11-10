@@ -34,7 +34,8 @@ longer reproduces.
   (D-048); `import`, `validate --records`, `export` and the Python and TypeScript writers
   handle it.
 - A `run` record may declare per feature the class it should point to (`expected`) and a
-  `lineage` kept across renames and splits (D-049).
+  `lineage` kept across renames and splits (D-049). `report --features` then says whether
+  each declared feature points the way it should (`direction`).
 - `report --decompose misses|false_alarms` splits a run's errors by attributed cause, each
   error to its first cause in `[attribution] order`, with shares and `--ceiling` rates and
   their intervals (D-048).

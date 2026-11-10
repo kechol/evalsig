@@ -297,6 +297,8 @@ fn judged_value(j: &Judgment, rule: Option<&Rule>, semantics: ValueSemantics) ->
 pub struct Prepared<'a> {
     settings: &'a Settings,
     run_id: String,
+    /// What the run declares each feature is for (D-049).
+    feature_meta: BTreeMap<String, crate::records::FeatureMeta>,
     semantics: ValueSemantics,
     output_type: OutputType,
     rule: Option<Rule>,
@@ -518,6 +520,7 @@ pub fn prepare<'a>(
     Ok(Prepared {
         settings: s,
         run_id: run.run_id.clone(),
+        feature_meta: run.features.clone().unwrap_or_default(),
         semantics,
         output_type,
         rule,
