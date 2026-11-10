@@ -1450,3 +1450,16 @@ after the entry is `Accepted`.
   its first cause in `[attribution] order` (unlisted causes after, by name) and gives shares
   and `--ceiling` rates with cluster-bootstrap intervals; unattributed errors are a cause.
 - Consequences: readers of `records/1` meet one more record kind; writers gain a function.
+
+## D-049 Feature direction and lineage
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: A rule written to point one way can turn out informative the other way, and rules
+  are renamed and split between runs, so their LRs could not be followed across revisions.
+- Decision: the `run` record gains optional `features`: per feature ID, `expected`
+  (`positive` or `negative`, the class it should point to) and `lineage` (a stable name; a
+  feature without one is its own lineage). `report --features` adds `direction`
+  (`as_expected`, `reversed`, `uninformative`, `insufficient`) from the adjusted interval;
+  `compare --features` gives each lineage's LR in both runs, a lineage firing when any member
+  fires in a judgment. Declared per run, since rules change between runs.
