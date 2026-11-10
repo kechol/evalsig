@@ -1477,3 +1477,14 @@ after the entry is `Accepted`.
   written, and drops `attrs`, label reasons and missing details. `import --from-bundle` refuses
   a records file whose hash differs from the manifest's.
 - Consequences: a hashed bundle's reports verify against the bundle, not the original.
+
+## D-051 Metrics per unit of several items
+
+- Status: Accepted
+- Date: 2026-11-11
+- Context: A document judged section by section counts a miss in one section and a false
+  alarm in another, although the document as a whole was caught.
+- Decision: `report --unit cluster --aggregate any` treats the items of a cluster as one unit:
+  its reference and judgment are the largest of its items' reference shares and judged shares
+  (for 0/1 values, positive or flagged if any item is). A unit with an item without a judgment
+  is missing, not negative. H, F and accuracy over units get unit-bootstrap intervals.
