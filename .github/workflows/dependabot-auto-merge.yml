@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+# Auto-merge low-risk Dependabot PRs once required status checks pass.
+# Major-version bumps still require manual review (often breaking).
+#
+# Prerequisites:
+#   - Settings -> General -> Pull Requests -> "Allow auto-merge" enabled.
+#   - The "required-checks" ruleset on the default branch lists the CI jobs
+#     that auto-merge waits for; without it the merge happens before CI ends.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    # The pull request's author, not github.actor: the actor is Dependabot
+    # whenever Dependabot pushes to a pull request's head branch, and a fork's
+    # own Dependabot can push to the head of a pull request someone else opened.
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for safe updates
+        # Patch and minor bumps still wait for the repository's required checks.
+        # Major bumps fall through to a human reviewer.
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
