@@ -37,7 +37,7 @@ zip = { version = "9.2", default-features = false, features = ["deflate"] }
 statrs = { version = "0.19", default-features = false, features = ["std"] }
 rand_chacha = { version = "0.10", default-features = false }
 rusqlite = { version = "0.41", features = ["bundled"] }
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 regex = "1.13"
 parquet = { version = "60.1", default-features = false }
 age = { version = "0.11.2", default-features = false }
