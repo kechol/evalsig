@@ -1070,7 +1070,7 @@ after the entry is `Accepted`.
 
 ## D-031 Homebrew formula from the release archives
 
-- Status: Accepted
+- Status: Superseded by D-054
 - Date: 2026-11-07
 - Context: D-020 left the Homebrew channel to a later task, which wrote a
   formula that built the release source with Rust. Each release then needed
@@ -1515,3 +1515,34 @@ after the entry is `Accepted`.
   bootstrap over units for weighted or soft units.
 - Alternatives: a bootstrap alone, as in D-051, for the reason above.
 - Consequences: unit and item rows of one report read their intervals the same way.
+
+## D-054 The tap is written by a GitHub App
+
+- Status: Accepted
+- Date: 2026-11-14
+- Supersedes: D-031
+- Context: D-031 had the release workflow push the formula with
+  `HOMEBREW_TAP_TOKEN`, a long-lived token stored as a secret in this
+  repository and in the maintainer's other repositories that publish to the
+  same tap. Anyone who reads it from any of them can rewrite every formula in
+  the tap, and with it what `brew install` downloads.
+- Decision:
+  - cargo-dist builds a Homebrew installer: a formula named `evalsig` that
+    installs the release archive for the user's platform (aarch64 and x86_64
+    macOS and Linux), checked against the archive's SHA-256.
+  - The release workflow's `publish-homebrew-formula` job commits the formula
+    to `kechol/homebrew-tap` after the GitHub Release is published, and skips
+    pre-releases.
+  - The job authenticates as a GitHub App installed only on
+    `kechol/homebrew-tap`. `actions/create-github-app-token` creates a token
+    from the repository variable `HOMEBREW_TAP_APP_CLIENT_ID` and the secret
+    `HOMEBREW_TAP_APP_PRIVATE_KEY`; the token may write that repository's
+    contents and nothing else, and is revoked when the job ends.
+  - Users install with `brew install kechol/tap/evalsig`. The repository
+    keeps no formula of its own.
+- Alternatives: a fine-grained personal access token scoped to the tap (not
+  taken: it stays valid until it expires and acts as the maintainer).
+- Consequences: if the job fails, the GitHub Release stays published and the
+  tap keeps the previous version until the job is rerun. Whoever holds the
+  App's private key can still change the tap's formulas, so the key is
+  rotated like any other credential.
