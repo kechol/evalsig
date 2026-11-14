@@ -1,7 +1,8 @@
 name: Dependabot auto-merge
 
 # Auto-merge low-risk Dependabot PRs once required status checks pass.
-# Major-version bumps still require manual review (often breaking).
+# Major-version bumps still require manual review (often breaking), and so
+# does a minor bump from 0.x, which Cargo and npm treat as breaking.
 #
 # Prerequisites:
 #   - Settings -> General -> Pull Requests -> "Allow auto-merge" enabled.
@@ -29,12 +30,23 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge for safe updates
-        # Patch and minor bumps still wait for the repository's required checks.
-        # Major bumps fall through to a human reviewer.
-        if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-patch'
-          || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        # Every updated dependency is checked, not only the first:
+        # fetch-metadata's previous-version describes the first one alone.
+        # fetch-metadata labels 0.6 -> 0.7 a minor update and 0.0.3 -> 0.0.4 a
+        # patch, so those, majors and anything without a known version are
+        # left to a maintainer.
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge --auto --squash "$PR_URL"
+          UPDATES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        run: |
+          if jq -e 'length > 0 and all(.[];
+                (.updateType == "version-update:semver-patch"
+                  and ((.prevVersion // "0.0.") | startswith("0.0.") | not))
+                or (.updateType == "version-update:semver-minor"
+                  and ((.prevVersion // "0.") | startswith("0.") | not)))' \
+                <<<"$UPDATES" >/dev/null; then
+            gh pr merge --auto --squash "$PR_URL"
+          else
+            echo "::notice::Left for a maintainer: a major update, or a minor or 0.0.x update of a 0.x dependency."
+          fi
