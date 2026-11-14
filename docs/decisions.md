@@ -1546,3 +1546,19 @@ after the entry is `Accepted`.
   tap keeps the previous version until the job is rerun. Whoever holds the
   App's private key can still change the tap's formulas, so the key is
   rotated like any other credential.
+
+## D-055 The tap's App key is readable only from release tags
+
+- Status: Accepted
+- Date: 2026-11-14
+- Context: D-054 kept the App's private key as a repository secret, which
+  every workflow run in this repository can read, on any branch.
+- Decision: `HOMEBREW_TAP_APP_PRIVATE_KEY` is a secret of the `release`
+  environment, which allows deployments only from tags matching `v*`. The
+  `publish-homebrew-formula` job declares `environment: release`; no other job
+  does. `HOMEBREW_TAP_APP_CLIENT_ID` stays a repository variable because it
+  is not a credential.
+- Alternatives: keeping the repository secret (not taken: a workflow change
+  on any branch could read the key).
+- Consequences: a branch run cannot reach the key, and a rerun of the tap job
+  works only from its release tag.
