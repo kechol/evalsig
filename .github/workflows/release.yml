@@ -327,11 +327,22 @@ jobs:
       GITHUB_EMAIL: "admin+bot@axo.dev"
     if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
     steps:
+      # The tap's GitHub App is installed only on kechol/homebrew-tap; the token
+      # can write that repository's contents and is revoked when the job ends.
+      - name: Create a homebrew-tap token
+        id: tap-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: kechol
+          repositories: homebrew-tap
+          permission-contents: write
       - uses: actions/checkout@v6.1.0
         with:
           persist-credentials: true
           repository: "kechol/homebrew-tap"
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ steps.tap-token.outputs.token }}
       # So we have access to the formula
       - name: Fetch homebrew formulae
         uses: actions/download-artifact@v7.0.0
