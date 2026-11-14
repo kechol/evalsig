@@ -1,4 +1,4 @@
-<!-- Written by evalsig skill install for evalsig 0.1.0. Read from SKILL.md only when records do not fit. -->
+<!-- Written by evalsig skill install for evalsig 0.2.0. Read from SKILL.md only when records do not fit. -->
 
 # Importing records of another shape into evalsig
 

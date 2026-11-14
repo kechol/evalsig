@@ -3,7 +3,7 @@ name: evalsig
 description: Analyse the evaluation records of non-deterministic judges (LLM judges, classifiers, rule sets) with evalsig and report the results correctly — JSONL or CSV from your own harness, Inspect and promptfoo logs. Includes the rules for improving prompts, graders or rules while looking at evaluations. Use it for "compare these evaluation results", "is this difference real?", "how many items do I need?", "does the LLM judge agree with people?", "ROC, AUC, threshold", "do replicates disagree?", "has production judging drifted?", "this JSON does not fit evalsig", "the import stops", "fix the prompt until the evaluation improves", "fix it until the gate passes". Not for running evaluations (calling models).
 ---
 
-<!-- Written by evalsig skill install for evalsig 0.1.0. `evalsig skill check` warns when it no longer matches. -->
+<!-- Written by evalsig skill install for evalsig 0.2.0. `evalsig skill check` warns when it no longer matches. -->
 
 # Analysing evaluation records with evalsig
 

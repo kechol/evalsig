@@ -674,7 +674,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-adapters"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "evalsig-core",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "blake3",
@@ -715,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proptest",
  "rand_chacha 0.10.0",
@@ -728,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-dashboard"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "evalsig-core",
  "evalsig-project",
@@ -738,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-project"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "evalsig-adapters",
  "evalsig-core",
@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-referee"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "evalsig-core",
  "evalsig-project",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "evalsig-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "age",
  "blake3",

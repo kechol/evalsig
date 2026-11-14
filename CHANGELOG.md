@@ -13,6 +13,8 @@ longer reproduces.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
 ### Added
 
 - Errors list the commands to run next in `error.next` (D-040), built from evalsig's

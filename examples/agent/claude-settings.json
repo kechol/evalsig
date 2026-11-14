@@ -40,5 +40,5 @@
       "Bash(evalsig gate submit:*)"
     ]
   },
-  "_note": "For evalsig 0.1.0. This guards against accidents; the protection itself is a referee with other privileges (docs/referee.md). Within the same privileges there are ways around it, such as global flags placed before the subcommand. map decide records a person's choice and gate submit spends holdout budget, so every run asks."
+  "_note": "For evalsig 0.2.0. This guards against accidents; the protection itself is a referee with other privileges (docs/referee.md). Within the same privileges there are ways around it, such as global flags placed before the subcommand. map decide records a person's choice and gate submit spends holdout budget, so every run asks."
 }

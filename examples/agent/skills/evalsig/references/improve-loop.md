@@ -1,4 +1,4 @@
-<!-- Written by evalsig skill install for evalsig 0.1.0. Read from SKILL.md only when asked to improve while looking at evaluations. -->
+<!-- Written by evalsig skill install for evalsig 0.2.0. Read from SKILL.md only when asked to improve while looking at evaluations. -->
 
 # Running the improvement loop with evalsig
 
