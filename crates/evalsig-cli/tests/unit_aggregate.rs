@@ -181,5 +181,7 @@ fn label_inclusion_weights_are_refused() {
         .args(["report", "r", "--unit", "cluster", "--aggregate", "any"])
         .assert()
         .code(3)
-        .stderr(predicates::str::contains("--unit does not support label_inclusion_prob"));
+        .stderr(predicates::str::contains(
+            "--unit does not support label_inclusion_prob",
+        ));
 }
