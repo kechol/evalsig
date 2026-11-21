@@ -332,7 +332,7 @@ jobs:
       # can write that repository's contents and is revoked when the job ends.
       - name: Create a homebrew-tap token
         id: tap-token
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
